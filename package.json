@@ -1,0 +1,41 @@
+{
+  "name": "panda-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Panda Dashboard - система управления стоп-листами с MVC архитектурой",
+  "workspaces": [
+    "backend",
+    "apps/web-panel",
+    "apps/telegram-miniapp"
+  ],
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "start:backend": "cd backend && npm start",
+    "dev:web": "cd apps/web-panel && npm run dev",
+    "dev:telegram": "cd apps/telegram-miniapp && npm run dev",
+    "install:all": "npm install && cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "iiko",
+    "stop-list",
+    "restaurant",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@telegraf/session": "^2.0.0-beta.7",
+    "agent-base": "^7.1.4",
+    "axios": "^1.13.1",
+    "axios-cookiejar-support": "^6.0.4",
+    "date-fns": "^4.1.0",
+    "node-fetch": "^2.7.0",
+    "node-schedule": "^2.1.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "proxy-agent": "^6.5.0",
+    "tough-cookie": "^5.1.2"
+  }
+}
