@@ -1,26 +1,26 @@
 ﻿module.exports = {
   TIMEZONE: "Europe/Moscow",
 
-  // Daily at 00:30 MSK
+  // Daily at 03:30 MSK
   DAILY: {
     second: 0,
     minute: 30,
-    hour: 0,
+    hour: 3,
   },
 
-  // Weekly on Monday at 00:40 MSK
+  // Weekly on Monday at 03:35 MSK
   WEEKLY: {
     second: 0,
     minute: 35,
-    hour: 0,
+    hour: 3,
     dayOfWeek: 1,
   },
 
-  // Monthly on 1st day at 00:50 MSK
+  // Monthly on 1st day at 03:40 MSK
   MONTHLY: {
     second: 0,
     minute: 40,
-    hour: 0,
+    hour: 3,
     date: 1,
   },
 

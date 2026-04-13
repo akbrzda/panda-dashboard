@@ -70,7 +70,11 @@ class Scheduler {
           fileLogger.report(org.name, reportData.totalRevenue, reportData.totalOrders, reportData.lfl, ((Date.now() - startTime) / 1000).toFixed(1));
           success++;
         } catch (error) {
-          fileLogger.error(`${org.name} failed`, { error: error.message });
+          fileLogger.error(`${org.name} failed`, {
+            error: error.message,
+            code: error.code,
+            cause: error.cause ? String(error.cause) : undefined,
+          });
           failedList.push(org.name);
           failed++;
         }

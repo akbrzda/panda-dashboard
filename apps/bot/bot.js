@@ -75,7 +75,7 @@ bot.onText(/\/status/, async (msg) => {
     `
 ✅ <b>Статус</b>
 
-<b>Расписание (МСК):</b> 00:30 / пн 00:40 / 1 число 00:50
+<b>Расписание (МСК):</b> 03:30 / пн 03:35 / 1 число 03:40
 
 <b>Рестораны (${orgs.length}):</b>
 ${orgs.map((r) => `• ${r.name}`).join("\n")}`
@@ -203,9 +203,9 @@ bot.onText(/\/help/, async (msg) => {
 <b>Инфо:</b> /start /status /help
 
 <b>Расписание:</b>
-• Ежедневный: 00:30 (за предыдущую смену)
-• Еженедельный: пн 00:40 (за предыдущую неделю)
-• Ежемесячный: 1 число 00:50 (за предыдущий месяц)`
+• Ежедневный: 03:30 (за предыдущую смену)
+• Еженедельный: пн 03:35 (за предыдущую неделю)
+• Ежемесячный: 1 число 03:40 (за предыдущий месяц)`
   );
 });
 
@@ -215,4 +215,4 @@ bot.on("error", (error) => fileLogger.error("Bot error", { error: error.message 
 // Запуск планировщика
 scheduler.initialize();
 
-console.log("🤖 Bot started | Schedule (MSK): 00:30 daily, Mon 00:40 weekly, day 1 00:50 monthly");
+console.log("🤖 Bot started | Schedule (MSK): 03:30 daily, Mon 03:35 weekly, day 1 03:40 monthly");
