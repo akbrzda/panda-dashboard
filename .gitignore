@@ -4,3 +4,4 @@ AGENTS.md
 olap.html
 logs/
 .DS_Store
+dist/

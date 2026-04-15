@@ -2,10 +2,11 @@
  * Report Formatter - formatting reports for Telegram
  */
 
-const CHANNEL_ORDER = ["Самовывоз", "Яндекс.Еда", "Доставка", "Зал"];
+const CHANNEL_ORDER = ["Доставка", "Самовынос", "Зал", "Яндекс.Еда"];
 const CHANNEL_ALIASES = {
-  "С собой": "Самовывоз",
-  "Доставка самовывоз": "Самовывоз",
+  "С собой": "Самовынос",
+  "Доставка самовывоз": "Самовынос",
+  Самовывоз: "Самовынос",
 };
 
 class ReportFormatter {
@@ -41,27 +42,58 @@ class ReportFormatter {
       .join(", ");
   }
 
+  normalizeChannelName(channel) {
+    const source = String(channel || "").trim();
+    const normalizedSource = source.toLowerCase();
+
+    if (normalizedSource.includes("яндекс")) {
+      return "Яндекс.Еда";
+    }
+
+    if (
+      normalizedSource.includes("самовывоз") ||
+      normalizedSource.includes("самовынос") ||
+      normalizedSource.includes("с собой") ||
+      normalizedSource.includes("доставка самовывоз")
+    ) {
+      return "Самовынос";
+    }
+
+    if (normalizedSource.includes("достав") || normalizedSource.includes("курьер")) {
+      return "Доставка";
+    }
+
+    return "Зал";
+  }
+
   normalizeChannels(channels) {
     const normalized = {};
 
     for (const [ch, amount] of Object.entries(channels || {})) {
-      const source = String(ch || "");
-      let name = CHANNEL_ALIASES[source] || source;
-
-      if (source.includes("Яндекс")) {
-        name = "Яндекс.Еда";
-      } else if (source.includes("самовывоз") || source.includes("С собой")) {
-        name = "Самовывоз";
-      } else if (source.includes("курьер") || source.includes("Доставка")) {
-        name = "Доставка";
-      } else if (source.includes("зале") || source.includes("Зал")) {
-        name = "Зал";
-      }
-
+      const name = this.normalizeChannelName(CHANNEL_ALIASES[ch] || ch);
       normalized[name] = (normalized[name] || 0) + Number(amount || 0);
     }
 
     return normalized;
+  }
+
+  buildChannelStats(revenueByChannel, ordersByChannel) {
+    const normalizedRevenue = this.normalizeChannels(revenueByChannel);
+    const normalizedOrders = this.normalizeChannels(ordersByChannel);
+    const stats = {};
+
+    for (const channel of new Set([...Object.keys(normalizedRevenue), ...Object.keys(normalizedOrders)])) {
+      const revenue = Number(normalizedRevenue[channel] || 0);
+      const orders = Number(normalizedOrders[channel] || 0);
+
+      stats[channel] = {
+        revenue,
+        orders,
+        avgCheck: orders > 0 ? revenue / orders : 0,
+      };
+    }
+
+    return stats;
   }
 
   sortChannels(channels) {
@@ -73,7 +105,7 @@ class ReportFormatter {
 
     Object.entries(channels)
       .filter(([ch]) => !CHANNEL_ORDER.includes(ch))
-      .sort(([, a], [, b]) => b - a)
+      .sort(([, a], [, b]) => Number(b?.revenue || b || 0) - Number(a?.revenue || a || 0))
       .forEach(([ch, amt]) => {
         sorted[ch] = amt;
       });
@@ -90,6 +122,7 @@ class ReportFormatter {
     const {
       restaurantName,
       revenueByChannel,
+      ordersByChannel,
       totalRevenue,
       totalOrders,
       avgPerOrder,
@@ -125,11 +158,11 @@ class ReportFormatter {
       msg += "\n\n";
     }
 
-    const channels = this.sortChannels(this.normalizeChannels(revenueByChannel));
+    const channels = this.sortChannels(this.buildChannelStats(revenueByChannel, ordersByChannel));
 
     msg += "Выручка по каналам:\n";
-    for (const [ch, amt] of Object.entries(channels)) {
-      msg += `▫️ ${ch}: ${this.formatMoney(amt)}\n`;
+    for (const [ch, stats] of Object.entries(channels)) {
+      msg += `▫️ ${ch}: ${this.formatMoney(stats.revenue)} | ${Number(stats.orders).toLocaleString("ru-RU")} зак.\n`;
     }
 
     msg += `\nОбщая выручка: ${this.formatMoney(totalRevenue)}`;

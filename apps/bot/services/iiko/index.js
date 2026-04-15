@@ -103,6 +103,7 @@ class IikoReportService {
     const rows = this._getRowsFromOlapData(data);
 
     const revenueByChannel = {};
+    const ordersByChannel = {};
     let totalRevenue = 0;
     let totalOrders = 0;
     let totalRevenueWithoutDiscount = 0;
@@ -181,7 +182,9 @@ class IikoReportService {
 
       includedRows += order.rowsCount;
       orderStats.activeOrders += 1;
-      revenueByChannel[order.orderType || "Unknown"] = (revenueByChannel[order.orderType || "Unknown"] || 0) + order.sales;
+      const channelName = order.orderType || "Unknown";
+      revenueByChannel[channelName] = (revenueByChannel[channelName] || 0) + order.sales;
+      ordersByChannel[channelName] = (ordersByChannel[channelName] || 0) + 1;
       totalRevenue += order.sales;
       totalOrders += 1;
       totalRevenueWithoutDiscount += order.revenueWithoutDiscount;
@@ -198,6 +201,7 @@ class IikoReportService {
       includedRows,
       excludedRows,
       revenueByChannel,
+      ordersByChannel,
       totalRevenue,
       totalOrders,
       avgPerOrder,
@@ -218,16 +222,17 @@ class IikoReportService {
       const data = await this.client.executeOlapQuery(httpClient, restaurantId, olapBody);
       const parsedData = this._parseOlapRowsWithShiftFilter(data);
 
-      const discountPercent = parsedData.totalRevenueWithoutDiscount > 0 ? (parsedData.discountSum / parsedData.totalRevenueWithoutDiscount) * 100 : 0;
+      const discountPercent =
+        parsedData.totalRevenueWithoutDiscount > 0 ? (parsedData.discountSum / parsedData.totalRevenueWithoutDiscount) * 100 : 0;
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
       await this.client.logout(httpClient);
 
       fileLogger.info(
-        `🔎 ${restaurantName} [${period}] | Rows: ${parsedData.rowsCount} | Included: ${parsedData.includedRows} | Excluded: ${parsedData.excludedRows}`
+        `🔎 ${restaurantName} [${period}] | Rows: ${parsedData.rowsCount} | Included: ${parsedData.includedRows} | Excluded: ${parsedData.excludedRows}`,
       );
       fileLogger.info(
-        `✅ ${restaurantName} [${period}] | Revenue: ${parsedData.totalRevenue}₽ | Orders: ${parsedData.totalOrders} | Discount: ${discountPercent}% | ${duration}s`
+        `✅ ${restaurantName} [${period}] | Revenue: ${parsedData.totalRevenue}₽ | Orders: ${parsedData.totalOrders} | Discount: ${discountPercent}% | ${duration}s`,
       );
 
       const dateFrom = new Date(shiftStart);
@@ -245,6 +250,7 @@ class IikoReportService {
         restaurantId,
         restaurantName,
         revenueByChannel: parsedData.revenueByChannel,
+        ordersByChannel: parsedData.ordersByChannel,
         totalRevenue: parsedData.totalRevenue,
         totalOrders: parsedData.totalOrders,
         avgPerOrder: parsedData.avgPerOrder,
@@ -287,7 +293,9 @@ class IikoReportService {
     const lflOrders = this.formatter.calculateLFL(currentReport.totalOrders, prevReport.totalOrders);
 
     const lflStr = lfl !== null ? `${lfl > 0 ? "+" : ""}${lfl}%` : "N/A";
-    fileLogger.success(`📊 ${restaurantName} [${period}] | Total: ${currentReport.totalRevenue}₽ | LFL: ${lflStr} | Prev: ${prevReport.totalRevenue}₽`);
+    fileLogger.success(
+      `📊 ${restaurantName} [${period}] | Total: ${currentReport.totalRevenue}₽ | LFL: ${lflStr} | Prev: ${prevReport.totalRevenue}₽`,
+    );
 
     return {
       ...currentReport,

@@ -20,6 +20,52 @@ class RevenueService {
     console.log(`📊 RevenueService initialized with baseUrl: ${this.baseUrl}`);
   }
 
+  _resolveStoreId(organizationId) {
+    const organization = (config.organizations || []).find(
+      (org) =>
+        String(org.id) === String(organizationId) ||
+        String(org.iikoId) === String(organizationId) ||
+        String(org.restaurantId) === String(organizationId),
+    );
+
+    return String(organization?.iikoId || organization?.restaurantId || organizationId);
+  }
+
+  _normalizeChannelName(channel) {
+    const source = String(channel || "").trim();
+    const normalizedSource = source.toLowerCase();
+
+    if (normalizedSource.includes("яндекс")) {
+      return "Яндекс.Еда";
+    }
+
+    if (
+      normalizedSource.includes("самовывоз") ||
+      normalizedSource.includes("самовынос") ||
+      normalizedSource.includes("с собой") ||
+      normalizedSource.includes("доставка самовывоз")
+    ) {
+      return "Самовынос";
+    }
+
+    if (normalizedSource.includes("достав") || normalizedSource.includes("курьер")) {
+      return "Доставка";
+    }
+
+    return "Зал";
+  }
+
+  _normalizeOrdersByChannel(ordersByChannel) {
+    const normalized = {};
+
+    for (const [channel, count] of Object.entries(ordersByChannel || {})) {
+      const normalizedChannel = this._normalizeChannelName(channel);
+      normalized[normalizedChannel] = (normalized[normalizedChannel] || 0) + Number(count || 0);
+    }
+
+    return normalized;
+  }
+
   /**
    * Получить отчет по выручке за период
    */
@@ -28,7 +74,7 @@ class RevenueService {
     console.log(
       `📊 [${new Date().toISOString()}] Fetching revenue report for org ${organizationId} from ${startDate.toISOString().split("T")[0]} to ${
         endDate.toISOString().split("T")[0]
-      }`
+      }`,
     );
 
     // Для периода используем агрегацию по дням
@@ -86,12 +132,13 @@ class RevenueService {
 
     // Нормализуем и сортируем каналы
     const normalizedChannels = this._normalizeRevenueChannels(aggregated.revenueByChannel);
+    const normalizedOrders = this._normalizeOrdersByChannel(aggregated.ordersByChannel);
     const sortedChannels = this._sortChannels(normalizedChannels);
 
     // Преобразуем в нужный формат для фронтенда
     const revenueByChannel = {};
     for (const [channel, revenue] of Object.entries(sortedChannels)) {
-      const orders = aggregated.ordersByChannel[channel] || 0;
+      const orders = normalizedOrders[channel] || 0;
       revenueByChannel[channel] = {
         revenue,
         orders,
@@ -151,12 +198,13 @@ class RevenueService {
 
     // Нормализуем и сортируем каналы
     const normalizedChannels = this._normalizeRevenueChannels(reportData.revenueByChannel);
+    const normalizedOrders = this._normalizeOrdersByChannel(reportData.ordersByChannel);
     const sortedChannels = this._sortChannels(normalizedChannels);
 
     // Преобразуем в нужный формат для фронтенда
     const revenueByChannel = {};
     for (const [channel, revenue] of Object.entries(sortedChannels)) {
-      const orders = reportData.ordersByChannel[channel] || 0;
+      const orders = normalizedOrders[channel] || 0;
       revenueByChannel[channel] = {
         revenue,
         orders,
@@ -195,6 +243,7 @@ class RevenueService {
    * Получить отчет из iiko OLAP API за конкретную дату
    */
   async _getReportForDate(organizationId, date) {
+    const storeId = this._resolveStoreId(organizationId);
     const jar = new CookieJar();
     const client = wrapper(
       axios.create({
@@ -203,7 +252,7 @@ class RevenueService {
         headers: { "Content-Type": "application/json" },
         jar,
         withCredentials: true,
-      })
+      }),
     );
 
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -236,13 +285,13 @@ class RevenueService {
       });
 
       // Выбор организации
-      console.log(`   Selecting store ${organizationId}...`);
-      await client.post(`/api/stores/select/${organizationId}`);
+      console.log(`   Selecting store ${storeId}...`);
+      await client.post(`/api/stores/select/${storeId}`);
 
       // OLAP запрос
       console.log(`   Initializing OLAP request for ${shiftStart} to ${shiftEnd}...`);
       const olapBody = {
-        storeIds: [String(organizationId)],
+        storeIds: [String(storeId)],
         olapType: "SALES",
         categoryFields: [],
         groupFields: ["OrderType"],
@@ -353,6 +402,7 @@ class RevenueService {
       }
 
       const avgPerOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      const dateStr = `${year}-${month}-${day}`;
 
       console.log(`   ✅ Report parsed: ${totalOrders} orders, ${totalRevenue.toFixed(2)} ₽`);
 
@@ -433,16 +483,9 @@ class RevenueService {
   _normalizeRevenueChannels(revenueByChannel) {
     const normalized = {};
 
-    for (const [channel, amount] of Object.entries(revenueByChannel)) {
-      let normalizedChannel = channel;
-
-      if (channel === "С собой" || channel === "Доставка самовывоз" || channel === "Самовывоз") {
-        normalizedChannel = "Самовывоз";
-      } else if (channel?.includes("Яндекс.Еда")) {
-        normalizedChannel = "Яндекс.Еда";
-      }
-
-      normalized[normalizedChannel] = (normalized[normalizedChannel] || 0) + amount;
+    for (const [channel, amount] of Object.entries(revenueByChannel || {})) {
+      const normalizedChannel = this._normalizeChannelName(channel);
+      normalized[normalizedChannel] = (normalized[normalizedChannel] || 0) + Number(amount || 0);
     }
 
     return normalized;
@@ -452,7 +495,7 @@ class RevenueService {
    * Сортировать каналы по приоритету
    */
   _sortChannels(channels) {
-    const order = ["Зал", "Самовывоз", "Доставка Курьером", "Яндекс.Еда"];
+    const order = ["Доставка", "Самовынос", "Зал", "Яндекс.Еда"];
     const sorted = {};
 
     for (const channel of order) {
