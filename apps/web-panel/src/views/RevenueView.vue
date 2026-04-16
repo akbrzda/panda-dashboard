@@ -1,211 +1,219 @@
 <template>
-  <div class="revenue-view">
-    <header class="header">
-      <h1>Отчеты по выручке</h1>
-      <div v-if="currentOrganization" class="organization-name">{{ currentOrganization.name }}</div>
-    </header>
-
-    <div v-if="error" class="error-message">❌ {{ error }}</div>
-
-    <RevenueFilters
-      v-model:startDate="store.startDate"
-      v-model:endDate="store.endDate"
-      v-model:organizationId="store.currentOrganizationId"
-      :organizations="store.organizations"
-      @apply="handleFilterApply"
-    />
-
-    <div v-if="isLoading" class="loading-overlay">
-      <div class="spinner"></div>
-      <p>Загрузка отчета...</p>
+  <div class="space-y-6">
+    <!-- Заголовок + фильтры -->
+    <div class="space-y-4">
+      <h1 class="text-2xl font-bold text-foreground">Отчёт по выручке</h1>
+      <PageFilters :loading="store.isLoading" @apply="handleApply" />
     </div>
 
-    <div v-else-if="hasData" class="revenue-content">
-      <div class="period-info">
-        <span class="period-label">Период:</span>
-        <span class="period-value">{{ formattedPeriod }}</span>
+    <!-- Ошибка -->
+    <div v-if="store.error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+      <AlertCircle class="w-5 h-5 shrink-0" />
+      <span>{{ store.error }}</span>
+    </div>
+
+    <!-- Пустое состояние -->
+    <div v-if="!store.isLoading && !store.hasData && !store.error" class="flex flex-col items-center justify-center py-16 text-center">
+      <BarChart2 class="w-12 h-12 text-muted-foreground/40 mb-4" />
+      <p class="text-sm text-muted-foreground">Выберите организацию и период</p>
+    </div>
+
+    <template v-if="store.hasData || store.isLoading">
+      <!-- Период -->
+      <p v-if="store.formattedPeriod && !store.isLoading" class="text-xs text-muted-foreground">
+        Период: <span class="font-medium text-foreground">{{ store.formattedPeriod }}</span>
+      </p>
+
+      <!-- Сводные KPI -->
+      <section>
+        <h2 class="text-lg font-semibold text-foreground mb-4">Сводные показатели</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+          <MetricCard
+            title="Общая выручка"
+            :value="store.summary?.totalRevenue ?? null"
+            format="currency"
+            icon="TrendingUp"
+            :lfl="store.summary?.lfl != null ? { percent: store.summary.lfl } : null"
+            :loading="store.isLoading"
+          />
+          <MetricCard
+            title="Заказов"
+            :value="store.summary?.totalOrders ?? null"
+            format="number"
+            icon="ShoppingCart"
+            :lfl="analyticsStore.revenueData?.summary?.ordersLFL != null ? { percent: analyticsStore.revenueData.summary.ordersLFL } : null"
+            :loading="store.isLoading"
+          />
+          <MetricCard title="Средний чек" :value="store.summary?.avgPerOrder ?? null" format="currency" icon="BarChart2" :loading="store.isLoading" />
+          <MetricCard
+            title="Время доставки"
+            :value="store.summary?.avgDeliveryTime ?? null"
+            format="time"
+            icon="Clock"
+            :inverse="true"
+            :loading="store.isLoading"
+          />
+          <MetricCard
+            title="Дисконт"
+            :value="store.summary?.discountSum ?? null"
+            format="currency"
+            icon="Tag"
+            :inverse="true"
+            :loading="store.isLoading"
+          />
+          <MetricCard
+            title="% дисконта"
+            :value="store.summary?.discountPercent ?? null"
+            format="percent"
+            icon="Percent"
+            :inverse="true"
+            :loading="store.isLoading"
+          />
+        </div>
+      </section>
+
+      <!-- Выручка по каналам -->
+      <section>
+        <h2 class="text-lg font-semibold text-foreground mb-4">Выручка по каналам</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <MetricCard
+            v-for="(ch, name) in store.revenueByChannel"
+            :key="name"
+            :title="name"
+            :value="ch.revenue"
+            format="currency"
+            :lfl="
+              analyticsStore.revenueData?.revenueByChannel?.[name]?.revenueLFL != null
+                ? { percent: analyticsStore.revenueData.revenueByChannel[name].revenueLFL }
+                : null
+            "
+            :loading="store.isLoading"
+          />
+        </div>
+      </section>
+
+      <!-- Графики -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Динамика выручки -->
+        <Card class="p-5">
+          <h3 class="text-sm font-semibold text-foreground mb-4">Динамика выручки по дням</h3>
+          <AreaChart :breakdown="store.dailyBreakdown" :loading="store.isLoading" />
+        </Card>
+
+        <!-- Структура по каналам -->
+        <Card class="p-5">
+          <h3 class="text-sm font-semibold text-foreground mb-4">Структура выручки</h3>
+          <DonutChart :channels="store.revenueByChannel" :loading="store.isLoading" />
+        </Card>
       </div>
 
-      <RevenueKpiCards :summary="summary" />
+      <!-- Продажи по часам -->
+      <Card class="p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-foreground">Продажи по часам</h3>
+          <div class="flex gap-1">
+            <button
+              @click="hourlyMode = 'revenue'"
+              :class="[
+                'text-xs px-2 py-1 rounded transition-colors',
+                hourlyMode === 'revenue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              Выручка
+            </button>
+            <button
+              @click="hourlyMode = 'orders'"
+              :class="[
+                'text-xs px-2 py-1 rounded transition-colors',
+                hourlyMode === 'orders' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              Заказы
+            </button>
+          </div>
+        </div>
+        <HourlyBarChart :hours="analyticsStore.hourlySales?.hours ?? []" :loading="analyticsStore.isLoadingHourly" :mode="hourlyMode" />
+      </Card>
 
-      <RevenueCharts :revenueByChannel="revenueByChannel" />
+      <!-- Маршруты курьеров -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card class="p-5">
+          <h3 class="text-sm font-semibold text-foreground mb-1">Маршруты курьеров</h3>
+          <p class="text-xs text-muted-foreground mb-4">Распределение по кол-ву заказов на курьера</p>
+          <div v-if="analyticsStore.isLoadingCourier" class="flex items-center justify-center h-48">
+            <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          </div>
+          <div v-else-if="!analyticsStore.courierRoutes" class="flex items-center justify-center h-48 text-sm text-muted-foreground">Нет данных</div>
+          <div v-else class="space-y-3">
+            <div
+              v-for="item in courierStats"
+              :key="item.label"
+              class="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3"
+            >
+              <div>
+                <div class="text-sm font-medium text-foreground">{{ item.label }}</div>
+                <div class="text-xs text-muted-foreground">{{ item.count }} курьеров</div>
+              </div>
+              <div class="text-lg font-semibold text-foreground">{{ item.percent }}%</div>
+            </div>
+            <div class="pt-1 text-xs text-muted-foreground text-center">
+              Всего курьеров: <span class="font-medium text-foreground">{{ analyticsStore.courierRoutes.totalCouriers }}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
 
-      <RevenueTable :revenueByChannel="revenueByChannel" :isLoading="isLoading" />
-    </div>
-
-    <div v-else-if="!isLoading && !hasData" class="empty-state">
-      <p>Выберите период и нажмите "Применить" для загрузки отчета</p>
-    </div>
+      <!-- Таблица -->
+      <RevenueTable :revenueByChannel="store.revenueByChannel" :isLoading="store.isLoading" />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
+import { AlertCircle, BarChart2 } from "lucide-vue-next";
 import { useRevenueStore } from "../stores/revenue";
-import RevenueFilters from "../components/RevenueFilters.vue";
-import RevenueKpiCards from "../components/RevenueKpiCards.vue";
-import RevenueCharts from "../components/RevenueCharts.vue";
+import { useAnalyticsStore } from "../stores/analytics";
+import { useFiltersStore } from "../stores/filters";
+import PageFilters from "../components/filters/PageFilters.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
+import Card from "../components/ui/Card.vue";
 import RevenueTable from "../components/RevenueTable.vue";
+import AreaChart from "../components/charts/AreaChart.vue";
+import DonutChart from "../components/charts/DonutChart.vue";
+import HourlyBarChart from "../components/charts/HourlyBarChart.vue";
 
 const store = useRevenueStore();
+const analyticsStore = useAnalyticsStore();
+const filtersStore = useFiltersStore();
 
-const isLoading = computed(() => store.isLoading);
-const error = computed(() => store.error);
-const hasData = computed(() => store.hasData);
-const summary = computed(() => store.summary);
-const revenueByChannel = computed(() => store.revenueByChannel);
-const currentOrganization = computed(() => store.currentOrganization);
-const formattedPeriod = computed(() => store.formattedPeriod);
+const hourlyMode = ref("revenue");
 
-const handleFilterApply = () => {
-  store.loadRevenueReport();
-};
+const courierStats = computed(() => analyticsStore.courierRoutes?.distribution || []);
+
+async function handleApply(payload = {}) {
+  const organizationId = payload.organizationId ?? store.currentOrganizationId;
+  const dateFrom = payload.dateFrom ?? filtersStore.dateFrom;
+  const dateTo = payload.dateTo ?? filtersStore.dateTo;
+  const lflDateFrom = payload.lflDateFrom ?? filtersStore.lflDateFrom;
+  const lflDateTo = payload.lflDateTo ?? filtersStore.lflDateTo;
+
+  store.setCurrentOrganization(organizationId);
+  store.startDate = dateFrom;
+  store.endDate = dateTo;
+
+  await store.loadRevenueReport();
+
+  analyticsStore.loadHourlySales({ organizationId, dateFrom, dateTo });
+  analyticsStore.loadCourierRoutes({ organizationId, dateFrom, dateTo });
+  analyticsStore.loadRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+}
 
 onMounted(() => {
-  console.log("📊 RevenueView mounted");
-
-  // Загружаем организации, если еще не загружены
   if (store.organizations.length === 0) {
     store.loadOrganizations();
-  } else if (!hasData.value) {
-    // Если организации уже загружены, но данных нет, загружаем отчет
-    store.loadRevenueReport();
+  } else if (!store.hasData) {
+    handleApply();
   }
 });
 </script>
-
-<style scoped>
-.revenue-view {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.header {
-  margin-bottom: 20px;
-}
-
-.header h1 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-  font-weight: 700;
-  color: #333;
-}
-
-.organization-name {
-  font-size: 16px;
-  color: #666;
-  font-weight: 500;
-}
-
-.period-info {
-  background: white;
-  padding: 12px 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.period-label {
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-}
-
-.period-value {
-  font-size: 16px;
-  color: #333;
-  font-weight: 600;
-}
-
-.error-message {
-  background-color: #ffebee;
-  color: #c62828;
-  padding: 16px 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border-left: 4px solid #c62828;
-}
-
-.loading-overlay {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #4caf50;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 20px;
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-.loading-overlay p {
-  color: #666;
-  font-size: 16px;
-  margin: 0;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.empty-state p {
-  color: #999;
-  font-size: 16px;
-  margin: 0;
-}
-
-.revenue-content {
-  animation: fadeIn 0.3s ease-in;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 768px) {
-  .revenue-view {
-    padding: 15px;
-  }
-
-  .header h1 {
-    font-size: 24px;
-  }
-
-  .organization-name {
-    font-size: 14px;
-  }
-}
-</style>

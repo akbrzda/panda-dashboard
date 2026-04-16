@@ -63,7 +63,7 @@ const PORT = config.port;
 app.listen(PORT, () => {
   console.log(`🚀 Backend server running on http://localhost:${PORT}`);
   console.log(`📝 Environment: ${config.env}`);
-  console.log(`🏢 Organizations loaded: ${config.organizations.length}`);
+  console.log("🏢 Организации загружаются динамически из IIKO API");
 });
 
 module.exports = app;

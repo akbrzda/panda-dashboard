@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
-import { organizationsApi, stopListsApi } from "../api";
+import { organizationsApi } from "../api/organizations";
+import { stopListsApi } from "../api/stopLists";
 
 export const useStopListStore = defineStore("stopList", {
   state: () => ({

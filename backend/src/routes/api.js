@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const organizationController = require("../controllers/organizationController");
-const stopListController = require("../controllers/stopListController");
-const revenueController = require("../controllers/revenueController");
+const organizationsModule = require("../modules/organizations");
+const stopListModule = require("../modules/stopList");
+const revenueModule = require("../modules/revenue");
+const analyticsModule = require("../modules/analytics");
+const webhookModule = require("../modules/webhook");
 
 // Health check
 router.get("/health", (req, res) => {
@@ -12,14 +14,10 @@ router.get("/health", (req, res) => {
   });
 });
 
-// Organizations
-router.get("/organizations", organizationController.getOrganizations.bind(organizationController));
-
-// Stop lists
-router.get("/stop-lists", stopListController.getStopLists.bind(stopListController));
-
-// Revenue reports
-router.get("/revenue/report", revenueController.getRevenueReport.bind(revenueController));
-router.get("/revenue/daily", revenueController.getDailyRevenue.bind(revenueController));
+router.use("/organizations", organizationsModule.routes);
+router.use("/stop-lists", stopListModule.routes);
+router.use("/revenue", revenueModule.routes);
+router.use("/analytics", analyticsModule.routes);
+router.use("/", webhookModule.routes);
 
 module.exports = router;

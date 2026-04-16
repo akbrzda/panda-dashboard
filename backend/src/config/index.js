@@ -14,15 +14,6 @@ const config = {
     menuVersion: Number(process.env.IIKO_MENU_VERSION || 2),
   },
 
-  organizations: (() => {
-    try {
-      return JSON.parse(process.env.ORGANIZATIONS || "[]");
-    } catch (e) {
-      console.error("Error parsing ORGANIZATIONS from .env:", e);
-      return [];
-    }
-  })(),
-
   cors: {
     origin: process.env.CORS_ORIGIN || "*",
     credentials: true,

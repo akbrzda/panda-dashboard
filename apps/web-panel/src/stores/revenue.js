@@ -1,5 +1,10 @@
 import { defineStore } from "pinia";
-import { organizationsApi, revenueApi } from "../api";
+import { organizationsApi } from "../api/organizations";
+import { revenueApi } from "../api/revenue";
+
+const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
+let revenueController = null;
+let revenueRequestId = 0;
 
 export const useRevenueStore = defineStore("revenue", {
   state: () => ({
@@ -65,13 +70,7 @@ export const useRevenueStore = defineStore("revenue", {
         if (this.organizations.length > 0 && !this.currentOrganizationId) {
           this.currentOrganizationId = this.organizations[0].id;
           console.log("🏢 Выбрана организация:", this.currentOrganizationId);
-
-          // Устанавливаем сегодняшний день по умолчанию
-          const today = new Date().toISOString().split("T")[0];
-          this.startDate = today;
-          this.endDate = today;
-
-          await this.loadRevenueReport();
+          // watch в PageFilters автоматически запустит загрузку отчёта
         }
       } catch (error) {
         this.error = error.message || "Ошибка загрузки организаций";
@@ -88,70 +87,44 @@ export const useRevenueStore = defineStore("revenue", {
         return;
       }
 
+      revenueController?.abort();
+      revenueController = new AbortController();
+      revenueRequestId += 1;
+      const currentRequestId = revenueRequestId;
+
       try {
         this.isLoading = true;
         this.error = null;
         console.log(`🔄 Загрузка отчета за период ${this.startDate} - ${this.endDate} для ${this.currentOrganizationId}`);
 
-        const response = await revenueApi.getRevenueReport(this.currentOrganizationId, this.startDate, this.endDate);
-        console.log("✅ Ответ API отчета:", response);
+        const response = await revenueApi.getRevenueReport(this.currentOrganizationId, this.startDate, this.endDate, revenueController.signal);
 
+        if (currentRequestId !== revenueRequestId) {
+          return;
+        }
+
+        console.log("✅ Ответ API отчета:", response);
         this.revenueData = response.data;
-        console.log("📊 Данные отчета загружены:", this.revenueData);
       } catch (error) {
+        if (isAbortError(error)) {
+          return;
+        }
+
         this.error = error.message || "Ошибка загрузки отчета";
         console.error("❌ Error loading revenue report:", error);
         console.error("❌ Error details:", error.response?.data);
       } finally {
-        this.isLoading = false;
+        if (currentRequestId === revenueRequestId) {
+          this.isLoading = false;
+          revenueController = null;
+        }
       }
     },
 
     setCurrentOrganization(organizationId) {
       if (this.currentOrganizationId !== organizationId) {
         this.currentOrganizationId = organizationId;
-        this.loadRevenueReport();
       }
-    },
-
-    setDateRange(startDate, endDate) {
-      this.startDate = startDate;
-      this.endDate = endDate;
-      this.loadRevenueReport();
-    },
-
-    setToday() {
-      const today = new Date().toISOString().split("T")[0];
-      this.setDateRange(today, today);
-    },
-
-    setYesterday() {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const dateStr = yesterday.toISOString().split("T")[0];
-      this.setDateRange(dateStr, dateStr);
-    },
-
-    setLastWeek() {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 6);
-
-      const startStr = start.toISOString().split("T")[0];
-      const endStr = end.toISOString().split("T")[0];
-
-      this.setDateRange(startStr, endStr);
-    },
-
-    setLastMonth() {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 29);
-
-      const startStr = start.toISOString().split("T")[0];
-      const endStr = end.toISOString().split("T")[0];
-
-      this.setDateRange(startStr, endStr);
     },
   },
 });

@@ -1,5 +1,5 @@
 const axios = require("axios");
-const config = require("../config");
+const config = require("../../config");
 
 class IikoApiError extends Error {
   constructor(message, status = 500, details = null) {
@@ -12,7 +12,7 @@ class IikoApiError extends Error {
 
 class IikoService {
   constructor() {
-    this.baseUrl = config.iiko.baseUrl || "https://api-ru.iiko.services/api/1";
+    this.baseUrl = config.iiko.baseUrl;
     this.apiLogin = config.iiko.apiLogin;
     this.timeout = 30000;
 
@@ -64,6 +64,32 @@ class IikoService {
       return token;
     } catch (error) {
       throw this._wrapError(error, "Не удалось получить токен IIKO");
+    }
+  }
+
+  async fetchOrganizations(token) {
+    if (!token) {
+      throw new IikoApiError("Не передан токен IIKO", 500);
+    }
+
+    try {
+      const response = await this.client.post(
+        "/organizations",
+        {
+          organizationIds: [],
+          returnAdditionalInfo: true,
+          includeDisabled: false,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      return response.data?.organizations || response.data?.items || [];
+    } catch (error) {
+      throw this._wrapError(error, "Не удалось получить список организаций IIKO");
     }
   }
 

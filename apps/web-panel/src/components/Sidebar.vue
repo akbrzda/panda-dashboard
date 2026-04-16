@@ -1,105 +1,51 @@
 <template>
-  <aside class="sidebar">
-    <div class="logo">
-      <h2>🐼 Panda Dashboard</h2>
-    </div>
-
-    <nav class="nav">
-      <router-link to="/stop-list" class="nav-item" active-class="active">
-        <span class="icon">📋</span>
-        <span class="label">Стоп-лист</span>
+  <aside class="w-52 shrink-0 border-r border-border bg-card flex flex-col min-h-screen">
+    <!-- Навигация -->
+    <nav class="flex flex-col gap-1 p-3 flex-1 pt-4">
+      <router-link to="/dashboard" class="nav-item" active-class="nav-item--active">
+        <LayoutDashboard class="w-4 h-4 shrink-0" />
+        <span>Дашборд</span>
       </router-link>
 
-      <router-link to="/revenue" class="nav-item" active-class="active">
-        <span class="icon">📊</span>
-        <span class="label">Отчеты</span>
+      <router-link to="/revenue" class="nav-item" active-class="nav-item--active">
+        <BarChart2 class="w-4 h-4 shrink-0" />
+        <span>Отчёты</span>
+      </router-link>
+
+      <router-link to="/stop-list" class="nav-item" active-class="nav-item--active">
+        <ClipboardList class="w-4 h-4 shrink-0" />
+        <span>Стоп-лист</span>
+      </router-link>
+
+      <router-link to="/top-dishes" class="nav-item" active-class="nav-item--active">
+        <UtensilsCrossed class="w-4 h-4 shrink-0" />
+        <span>Топ блюд</span>
+      </router-link>
+
+      <router-link to="/clients" class="nav-item" active-class="nav-item--active">
+        <Users class="w-4 h-4 shrink-0" />
+        <span>Клиенты</span>
+      </router-link>
+
+      <router-link to="/foodcost" class="nav-item" active-class="nav-item--active">
+        <Percent class="w-4 h-4 shrink-0" />
+        <span>Фудкост</span>
       </router-link>
     </nav>
-
-    <div class="filters-section">
-      <StopListFilters v-if="$route.path === '/stop-list'" />
-    </div>
   </aside>
 </template>
 
 <script setup>
-import { useRoute } from "vue-router";
-import StopListFilters from "./StopListFilters.vue";
-
-const $route = useRoute();
+import { LayoutDashboard, BarChart2, ClipboardList, UtensilsCrossed, Users, Percent } from "lucide-vue-next";
 </script>
 
 <style scoped>
-.sidebar {
-  width: 280px;
-  background-color: #f5f5f5;
-  padding: 20px;
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.logo {
-  padding-bottom: 20px;
-  border-bottom: 1px solid #ddd;
-}
-
-.logo h2 {
-  margin: 0;
-  font-size: 18px;
-  color: #333;
-  font-weight: 600;
-}
-
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #ddd;
-}
-
 .nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  text-decoration: none;
-  color: #666;
-  transition: all 0.2s;
-  cursor: pointer;
+  @apply flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground
+         hover:bg-accent hover:text-accent-foreground transition-colors no-underline;
 }
 
-.nav-item:hover {
-  background-color: #e0e0e0;
-  color: #333;
-}
-
-.nav-item.active {
-  background-color: #4caf50;
-  color: white;
-  font-weight: 500;
-}
-
-.nav-item .icon {
-  font-size: 20px;
-}
-
-.nav-item .label {
-  font-size: 14px;
-}
-
-.filters-section {
-  flex: 1;
-}
-
-@media (max-width: 768px) {
-  .sidebar {
-    width: 100%;
-    min-height: auto;
-  }
+.nav-item--active {
+  @apply bg-primary/10 text-primary font-medium;
 }
 </style>
