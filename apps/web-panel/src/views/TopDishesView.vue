@@ -12,6 +12,14 @@
       <span>{{ error }}</span>
     </div>
 
+    <div
+      v-if="!error && topDishesStore.topDishes?.warningMessage"
+      class="flex items-center gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-800 dark:text-yellow-300"
+    >
+      <AlertCircle class="w-5 h-5 shrink-0" />
+      <span>{{ topDishesStore.topDishes.warningMessage }}</span>
+    </div>
+
     <!-- Пустое состояние -->
     <div
       v-if="!topDishesStore.isLoadingTopDishes && !topDishesStore.topDishes && !error"

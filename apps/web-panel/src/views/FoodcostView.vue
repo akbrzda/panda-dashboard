@@ -10,6 +10,14 @@
       <span>{{ error }}</span>
     </div>
 
+    <div
+      v-if="!error && data?.warningMessage"
+      class="flex items-center gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-800 dark:text-yellow-300"
+    >
+      <AlertCircle class="w-5 h-5 shrink-0" />
+      <span>{{ data.warningMessage }}</span>
+    </div>
+
     <div v-if="!foodcostStore.isLoadingFoodcost && !data && !error" class="flex flex-col items-center justify-center py-16 text-center">
       <Percent class="w-12 h-12 text-muted-foreground/40 mb-4" />
       <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
@@ -109,6 +117,8 @@ const statusLabel = computed(() => {
       return "Критично";
     case "warning":
       return "Требует внимания";
+    case "unavailable":
+      return "Нет данных";
     default:
       return "Норма";
   }
@@ -120,6 +130,8 @@ const statusClass = computed(() => {
       return "bg-destructive/10 text-destructive";
     case "warning":
       return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
+    case "unavailable":
+      return "bg-muted text-muted-foreground";
     default:
       return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
   }
@@ -131,6 +143,8 @@ const barClass = computed(() => {
       return "bg-destructive";
     case "warning":
       return "bg-yellow-500";
+    case "unavailable":
+      return "bg-muted-foreground/40";
     default:
       return "bg-emerald-500";
   }

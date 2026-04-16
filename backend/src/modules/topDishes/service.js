@@ -2,14 +2,110 @@ const OlapClient = require("../shared/olapClient");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class TopDishesService extends OlapClient {
+  constructor() {
+    super();
+    this.cacheTtlMs = Number(process.env.IIKO_TOP_DISHES_CACHE_TTL_MS || 120000);
+    this.maxAttemptsTopDishes = Number(process.env.IIKO_TOP_DISHES_MAX_ATTEMPTS || 8);
+    this.fetchTimeoutMs = Number(process.env.IIKO_TOP_DISHES_FETCH_TIMEOUT_MS || 3000);
+    this.reportCache = new Map();
+  }
+
+  getCacheKey(storeId, dateFrom, dateTo, limit) {
+    return `${storeId}:${dateFrom}:${dateTo}:${limit}`;
+  }
+
+  buildEmptyResponse(warningMessage = "IIKO отвечает слишком долго, показаны неполные данные") {
+    return {
+      top: [],
+      outsiders: [],
+      total: 0,
+      totalRevenue: 0,
+      totalQty: 0,
+      degraded: true,
+      warningMessage,
+    };
+  }
+
+  parseRows(result) {
+    const rawRows = [];
+
+    if (result.result?.rawData) {
+      rawRows.push(...result.result.rawData);
+    } else if (result.cells) {
+      for (const [key, values] of Object.entries(result.cells)) {
+        const group = JSON.parse(key);
+        rawRows.push({
+          ...group,
+          Sales: parseFloat(values[0]) || 0,
+          DishAmountInt: parseInt(values[1]) || 0,
+          "UniqOrderId.OrdersCount": parseInt(values[2]) || 0,
+        });
+      }
+    }
+
+    return rawRows;
+  }
+
+  buildResponseFromRows(rawRows, limit, degraded = false, warningMessage = null) {
+    const byDish = {};
+    let totalRevenue = 0;
+    let totalQty = 0;
+
+    for (const row of rawRows) {
+      const name = row["Dish.Name"] || row.DishName || row.Dish || "Неизвестно";
+      const category = row.ProductCategory || row.Category || "";
+      const revenue = Number(row.Sales) || 0;
+      const qty = Number(row.DishAmountInt) || 0;
+
+      if (!byDish[name]) {
+        byDish[name] = { name, category, revenue: 0, qty: 0 };
+      }
+
+      byDish[name].revenue += revenue;
+      byDish[name].qty += qty;
+      byDish[name].category = category || byDish[name].category;
+      totalRevenue += revenue;
+      totalQty += qty;
+    }
+
+    const dishes = Object.values(byDish).map((dish) => ({
+      ...dish,
+      avgPrice: dish.qty > 0 ? Math.round((dish.revenue / dish.qty) * 100) / 100 : 0,
+      revenueShare: totalRevenue > 0 ? Math.round((dish.revenue / totalRevenue) * 10000) / 100 : 0,
+    }));
+
+    dishes.sort((a, b) => b.revenue - a.revenue);
+
+    const top = dishes.slice(0, limit);
+    const withQty = dishes.filter((dish) => dish.qty > 0);
+    const outsiders = withQty.slice(-Math.min(limit, withQty.length)).reverse();
+
+    return {
+      top,
+      outsiders,
+      total: dishes.length,
+      totalRevenue,
+      totalQty,
+      degraded,
+      warningMessage,
+    };
+  }
+
   async getTopDishes({ organizationId, dateFrom, dateTo, limit = 20 }) {
     const storeId = await this.resolveStoreId(organizationId);
+    const cacheKey = this.getCacheKey(storeId, dateFrom, dateTo, limit);
+    const cachedReport = this.reportCache.get(cacheKey);
+
+    if (cachedReport && cachedReport.expiresAt > Date.now()) {
+      console.log(`⚡ Top dishes cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
+      return cachedReport.data;
+    }
 
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
     const { startIso, endIso } = buildOlapBounds(toMoscowDateStr(start), toMoscowDateStr(end));
 
-    const result = await this.withAuth(storeId, async (client, delay) => {
+    const data = await this.withAuth(storeId, async (client, delay) => {
       const body = {
         storeIds: [String(storeId)],
         olapType: "SALES",
@@ -60,61 +156,33 @@ class TopDishesService extends OlapClient {
         includeVoidTransactions: false,
         includeNonBusinessPaymentTypes: false,
       };
-      return await this.pollOlap(client, delay, body);
+
+      try {
+        const result = await this.pollOlap(client, delay, body, {
+          maxAttempts: this.maxAttemptsTopDishes,
+          fetchTimeoutMs: this.fetchTimeoutMs,
+          logEvery: 10,
+        });
+
+        return this.buildResponseFromRows(this.parseRows(result), limit, false, null);
+      } catch (error) {
+        console.warn("⚠️ Top dishes отработал в деградированном режиме:", {
+          storeId,
+          dateFrom,
+          dateTo,
+          message: error?.message,
+        });
+
+        return this.buildEmptyResponse("Топ блюд временно недоступен из-за медленного ответа IIKO");
+      }
     });
 
-    const rawRows = [];
-    if (result.result?.rawData) {
-      rawRows.push(...result.result.rawData);
-    } else if (result.cells) {
-      for (const [key, values] of Object.entries(result.cells)) {
-        const group = JSON.parse(key);
-        rawRows.push({
-          ...group,
-          Sales: parseFloat(values[0]) || 0,
-          DishAmountInt: parseInt(values[1]) || 0,
-          "UniqOrderId.OrdersCount": parseInt(values[2]) || 0,
-        });
-      }
-    }
+    this.reportCache.set(cacheKey, {
+      data,
+      expiresAt: Date.now() + this.cacheTtlMs,
+    });
 
-    const byDish = {};
-    let totalRevenue = 0;
-    let totalQty = 0;
-
-    for (const row of rawRows) {
-      const name = row["Dish.Name"] || row.DishName || row.Dish || "Неизвестно";
-      const category = row.ProductCategory || row.Category || "";
-      const revenue = Number(row.Sales) || 0;
-      const qty = Number(row.DishAmountInt) || 0;
-
-      if (!byDish[name]) byDish[name] = { name, category, revenue: 0, qty: 0 };
-      byDish[name].revenue += revenue;
-      byDish[name].qty += qty;
-      byDish[name].category = category || byDish[name].category;
-      totalRevenue += revenue;
-      totalQty += qty;
-    }
-
-    const dishes = Object.values(byDish).map((dish) => ({
-      ...dish,
-      avgPrice: dish.qty > 0 ? Math.round((dish.revenue / dish.qty) * 100) / 100 : 0,
-      revenueShare: totalRevenue > 0 ? Math.round((dish.revenue / totalRevenue) * 10000) / 100 : 0,
-    }));
-
-    dishes.sort((a, b) => b.revenue - a.revenue);
-
-    const top = dishes.slice(0, limit);
-    const withQty = dishes.filter((dish) => dish.qty > 0);
-    const outsiders = withQty.slice(-Math.min(limit, withQty.length)).reverse();
-
-    return {
-      top,
-      outsiders,
-      total: dishes.length,
-      totalRevenue,
-      totalQty,
-    };
+    return data;
   }
 }
 

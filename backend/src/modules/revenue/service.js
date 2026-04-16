@@ -1,17 +1,12 @@
-const axios = require("axios");
-const { CookieJar } = require("tough-cookie");
-const { wrapper } = require("axios-cookiejar-support");
-const organizationsService = require("../organizations/service");
+const OlapClient = require("../shared/olapClient");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
-class RevenueService {
+class RevenueService extends OlapClient {
   constructor() {
-    this.baseUrl = process.env.IIKO_BASE_URL;
-    this.username = process.env.IIKO_USER;
-    this.password = process.env.IIKO_PASSWORD;
-    this.timeout = Number(process.env.IIKO_OLAP_TIMEOUT_MS || 30000);
-    this.pollInterval = Number(process.env.IIKO_OLAP_POLL_INTERVAL_MS || 500);
-    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
+    super();
+    this.timeout = Number(process.env.IIKO_OLAP_TIMEOUT_MS || this.timeout || 30000);
+    this.pollInterval = Number(process.env.IIKO_OLAP_POLL_INTERVAL_MS || this.pollInterval || 500);
+    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || this.maxAttempts || 120);
     this.cacheTtlMs = Number(process.env.IIKO_REVENUE_CACHE_TTL_MS || 120000);
     this.reportCache = new Map();
 
@@ -19,38 +14,7 @@ class RevenueService {
   }
 
   async _resolveStoreId(organizationId) {
-    const normalizedId = String(organizationId || "");
-    const organizations = await organizationsService.getOrganizations().catch(() => []);
-    const organization =
-      typeof organizationId === "object" && organizationId !== null
-        ? organizationId
-        : organizations.find(
-            (org) =>
-              String(org.id) === normalizedId ||
-              String(org.storeId) === normalizedId ||
-              String(org.iikoId) === normalizedId ||
-              String(org.restaurantId) === normalizedId ||
-              String(org.code) === normalizedId,
-          );
-
-    if (organization?.storeId) {
-      return String(organization.storeId);
-    }
-
-    const fallbackCandidates = [organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
-
-    for (const candidate of fallbackCandidates) {
-      const normalizedCandidate = String(candidate || "").trim();
-      if (/^\d+$/.test(normalizedCandidate)) {
-        return normalizedCandidate;
-      }
-    }
-
-    if (/^\d+$/.test(normalizedId)) {
-      return normalizedId;
-    }
-
-    throw new Error(`Не удалось получить storeId из iiko для организации ${normalizedId}`);
+    return await this.resolveStoreId(organizationId);
   }
 
   _normalizeChannelName(channel) {
@@ -212,154 +176,76 @@ class RevenueService {
   }
 
   async _fetchOlapSales(storeId, dateFrom, dateTo, groupFields = ["OrderType"]) {
-    const jar = new CookieJar();
-    const client = wrapper(
-      axios.create({
-        baseURL: this.baseUrl,
-        timeout: this.timeout,
-        headers: { "Content-Type": "application/json" },
-        jar,
-        withCredentials: true,
-      }),
-    );
-    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    console.log(`   🔑 Revenue OLAP [${groupFields.join(", ")}] ${dateFrom.slice(0, 10)} → ${dateTo.slice(0, 10)}`);
 
-    console.log(`   🔑 Login → OLAP [${groupFields.join(", ")}] ${dateFrom.slice(0, 10)} → ${dateTo.slice(0, 10)}`);
+    return await this.withAuth(storeId, async (client, delay) => {
+      const body = {
+        storeIds: [String(storeId)],
+        olapType: "SALES",
+        categoryFields: [],
+        groupFields,
+        stackByDataFields: false,
+        dataFields: ["Sales", "UniqOrderId.OrdersCount", "RevenueWithoutDiscount"],
+        calculatedFields: [
+          {
+            name: "Sales",
+            title: "Sales",
+            description: "Net sales",
+            formula: "[DishDiscountSumInt.withoutVAT]",
+            type: "MONEY",
+            canSum: false,
+          },
+          {
+            name: "UniqOrderId.OrdersCount",
+            title: "Orders Count",
+            description: "Number of unique orders",
+            formula: "[UniqOrderId.OrdersCount]",
+            type: "NUMERIC",
+            canSum: true,
+          },
+          {
+            name: "RevenueWithoutDiscount",
+            title: "Revenue Before Discount",
+            description: "Gross revenue before discount",
+            formula: "[DishSumInt]",
+            type: "MONEY",
+            canSum: true,
+          },
+        ],
+        filters: [
+          {
+            field: "OpenDate.Typed",
+            filterType: "date_range",
+            dateFrom,
+            dateTo,
+            valueMin: null,
+            valueMax: null,
+            valueList: [],
+            includeLeft: true,
+            includeRight: false,
+            inclusiveList: true,
+          },
+        ],
+        includeVoidTransactions: false,
+        includeNonBusinessPaymentTypes: false,
+      };
 
-    await client.post("/api/auth/login", { login: this.username, password: this.password });
-    const selectResponse = await client.post(`/api/stores/select/${storeId}`);
+      const result = await this.pollOlap(client, delay, body, {
+        maxAttempts: this.maxAttempts,
+        fetchTimeoutMs: this.timeout,
+        logEvery: 20,
+      });
 
-    if (selectResponse.data?.error) {
-      throw new Error(selectResponse.data?.errorMessage || `IIKO отказал в доступе к store ${storeId}`);
-    }
+      const rows = this.parseResultRows(result, (group, values) => ({
+        ...group,
+        Sales: parseFloat(values[0]) || 0,
+        "UniqOrderId.OrdersCount": parseInt(values[1]) || 0,
+        RevenueWithoutDiscount: parseFloat(values[2]) || 0,
+      }));
 
-    const body = {
-      storeIds: [String(storeId)],
-      olapType: "SALES",
-      categoryFields: [],
-      groupFields,
-      stackByDataFields: false,
-      dataFields: ["Sales", "UniqOrderId.OrdersCount", "RevenueWithoutDiscount"],
-      calculatedFields: [
-        {
-          name: "Sales",
-          title: "Sales",
-          description: "Net sales",
-          formula: "[DishDiscountSumInt.withoutVAT]",
-          type: "MONEY",
-          canSum: false,
-        },
-        {
-          name: "UniqOrderId.OrdersCount",
-          title: "Orders Count",
-          description: "Number of unique orders",
-          formula: "[UniqOrderId.OrdersCount]",
-          type: "NUMERIC",
-          canSum: true,
-        },
-        {
-          name: "RevenueWithoutDiscount",
-          title: "Revenue Before Discount",
-          description: "Gross revenue before discount",
-          formula: "[DishSumInt]",
-          type: "MONEY",
-          canSum: true,
-        },
-      ],
-      filters: [
-        {
-          field: "OpenDate.Typed",
-          filterType: "date_range",
-          dateFrom,
-          dateTo,
-          valueMin: null,
-          valueMax: null,
-          valueList: [],
-          includeLeft: true,
-          includeRight: false,
-          inclusiveList: true,
-        },
-      ],
-      includeVoidTransactions: false,
-      includeNonBusinessPaymentTypes: false,
-    };
-
-    let initResp;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        initResp = await client.post("/api/olap/init", body);
-        break;
-      } catch (error) {
-        const status = error.response?.status;
-
-        if ([500, 502, 504].includes(status) && attempt < 2) {
-          console.warn("⚠️ Revenue OLAP init временно недоступен, повтор:", error.response?.data?.detail || error.message);
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        throw error;
-      }
-    }
-
-    const fetchId = initResp.data?.data;
-    if (!fetchId) {
-      throw new Error("Revenue OLAP init не вернул fetchId");
-    }
-
-    let data = null;
-    for (let i = 0; i < this.maxAttempts; i++) {
-      try {
-        const resp = await client.get(`/api/olap/fetch/${fetchId}/sales`);
-        const d = resp.data;
-        if (d && (d.cells || d.result?.rawData)) {
-          data = d;
-          break;
-        }
-      } catch (e) {
-        const status = e.response?.status;
-
-        if (status === 400) {
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        if ([500, 502, 504].includes(status) && i < this.maxAttempts - 1) {
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        throw e;
-      }
-      await delay(this.pollInterval);
-    }
-
-    try {
-      await client.post("/api/auth/logout");
-    } catch (_) {}
-
-    if (!data) {
-      throw new Error(`Revenue OLAP не успел ответить за ${this.maxAttempts} попыток`);
-    }
-
-    const rows = [];
-    if (data.result?.rawData) {
-      rows.push(...data.result.rawData);
-    } else if (data.cells) {
-      for (const [key, values] of Object.entries(data.cells)) {
-        const g = JSON.parse(key);
-        rows.push({
-          ...g,
-          Sales: parseFloat(values[0]) || 0,
-          "UniqOrderId.OrdersCount": parseInt(values[1]) || 0,
-          RevenueWithoutDiscount: parseFloat(values[2]) || 0,
-        });
-      }
-    }
-
-    console.log(`   ✅ OLAP вернул ${rows.length} строк`);
-    return rows;
+      console.log(`   ✅ OLAP вернул ${rows.length} строк`);
+      return rows;
+    });
   }
 
   _calculateLFL(currentRevenue, previousRevenue) {

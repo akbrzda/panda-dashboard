@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const axios = require("axios");
 const { CookieJar } = require("tough-cookie");
 const { wrapper } = require("axios-cookiejar-support");
@@ -8,9 +9,257 @@ class OlapClient {
     this.baseUrl = process.env.IIKO_BASE_URL;
     this.username = process.env.IIKO_USER;
     this.password = process.env.IIKO_PASSWORD;
-    this.timeout = 30000;
+    this.timeout = Number(process.env.IIKO_TIMEOUT || 45000);
     this.pollInterval = 500;
-    this.maxAttempts = 120;
+    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
+    this.maxNetworkRetries = Number(process.env.IIKO_NETWORK_RETRIES || 4);
+    this.maxConcurrentRequests = Number(process.env.IIKO_MAX_CONCURRENT_REQUESTS || 1);
+  }
+
+  async delay(ms) {
+    return await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async runWithConcurrencyLimit(task) {
+    await new Promise((resolve) => {
+      const tryStart = () => {
+        if (OlapClient.activeRequests < this.maxConcurrentRequests) {
+          OlapClient.activeRequests += 1;
+          resolve();
+          return;
+        }
+
+        OlapClient.requestQueue.push(tryStart);
+      };
+
+      tryStart();
+    });
+
+    try {
+      return await task();
+    } finally {
+      OlapClient.activeRequests = Math.max(0, OlapClient.activeRequests - 1);
+      const nextTask = OlapClient.requestQueue.shift();
+
+      if (typeof nextTask === "function") {
+        nextTask();
+      }
+    }
+  }
+
+  isRetriableError(error) {
+    const code = error?.code;
+    const status = error?.response?.status;
+
+    return (
+      ["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "EPIPE", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"].includes(code) ||
+      [429, 500, 502, 503, 504].includes(status)
+    );
+  }
+
+  getRetryDelay(attempt) {
+    return Math.min(1000 * 2 ** attempt, 8000);
+  }
+
+  shouldSuppressRetryLog(context = {}, error) {
+    const code = error?.code;
+    const status = error?.response?.status;
+    return context.stage === "olap-fetch" && (status === 400 || ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET"].includes(code));
+  }
+
+  async withRetry(fn, context = {}, retries = this.maxNetworkRetries) {
+    let lastError;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const startedAt = Date.now();
+
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        const retriable = this.isRetriableError(error);
+        const suppressLog = this.shouldSuppressRetryLog(context, error);
+        const durationMs = Date.now() - startedAt;
+        const delayMs = this.getRetryDelay(attempt);
+        const payload = {
+          stage: context.stage,
+          storeId: context.storeId,
+          fetchId: context.fetchId,
+          attempt: attempt + 1,
+          durationMs,
+          code: error?.code,
+          status: error?.response?.status,
+          message: error?.message,
+        };
+
+        if (!retriable || attempt === retries) {
+          if (!suppressLog) {
+            console.error("❌ IIKO запрос завершился ошибкой:", payload);
+          }
+          throw error;
+        }
+
+        if (!suppressLog) {
+          console.warn("⚠️ IIKO запрос будет повторён:", { ...payload, nextDelayMs: delayMs });
+        }
+        await this.delay(delayMs);
+      }
+    }
+
+    throw lastError;
+  }
+
+  async requestWithRetry(client, config, context = {}, retries = this.maxNetworkRetries) {
+    return await this.withRetry(() => client.request(config), { ...context, method: config.method, url: config.url }, retries);
+  }
+
+  isPendingOlapResponse(response) {
+    return response?.status === 400;
+  }
+
+  createPasswordHash(password) {
+    return crypto
+      .createHash("sha1")
+      .update(String(password || ""))
+      .digest("hex");
+  }
+
+  extractToken(data) {
+    if (typeof data === "string") {
+      const normalized = data.trim().replace(/^"+|"+$/g, "");
+      return normalized || null;
+    }
+
+    if (typeof data === "object" && data !== null) {
+      return data.key || data.token || data.data || null;
+    }
+
+    return null;
+  }
+
+  shouldFallbackToLegacy(error) {
+    const status = error?.response?.status;
+    const message = String(error?.response?.data?.message || error?.response?.data?.errorDescription || error?.message || "").toLowerCase();
+
+    return (
+      [400, 401, 403, 404, 405, 415, 422, 500, 501].includes(status) ||
+      message.includes("/resto/api") ||
+      message.includes("not found") ||
+      message.includes("cannot")
+    );
+  }
+
+  extractOlapFieldName(value) {
+    const source = String(value || "").trim();
+    const match = source.match(/^\[([^\]]+)\]$/);
+    return match?.[1] || source || null;
+  }
+
+  normalizeServerFilter(filter = {}) {
+    const filterType = String(filter.filterType || "").toLowerCase();
+
+    if (filterType === "date_range") {
+      return {
+        filterType: "DateRange",
+        periodType: "CUSTOM",
+        from: filter.dateFrom || filter.from,
+        to: filter.dateTo || filter.to,
+        includeLow: filter.includeLeft ?? filter.includeLow ?? true,
+        includeHigh: filter.includeRight ?? filter.includeHigh ?? false,
+      };
+    }
+
+    if (filterType === "range") {
+      return {
+        filterType: "Range",
+        from: filter.valueMin ?? filter.from ?? null,
+        to: filter.valueMax ?? filter.to ?? null,
+        includeLow: filter.includeLeft ?? filter.includeLow ?? true,
+        includeHigh: filter.includeRight ?? filter.includeHigh ?? false,
+      };
+    }
+
+    if (filterType === "include_values" || filterType === "exclude_values") {
+      return {
+        filterType: filterType === "include_values" ? "IncludeValues" : "ExcludeValues",
+        values: Array.isArray(filter.valueList) ? filter.valueList : Array.isArray(filter.values) ? filter.values : [],
+      };
+    }
+
+    return filter;
+  }
+
+  normalizeFilters(filters) {
+    if (!filters) {
+      return {};
+    }
+
+    if (!Array.isArray(filters)) {
+      return filters;
+    }
+
+    return filters.reduce((accumulator, filter) => {
+      if (filter?.field) {
+        accumulator[filter.field] = this.normalizeServerFilter(filter);
+      }
+      return accumulator;
+    }, {});
+  }
+
+  buildServerReportBody(body = {}) {
+    const calculatedFields = Array.isArray(body.calculatedFields) ? body.calculatedFields : [];
+    const dataFields = Array.isArray(body.dataFields) ? body.dataFields : [];
+    const aggregateFields = Array.isArray(body.aggregateFields)
+      ? body.aggregateFields
+      : dataFields
+          .map((fieldName) => {
+            const calculatedField = calculatedFields.find((item) => item?.name === fieldName);
+            return this.extractOlapFieldName(calculatedField?.formula || fieldName);
+          })
+          .filter(Boolean);
+
+    return {
+      reportType: body.reportType || body.olapType || "SALES",
+      buildSummary: body.buildSummary ?? true,
+      groupByRowFields: Array.isArray(body.groupByRowFields) ? body.groupByRowFields : Array.isArray(body.groupFields) ? body.groupFields : [],
+      groupByColFields: Array.isArray(body.groupByColFields) ? body.groupByColFields : [],
+      aggregateFields,
+      filters: this.normalizeFilters(body.filters),
+    };
+  }
+
+  normalizeServerRows(result, body = {}) {
+    if (!Array.isArray(result?.data)) {
+      return result;
+    }
+
+    const aliasMap = new Map();
+    for (const field of body.calculatedFields || []) {
+      const actualFieldName = this.extractOlapFieldName(field?.formula || field?.name);
+      if (actualFieldName && field?.name) {
+        aliasMap.set(actualFieldName, field.name);
+      }
+    }
+
+    if (aliasMap.size === 0) {
+      return result;
+    }
+
+    return {
+      ...result,
+      data: result.data.map((row) => {
+        const normalizedRow = { ...row };
+
+        for (const [actualFieldName, alias] of aliasMap.entries()) {
+          if (normalizedRow[alias] === undefined && row?.[actualFieldName] !== undefined) {
+            normalizedRow[alias] = row[actualFieldName];
+          }
+        }
+
+        return normalizedRow;
+      }),
+    };
   }
 
   async resolveStoreId(organizationId) {
@@ -54,70 +303,209 @@ class OlapClient {
       axios.create({
         baseURL: this.baseUrl,
         timeout: this.timeout,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Connection: "close",
+        },
         jar,
         withCredentials: true,
       }),
     );
   }
 
-  async withAuth(storeId, fn) {
-    const client = this.createClient();
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  async authenticateWithServerApi(client, storeId) {
+    const response = await this.requestWithRetry(
+      client,
+      {
+        method: "post",
+        url: "/resto/api/auth",
+        params: {
+          login: this.username,
+          pass: this.createPasswordHash(this.password),
+        },
+        timeout: Math.min(this.timeout, 15000),
+        responseType: "text",
+        transformResponse: [(data) => data],
+      },
+      { stage: "auth-server", storeId },
+    );
 
-    await client.post("/api/auth/login", { login: this.username, password: this.password });
-    const selectResponse = await client.post(`/api/stores/select/${storeId}`);
+    const key = this.extractToken(response.data);
+    if (!key) {
+      throw new Error("iikoServer не вернул токен авторизации");
+    }
+
+    if (storeId) {
+      try {
+        await client.post(`/api/stores/select/${storeId}`);
+      } catch (_) {}
+    }
+
+    return { mode: "server-v2", key };
+  }
+
+  async authenticateLegacyApi(client, storeId) {
+    await this.requestWithRetry(
+      client,
+      {
+        method: "post",
+        url: "/api/auth/login",
+        data: { login: this.username, password: this.password },
+      },
+      { stage: "auth-login", storeId },
+    );
+
+    const selectResponse = await this.requestWithRetry(
+      client,
+      {
+        method: "post",
+        url: `/api/stores/select/${storeId}`,
+      },
+      { stage: "auth-select-store", storeId },
+    );
 
     if (selectResponse.data?.error) {
       throw new Error(selectResponse.data?.errorMessage || `IIKO отказал в доступе к store ${storeId}`);
     }
 
-    const result = await fn(client, delay);
-
-    try {
-      await client.post("/api/auth/logout");
-    } catch (_) {}
-
-    return result;
+    return { mode: "legacy", key: null };
   }
 
-  async pollOlap(client, delay, body) {
-    let initResp;
+  async logout(client) {
+    const session = client.__iikoSession || {};
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        initResp = await client.post("/api/olap/init", body);
-        break;
-      } catch (error) {
-        const status = error.response?.status;
-        if ([500, 502, 504].includes(status) && attempt < 2) {
-          console.warn("⚠️ OLAP init временно недоступен, повтор:", error.response?.data?.detail || error.message);
-          await delay(this.pollInterval);
-          continue;
-        }
-        throw error;
+    try {
+      if (session.mode === "server-v2") {
+        await client.post("/resto/api/logout", null, {
+          params: session.key ? { key: session.key } : undefined,
+          responseType: "text",
+          transformResponse: [(data) => data],
+        });
+        return;
       }
-    }
+
+      await client.post("/api/auth/logout");
+    } catch (_) {}
+  }
+
+  async withAuth(storeId, fn) {
+    return await this.runWithConcurrencyLimit(async () => {
+      const client = this.createClient();
+      let session = null;
+
+      try {
+        try {
+          session = await this.authenticateWithServerApi(client, storeId);
+        } catch (error) {
+          if (!this.shouldFallbackToLegacy(error)) {
+            throw error;
+          }
+
+          console.warn("⚠️ iikoServer v2 недоступен, используется совместимый режим:", {
+            storeId,
+            message: error?.message,
+          });
+
+          session = await this.authenticateLegacyApi(client, storeId);
+        }
+
+        client.__iikoSession = { ...session, storeId };
+        return await fn(client, this.delay.bind(this));
+      } finally {
+        await this.logout(client);
+      }
+    });
+  }
+
+  async executeServerOlap(client, body, options = {}) {
+    const session = client.__iikoSession || {};
+    const serverBody = this.buildServerReportBody(body);
+    const response = await this.requestWithRetry(
+      client,
+      {
+        method: "post",
+        url: "/resto/api/v2/reports/olap",
+        params: session.key ? { key: session.key } : undefined,
+        data: serverBody,
+        timeout: Math.max(this.timeout, Number(options.fetchTimeoutMs || 0)),
+      },
+      { stage: "olap-v2", storeId: session.storeId },
+    );
+
+    return this.normalizeServerRows(response.data, body);
+  }
+
+  async executeLegacyOlap(client, delay, body, options = {}) {
+    const storeId = body?.storeIds?.[0];
+    const maxAttempts = Number(options.maxAttempts || this.maxAttempts);
+    const fetchTimeoutMs = Number(options.fetchTimeoutMs || Math.min(this.timeout, 5000));
+    const logEvery = Number(options.logEvery || 20);
+
+    const initResp = await this.requestWithRetry(
+      client,
+      {
+        method: "post",
+        url: "/api/olap/init",
+        data: body,
+        timeout: Math.min(this.timeout, 10000),
+      },
+      { stage: "olap-init", storeId },
+    );
 
     const fetchId = initResp.data?.data;
     if (!fetchId) {
       throw new Error("OLAP init не вернул fetchId");
     }
 
-    for (let i = 0; i < this.maxAttempts; i++) {
+    for (let i = 0; i < maxAttempts; i++) {
       try {
-        const resp = await client.get(`/api/olap/fetch/${fetchId}/sales`);
-        const data = resp.data;
-        if (data && (data.cells || data.result?.rawData)) return data;
-      } catch (error) {
-        const status = error.response?.status;
+        const resp = await this.requestWithRetry(
+          client,
+          {
+            method: "get",
+            url: `/api/olap/fetch/${fetchId}/sales`,
+            timeout: fetchTimeoutMs,
+            validateStatus: (status) => (status >= 200 && status < 300) || status === 400,
+          },
+          { stage: "olap-fetch", storeId, fetchId, pollAttempt: i + 1 },
+          0,
+        );
 
-        if (status === 400) {
+        if (this.isPendingOlapResponse(resp)) {
+          if ((i + 1) % logEvery === 0) {
+            console.log(`⏳ OLAP ещё формируется: store ${storeId}, fetch ${fetchId}, попытка ${i + 1}`);
+          }
+
           await delay(this.pollInterval);
           continue;
         }
 
-        if ([500, 502, 504].includes(status) && i < this.maxAttempts - 1) {
+        const data = resp.data;
+        if (data && (data.cells || data.result?.rawData || Array.isArray(data?.data))) {
+          return data;
+        }
+      } catch (error) {
+        const status = error.response?.status;
+        const code = error?.code;
+        const isExpectedPending = status === 400 || ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET"].includes(code);
+
+        if (isExpectedPending && i < maxAttempts - 1) {
+          if ((i + 1) % logEvery === 0) {
+            console.log(`⏳ OLAP ещё формируется: store ${storeId}, fetch ${fetchId}, попытка ${i + 1}`);
+          }
+          await delay(this.pollInterval);
+          continue;
+        }
+
+        if (this.isRetriableError(error) && i < maxAttempts - 1) {
+          console.warn("⚠️ OLAP fetch временно недоступен:", {
+            storeId,
+            fetchId,
+            attempt: i + 1,
+            code,
+            status,
+            message: error?.message,
+          });
           await delay(this.pollInterval);
           continue;
         }
@@ -128,11 +516,37 @@ class OlapClient {
       await delay(this.pollInterval);
     }
 
-    throw new Error(`OLAP не успел ответить за ${this.maxAttempts} попыток`);
+    throw new Error(`OLAP не успел ответить за ${maxAttempts} попыток`);
+  }
+
+  async pollOlap(client, delay, body, options = {}) {
+    const session = client.__iikoSession || {};
+
+    if (session.mode === "server-v2") {
+      try {
+        return await this.executeServerOlap(client, body, options);
+      } catch (error) {
+        if (!this.shouldFallbackToLegacy(error)) {
+          throw error;
+        }
+
+        console.warn("⚠️ OLAP v2 недоступен, выполняется совместимый запрос:", {
+          storeId: session.storeId,
+          message: error?.message,
+        });
+
+        const fallbackSession = await this.authenticateLegacyApi(client, session.storeId);
+        client.__iikoSession = { ...session, ...fallbackSession };
+      }
+    }
+
+    return await this.executeLegacyOlap(client, delay, body, options);
   }
 
   parseResultRows(result, cellsMapper) {
     if (!result) return [];
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result.data)) return result.data;
     if (result.result?.rawData) return result.result.rawData;
 
     if (result.cells) {
@@ -145,5 +559,8 @@ class OlapClient {
     return [];
   }
 }
+
+OlapClient.activeRequests = 0;
+OlapClient.requestQueue = [];
 
 module.exports = OlapClient;
