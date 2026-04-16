@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
     <!-- Выбор организации -->
-    <div class="flex flex-col gap-1.5 min-w-[200px]">
+    <div v-if="showOrganization" class="flex flex-col gap-1.5 min-w-[200px]">
       <label class="text-xs font-medium text-muted-foreground">Организация</label>
       <Select v-model="currentOrgId" :disabled="revenueStore.organizations.length === 0 || loading" placeholder="Выберите подразделение">
         <SelectItem v-for="org in revenueStore.organizations" :key="org.id" :value="org.id">
@@ -25,7 +25,7 @@
     <!-- Кнопка применить -->
     <button
       @click="handleApplyClick"
-      :disabled="loading || !revenueStore.currentOrganizationId"
+      :disabled="isApplyDisabled"
       class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
     >
       {{ loading ? "Загрузка..." : "Применить" }}
@@ -47,14 +47,18 @@ import PeriodSelector from "@/components/filters/PeriodSelector.vue";
 import { useRevenueStore } from "@/stores/revenue";
 import { useFiltersStore } from "@/stores/filters";
 
-defineProps({
+const props = defineProps({
   loading: { type: Boolean, default: false },
+  requireOrganization: { type: Boolean, default: true },
+  showOrganization: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["apply"]);
 
 const revenueStore = useRevenueStore();
 const filtersStore = useFiltersStore();
+
+const isApplyDisabled = computed(() => props.loading || (props.requireOrganization && !revenueStore.currentOrganizationId));
 
 function handleApplyClick() {
   emit("apply", {

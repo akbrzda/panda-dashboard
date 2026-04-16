@@ -3,7 +3,7 @@
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Топ блюд</h1>
-      <PageFilters :loading="analyticsStore.isLoadingTopDishes" @apply="handleApply" />
+      <PageFilters :loading="topDishesStore.isLoadingTopDishes" @apply="handleApply" />
     </div>
 
     <!-- Ошибка -->
@@ -14,25 +14,25 @@
 
     <!-- Пустое состояние -->
     <div
-      v-if="!analyticsStore.isLoadingTopDishes && !analyticsStore.topDishes && !error"
+      v-if="!topDishesStore.isLoadingTopDishes && !topDishesStore.topDishes && !error"
       class="flex flex-col items-center justify-center py-16 text-center"
     >
       <UtensilsCrossed class="w-12 h-12 text-muted-foreground/40 mb-4" />
       <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
     </div>
 
-    <template v-if="analyticsStore.topDishes || analyticsStore.isLoadingTopDishes">
+    <template v-if="topDishesStore.topDishes || topDishesStore.isLoadingTopDishes">
       <!-- Итоги -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" v-if="analyticsStore.topDishes && !analyticsStore.isLoadingTopDishes">
-        <MetricCard title="Блюд в меню" :value="analyticsStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
+        <MetricCard title="Блюд в меню" :value="topDishesStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
         <MetricCard
           title="Выручка (блюда)"
-          :value="analyticsStore.topDishes.totalRevenue ?? null"
+          :value="topDishesStore.topDishes.totalRevenue ?? null"
           format="currency"
           icon="TrendingUp"
           :loading="false"
         />
-        <MetricCard title="Порций продано" :value="analyticsStore.topDishes.totalQty ?? null" format="number" icon="ShoppingCart" :loading="false" />
+        <MetricCard title="Порций продано" :value="topDishesStore.topDishes.totalQty ?? null" format="number" icon="ShoppingCart" :loading="false" />
       </div>
 
       <!-- Переключатель -->
@@ -69,7 +69,7 @@
       </div>
 
       <!-- Скелетон -->
-      <div v-if="analyticsStore.isLoadingTopDishes" class="space-y-2">
+      <div v-if="topDishesStore.isLoadingTopDishes" class="space-y-2">
         <div v-for="i in 10" :key="i" class="h-12 rounded-lg bg-muted animate-pulse" />
       </div>
 
@@ -153,7 +153,7 @@
 <script setup>
 import { ref, computed } from "vue";
 import { AlertCircle, Search, UtensilsCrossed } from "lucide-vue-next";
-import { useAnalyticsStore } from "../stores/analytics";
+import { useTopDishesStore } from "../stores/topDishes";
 import { useFiltersStore } from "../stores/filters";
 import PageFilters from "../components/filters/PageFilters.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
@@ -170,7 +170,7 @@ const SortIcon = {
   `,
 };
 
-const analyticsStore = useAnalyticsStore();
+const topDishesStore = useTopDishesStore();
 const filtersStore = useFiltersStore();
 
 const view = ref("top");
@@ -189,7 +189,7 @@ async function handleApply(payload = {}) {
   filtersStore.setDateRange(dateFrom, dateTo);
 
   try {
-    await analyticsStore.loadTopDishes({ organizationId, dateFrom, dateTo, limit: limit.value });
+    await topDishesStore.loadTopDishes({ organizationId, dateFrom, dateTo, limit: limit.value });
   } catch (e) {
     error.value = e.message || "Ошибка загрузки";
   }
@@ -204,8 +204,8 @@ function toggleSort(field) {
 }
 
 const currentList = computed(() => {
-  if (!analyticsStore.topDishes) return [];
-  return view.value === "top" ? analyticsStore.topDishes.top : analyticsStore.topDishes.outsiders;
+  if (!topDishesStore.topDishes) return [];
+  return view.value === "top" ? topDishesStore.topDishes.top : topDishesStore.topDishes.outsiders;
 });
 
 const filteredRows = computed(() => {

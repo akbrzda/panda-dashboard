@@ -1,9 +1,8 @@
-const organizationsService = require("../../organizations/service");
-const revenueService = require("../../revenue/service");
-const metricsService = require("./metricsService");
+const organizationsService = require("../organizations/service");
+const revenueService = require("../revenue/service");
 
 class DashboardService {
-  async withTimeout(promise, timeoutMs = 35000) {
+  async withTimeout(promise, timeoutMs = 45000) {
     return await Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs))]);
   }
 
@@ -25,7 +24,7 @@ class DashboardService {
 
     const orgResults = await Promise.allSettled(
       targetOrgs.map(async (org) => {
-        const report = await this.withTimeout(revenueService.getRevenueReport(org.id, dayIso, dayIso), 12000);
+        const report = await this.withTimeout(revenueService.getRevenueReport(org.id, dayIso, dayIso), 30000);
 
         if (!report) {
           throw new Error("IIKO временно не ответил");
@@ -44,9 +43,6 @@ class DashboardService {
     let totalRevenueBeforeDiscount = 0;
     const channelMap = {};
     const byOrganization = [];
-    let hourlyTotals = Array.from({ length: 24 }, (_, hour) => ({ hour, revenue: 0, orders: 0 }));
-    let topDishes = [];
-    let outsiders = [];
 
     for (let i = 0; i < targetOrgs.length; i++) {
       const org = targetOrgs[i];
@@ -89,23 +85,6 @@ class DashboardService {
       data.avgCheck = data.orders > 0 ? data.revenue / data.orders : 0;
     }
 
-    if (targetOrgs.length === 1) {
-      const orgId = targetOrgs[0].id;
-      const [hourlyResult, dishesResult] = await Promise.allSettled([
-        this.withTimeout(metricsService.getHourlySales({ organizationId: orgId, dateFrom: dayIso, dateTo: dayIso }), 7000),
-        this.withTimeout(metricsService.getTopDishes({ organizationId: orgId, dateFrom: dayIso, dateTo: dayIso, limit: 10 }), 7000),
-      ]);
-
-      if (hourlyResult.status === "fulfilled") {
-        hourlyTotals = hourlyResult.value?.hours || hourlyTotals;
-      }
-
-      if (dishesResult.status === "fulfilled") {
-        topDishes = dishesResult.value?.top || [];
-        outsiders = dishesResult.value?.outsiders || [];
-      }
-    }
-
     const discountSum = Math.max(0, totalRevenueBeforeDiscount - totalRevenue);
     const discountPercent = totalRevenueBeforeDiscount > 0 ? Math.round((discountSum / totalRevenueBeforeDiscount) * 10000) / 100 : 0;
 
@@ -120,9 +99,6 @@ class DashboardService {
       },
       revenueByChannel: channelMap,
       byOrganization,
-      hourly: hourlyTotals,
-      topDishes,
-      outsiders,
     };
   }
 }

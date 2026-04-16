@@ -1,16 +1,16 @@
 const axios = require("axios");
 const { CookieJar } = require("tough-cookie");
 const { wrapper } = require("axios-cookiejar-support");
-const organizationsService = require("../../organizations/service");
+const organizationsService = require("../organizations/service");
 
 class OlapClient {
   constructor() {
     this.baseUrl = process.env.IIKO_BASE_URL;
     this.username = process.env.IIKO_USER;
     this.password = process.env.IIKO_PASSWORD;
-    this.timeout = 15000;
-    this.pollInterval = 400;
-    this.maxAttempts = 20;
+    this.timeout = 30000;
+    this.pollInterval = 500;
+    this.maxAttempts = 120;
   }
 
   async resolveStoreId(organizationId) {
@@ -19,10 +19,26 @@ class OlapClient {
     const organization =
       typeof organizationId === "object" && organizationId !== null
         ? organizationId
-        : organizations.find((item) => String(item.id) === normalizedId || String(item.storeId) === normalizedId);
+        : organizations.find(
+            (item) =>
+              String(item.id) === normalizedId ||
+              String(item.storeId) === normalizedId ||
+              String(item.iikoId) === normalizedId ||
+              String(item.restaurantId) === normalizedId ||
+              String(item.code) === normalizedId,
+          );
 
     if (organization?.storeId) {
       return String(organization.storeId);
+    }
+
+    const fallbackCandidates = [organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
+
+    for (const candidate of fallbackCandidates) {
+      const normalizedCandidate = String(candidate || "").trim();
+      if (/^\d+$/.test(normalizedCandidate)) {
+        return normalizedCandidate;
+      }
     }
 
     if (/^\d+$/.test(normalizedId)) {
@@ -68,21 +84,25 @@ class OlapClient {
   async pollOlap(client, delay, body) {
     let initResp;
 
-    try {
-      initResp = await client.post("/api/olap/init", body);
-    } catch (error) {
-      const status = error.response?.status;
-
-      if ([500, 502, 504].includes(status)) {
-        console.warn("⚠️ OLAP init временно недоступен:", error.response?.data?.detail || error.message);
-        return null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        initResp = await client.post("/api/olap/init", body);
+        break;
+      } catch (error) {
+        const status = error.response?.status;
+        if ([500, 502, 504].includes(status) && attempt < 2) {
+          console.warn("⚠️ OLAP init временно недоступен, повтор:", error.response?.data?.detail || error.message);
+          await delay(this.pollInterval);
+          continue;
+        }
+        throw error;
       }
-
-      throw error;
     }
 
     const fetchId = initResp.data?.data;
-    if (!fetchId) return null;
+    if (!fetchId) {
+      throw new Error("OLAP init не вернул fetchId");
+    }
 
     for (let i = 0; i < this.maxAttempts; i++) {
       try {
@@ -97,9 +117,9 @@ class OlapClient {
           continue;
         }
 
-        if ([500, 502, 504].includes(status)) {
-          console.warn("⚠️ OLAP fetch временно недоступен:", error.response?.data?.detail || error.message);
-          return null;
+        if ([500, 502, 504].includes(status) && i < this.maxAttempts - 1) {
+          await delay(this.pollInterval);
+          continue;
         }
 
         throw error;
@@ -108,8 +128,7 @@ class OlapClient {
       await delay(this.pollInterval);
     }
 
-    console.warn("⚠️ OLAP не успел ответить, возвращаю пустой результат");
-    return null;
+    throw new Error(`OLAP не успел ответить за ${this.maxAttempts} попыток`);
   }
 
   parseResultRows(result, cellsMapper) {

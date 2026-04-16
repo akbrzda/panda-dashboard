@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Фудкост</h1>
-      <PageFilters :loading="analyticsStore.isLoadingFoodcost" @apply="handleApply" />
+      <PageFilters :loading="foodcostStore.isLoadingFoodcost" @apply="handleApply" />
     </div>
 
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -10,12 +10,12 @@
       <span>{{ error }}</span>
     </div>
 
-    <div v-if="!analyticsStore.isLoadingFoodcost && !data && !error" class="flex flex-col items-center justify-center py-16 text-center">
+    <div v-if="!foodcostStore.isLoadingFoodcost && !data && !error" class="flex flex-col items-center justify-center py-16 text-center">
       <Percent class="w-12 h-12 text-muted-foreground/40 mb-4" />
       <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
     </div>
 
-    <template v-if="data || analyticsStore.isLoadingFoodcost">
+    <template v-if="data || foodcostStore.isLoadingFoodcost">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
           title="Фудкост"
@@ -24,16 +24,16 @@
           icon="Percent"
           :inverse="true"
           :lfl="data?.lfl != null ? { percent: data.lfl } : null"
-          :loading="analyticsStore.isLoadingFoodcost"
+          :loading="foodcostStore.isLoadingFoodcost"
         />
         <MetricCard
           title="Себестоимость"
           :value="data?.costSum ?? null"
           format="currency"
           icon="DollarSign"
-          :loading="analyticsStore.isLoadingFoodcost"
+          :loading="foodcostStore.isLoadingFoodcost"
         />
-        <MetricCard title="Выручка" :value="data?.revenue ?? null" format="currency" icon="TrendingUp" :loading="analyticsStore.isLoadingFoodcost" />
+        <MetricCard title="Выручка" :value="data?.revenue ?? null" format="currency" icon="TrendingUp" :loading="foodcostStore.isLoadingFoodcost" />
       </div>
 
       <Card class="p-5 space-y-4">
@@ -57,7 +57,7 @@
           <h2 class="text-sm font-semibold text-foreground">Категории по фудкосту</h2>
         </div>
 
-        <div v-if="analyticsStore.isLoadingFoodcost" class="p-4 space-y-2">
+        <div v-if="foodcostStore.isLoadingFoodcost" class="p-4 space-y-2">
           <div v-for="i in 6" :key="i" class="h-10 rounded bg-muted animate-pulse" />
         </div>
 
@@ -93,15 +93,15 @@ import PageFilters from "@/components/filters/PageFilters.vue";
 import MetricCard from "@/components/metrics/MetricCard.vue";
 import Card from "@/components/ui/Card.vue";
 import { useRevenueStore } from "@/stores/revenue";
-import { useAnalyticsStore } from "@/stores/analytics";
+import { useFoodcostStore } from "@/stores/foodcost";
 import { useFiltersStore } from "@/stores/filters";
 
 const revenueStore = useRevenueStore();
-const analyticsStore = useAnalyticsStore();
+const foodcostStore = useFoodcostStore();
 const filtersStore = useFiltersStore();
 const error = ref(null);
 
-const data = computed(() => analyticsStore.foodcostData);
+const data = computed(() => foodcostStore.foodcostData);
 
 const statusLabel = computed(() => {
   switch (data.value?.status) {
@@ -161,7 +161,7 @@ async function handleApply(payload = {}) {
 
   error.value = null;
   try {
-    await analyticsStore.loadFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+    await foodcostStore.loadFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
   } catch (e) {
     error.value = e.message || "Ошибка загрузки фудкоста";
   }

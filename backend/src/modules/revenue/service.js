@@ -2,15 +2,18 @@ const axios = require("axios");
 const { CookieJar } = require("tough-cookie");
 const { wrapper } = require("axios-cookiejar-support");
 const organizationsService = require("../organizations/service");
+const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class RevenueService {
   constructor() {
     this.baseUrl = process.env.IIKO_BASE_URL;
     this.username = process.env.IIKO_USER;
     this.password = process.env.IIKO_PASSWORD;
-    this.timeout = 30000;
-    this.pollInterval = 500;
-    this.maxAttempts = 60;
+    this.timeout = Number(process.env.IIKO_OLAP_TIMEOUT_MS || 30000);
+    this.pollInterval = Number(process.env.IIKO_OLAP_POLL_INTERVAL_MS || 500);
+    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
+    this.cacheTtlMs = Number(process.env.IIKO_REVENUE_CACHE_TTL_MS || 120000);
+    this.reportCache = new Map();
 
     console.log(`📊 RevenueService initialized with baseUrl: ${this.baseUrl}`);
   }
@@ -21,10 +24,26 @@ class RevenueService {
     const organization =
       typeof organizationId === "object" && organizationId !== null
         ? organizationId
-        : organizations.find((org) => String(org.id) === normalizedId || String(org.storeId) === normalizedId);
+        : organizations.find(
+            (org) =>
+              String(org.id) === normalizedId ||
+              String(org.storeId) === normalizedId ||
+              String(org.iikoId) === normalizedId ||
+              String(org.restaurantId) === normalizedId ||
+              String(org.code) === normalizedId,
+          );
 
     if (organization?.storeId) {
       return String(organization.storeId);
+    }
+
+    const fallbackCandidates = [organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
+
+    for (const candidate of fallbackCandidates) {
+      const normalizedCandidate = String(candidate || "").trim();
+      if (/^\d+$/.test(normalizedCandidate)) {
+        return normalizedCandidate;
+      }
     }
 
     if (/^\d+$/.test(normalizedId)) {
@@ -74,21 +93,33 @@ class RevenueService {
     const start = startDate instanceof Date ? startDate : new Date(startDate);
     const end = endDate instanceof Date ? endDate : new Date(endDate);
     const storeId = await this._resolveStoreId(organizationId);
+    const startDateStr = start.toISOString().split("T")[0];
+    const endDateStr = end.toISOString().split("T")[0];
+    const cacheKey = `${storeId}:${startDateStr}:${endDateStr}`;
+    const cacheEntry = this.reportCache.get(cacheKey);
 
-    console.log(
-      `📊 [${new Date().toISOString()}] Fetching revenue report for org ${organizationId}, ${start.toISOString().split("T")[0]} → ${end.toISOString().split("T")[0]}`,
-    );
+    if (cacheEntry && cacheEntry.expiresAt > Date.now()) {
+      console.log(`⚡ Revenue cache hit ${startDateStr} → ${endDateStr} (store ${storeId})`);
+      return cacheEntry.data;
+    }
 
-    const pad = (n) => String(n).padStart(2, "0");
-    const now = new Date();
-    const isEndToday = end.toDateString() === now.toDateString();
+    console.log(`📊 [${new Date().toISOString()}] Fetching revenue report for org ${organizationId}, ${startDateStr} → ${endDateStr}`);
 
-    const startIso = `${start.getUTCFullYear()}-${pad(start.getUTCMonth() + 1)}-${pad(start.getUTCDate())}T00:00:00Z`;
-    const endIso = isEndToday
-      ? `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}T${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:59Z`
-      : `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}T23:59:59Z`;
+    const { startIso, endIso } = buildOlapBounds(toMoscowDateStr(start), toMoscowDateStr(end));
+    const isSingleDay = startDateStr === endDateStr;
+    const primaryGroupFields = isSingleDay ? ["OrderType"] : ["OpenDate.Date", "OrderType"];
 
-    const rows = await this._fetchOlapSales(storeId, startIso, endIso, ["OpenDate.Date", "OrderType"]);
+    let rows = [];
+    try {
+      rows = await this._fetchOlapSales(storeId, startIso, endIso, primaryGroupFields);
+    } catch (error) {
+      if (primaryGroupFields.length > 1) {
+        console.warn("⚠️ Revenue OLAP fallback на упрощенную группировку:", error.message);
+        rows = await this._fetchOlapSales(storeId, startIso, endIso, ["OrderType"]);
+      } else {
+        throw error;
+      }
+    }
 
     const byDate = {};
     const revenueByChannelRaw = {};
@@ -98,7 +129,11 @@ class RevenueService {
     let totalRevenueBeforeDiscount = 0;
 
     for (const row of rows) {
-      const date = row["OpenDate.Date"] || (row["OpenDate.Typed"] ? String(row["OpenDate.Typed"]).slice(0, 10) : null) || row.Date || "";
+      const date =
+        row["OpenDate.Date"] ||
+        (row["OpenDate.Typed"] ? String(row["OpenDate.Typed"]).slice(0, 10) : null) ||
+        row.Date ||
+        (isSingleDay ? startDateStr : "");
       const orderType = row.OrderType || "Unknown";
       const sales = Number(row.Sales) || 0;
       const orders = Number(row["UniqOrderId.OrdersCount"]) || 0;
@@ -124,6 +159,10 @@ class RevenueService {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, d]) => ({ date, revenue: d.revenue, orders: d.orders }));
 
+    if (dailyBreakdown.length === 0 && isSingleDay) {
+      dailyBreakdown.push({ date: startDateStr, revenue: totalRevenue, orders: totalOrders });
+    }
+
     const normalizedChannels = this._normalizeRevenueChannels(revenueByChannelRaw);
     const normalizedOrders = this._normalizeOrdersByChannel(ordersByChannelRaw);
     const sortedChannels = this._sortChannels(normalizedChannels);
@@ -138,11 +177,11 @@ class RevenueService {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`✅ Отчёт за ${days} дн. завершён за ${duration}с — выручка: ${totalRevenue.toFixed(2)} ₽ (${rows.length} строк)`);
 
-    return {
+    const report = {
       organizationId,
       period: {
-        startDate: start.toISOString().split("T")[0],
-        endDate: end.toISOString().split("T")[0],
+        startDate: startDateStr,
+        endDate: endDateStr,
         days,
       },
       summary: {
@@ -159,6 +198,13 @@ class RevenueService {
       revenueByChannel,
       dailyBreakdown,
     };
+
+    this.reportCache.set(cacheKey, {
+      data: report,
+      expiresAt: Date.now() + this.cacheTtlMs,
+    });
+
+    return report;
   }
 
   async getDailyRevenue(organizationId, date) {
@@ -240,21 +286,27 @@ class RevenueService {
 
     let initResp;
 
-    try {
-      initResp = await client.post("/api/olap/init", body);
-    } catch (error) {
-      const status = error.response?.status;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        initResp = await client.post("/api/olap/init", body);
+        break;
+      } catch (error) {
+        const status = error.response?.status;
 
-      if ([500, 502, 504].includes(status)) {
-        console.warn("⚠️ Revenue OLAP init временно недоступен:", error.response?.data?.detail || error.message);
-        return [];
+        if ([500, 502, 504].includes(status) && attempt < 2) {
+          console.warn("⚠️ Revenue OLAP init временно недоступен, повтор:", error.response?.data?.detail || error.message);
+          await delay(this.pollInterval);
+          continue;
+        }
+
+        throw error;
       }
-
-      throw error;
     }
 
     const fetchId = initResp.data?.data;
-    if (!fetchId) return [];
+    if (!fetchId) {
+      throw new Error("Revenue OLAP init не вернул fetchId");
+    }
 
     let data = null;
     for (let i = 0; i < this.maxAttempts; i++) {
@@ -273,9 +325,9 @@ class RevenueService {
           continue;
         }
 
-        if ([500, 502, 504].includes(status)) {
-          console.warn("⚠️ Revenue OLAP fetch временно недоступен:", e.response?.data?.detail || e.message);
-          return [];
+        if ([500, 502, 504].includes(status) && i < this.maxAttempts - 1) {
+          await delay(this.pollInterval);
+          continue;
         }
 
         throw e;
@@ -288,8 +340,7 @@ class RevenueService {
     } catch (_) {}
 
     if (!data) {
-      console.warn("⚠️ Revenue OLAP не успел ответить, возвращаю пустой результат");
-      return [];
+      throw new Error(`Revenue OLAP не успел ответить за ${this.maxAttempts} попыток`);
     }
 
     const rows = [];

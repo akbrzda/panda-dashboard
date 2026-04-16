@@ -3,12 +3,17 @@
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Клиентская база</h1>
-      <PageFilters :loading="analyticsStore.isLoadingClients" @apply="handleApply" />
+      <PageFilters :loading="clientsStore.isLoadingClients" :require-organization="false" :show-organization="false" @apply="handleApply" />
+    </div>
+
+    <!-- Ошибка -->
+    <div v-if="pageError" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+      {{ pageError }}
     </div>
 
     <!-- API не настроен -->
     <div
-      v-if="analyticsStore.clientsData && analyticsStore.clientsData.configured === false"
+      v-else-if="clientsStore.clientsData && clientsStore.clientsData.configured === false"
       class="flex flex-col items-center justify-center py-16 text-center gap-3"
     >
       <Users class="w-12 h-12 text-muted-foreground/40" />
@@ -21,30 +26,27 @@
     </div>
 
     <!-- Пустое состояние -->
-    <div
-      v-else-if="!analyticsStore.isLoadingClients && !analyticsStore.clientsData"
-      class="flex flex-col items-center justify-center py-16 text-center"
-    >
+    <div v-else-if="!clientsStore.isLoadingClients && !clientsStore.clientsData" class="flex flex-col items-center justify-center py-16 text-center">
       <Users class="w-12 h-12 text-muted-foreground/40 mb-4" />
       <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
     </div>
 
     <!-- Данные -->
-    <template v-if="analyticsStore.clientsData && analyticsStore.clientsData.configured !== false">
+    <template v-if="clientsStore.clientsData && clientsStore.clientsData.configured !== false">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <MetricCard
           title="Активная база"
-          :value="analyticsStore.clientsData.activeBase ?? null"
+          :value="clientsStore.clientsData.activeBase ?? null"
           format="number"
           icon="Users"
-          :loading="analyticsStore.isLoadingClients"
+          :loading="clientsStore.isLoadingClients"
         />
         <MetricCard
           title="Новые клиенты"
-          :value="analyticsStore.clientsData.newClients ?? null"
+          :value="clientsStore.clientsData.newClients ?? null"
           format="number"
           icon="UserPlus"
-          :loading="analyticsStore.isLoadingClients"
+          :loading="clientsStore.isLoadingClients"
         />
       </div>
 
@@ -69,18 +71,21 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { Users, UserPlus } from "lucide-vue-next";
-import { useAnalyticsStore } from "../stores/analytics";
+import { useClientsStore } from "../stores/clients";
 import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 
-const analyticsStore = useAnalyticsStore();
+const clientsStore = useClientsStore();
 const filtersStore = useFiltersStore();
+const revenueStore = useRevenueStore();
 
-const clientGroups = computed(() => analyticsStore.clientsData?.groups || []);
+const clientGroups = computed(() => clientsStore.clientsData?.groups || []);
+const pageError = computed(() => clientsStore.clientsData?.error || clientsStore.error || "");
 
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? filtersStore.organizationId ?? null;
@@ -89,6 +94,19 @@ async function handleApply(payload = {}) {
 
   filtersStore.setOrganization(organizationId);
   filtersStore.setDateRange(dateFrom, dateTo);
-  await analyticsStore.loadClients({ dateFrom, dateTo });
+  await clientsStore.loadClients({ dateFrom, dateTo });
 }
+
+onMounted(async () => {
+  if (!revenueStore.organizations.length) {
+    await revenueStore.loadOrganizations();
+  }
+
+  if (filtersStore.dateFrom && filtersStore.dateTo && !clientsStore.clientsData) {
+    await clientsStore.loadClients({
+      dateFrom: filtersStore.dateFrom,
+      dateTo: filtersStore.dateTo,
+    });
+  }
+});
 </script>
