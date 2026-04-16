@@ -34,6 +34,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useStopListStore } from "../stores/stopList";
 import StopListTable from "../components/StopListTable.vue";
 import Select from "../components/ui/Select.vue";
@@ -80,6 +81,12 @@ function connectSSE() {
     isLive.value = false;
   };
 }
+
+useAutoRefresh(() => {
+  if (!isLoading.value) {
+    store.loadStopLists();
+  }
+});
 
 onMounted(() => {
   store.loadOrganizations();

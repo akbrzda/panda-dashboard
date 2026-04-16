@@ -1,40 +1,43 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
 import path from "path";
 
-const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://localhost:3000";
-const hmrHost = process.env.VITE_HMR_HOST;
-const hmrProtocol = process.env.VITE_HMR_PROTOCOL || "ws";
-const hmrClientPort = process.env.VITE_HMR_CLIENT_PORT ? Number(process.env.VITE_HMR_CLIENT_PORT) : undefined;
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, "");
+  const apiProxyTarget = env.VITE_API_PROXY_TARGET || "http://localhost:3000";
+  const enableRemoteHmr = String(env.VITE_ENABLE_REMOTE_HMR || "false").toLowerCase() === "true";
 
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-  server: {
-    host: "0.0.0.0",
-    allowedHosts: true,
-    port: 5173,
-    strictPort: true,
-    hmr: hmrHost
-      ? {
-          host: hmrHost,
-          protocol: hmrProtocol,
-          clientPort: hmrClientPort,
-        }
-      : undefined,
-    proxy: {
-      "/api": {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        secure: false,
-        ws: true,
-        timeout: 180000,
-        proxyTimeout: 180000,
+  const hmr = enableRemoteHmr && env.VITE_HMR_HOST
+    ? {
+        host: env.VITE_HMR_HOST,
+        protocol: env.VITE_HMR_PROTOCOL || "wss",
+        clientPort: env.VITE_HMR_CLIENT_PORT ? Number(env.VITE_HMR_CLIENT_PORT) : 443,
+      }
+    : undefined;
+
+  return {
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
       },
     },
-  },
+    server: {
+      host: "0.0.0.0",
+      allowedHosts: true,
+      port: 5173,
+      strictPort: true,
+      hmr: hmr || false,
+      proxy: {
+        "/api": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+          timeout: 180000,
+          proxyTimeout: 180000,
+        },
+      },
+    },
+  };
 });

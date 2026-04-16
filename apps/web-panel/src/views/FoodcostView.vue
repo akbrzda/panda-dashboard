@@ -32,6 +32,7 @@
           icon="Percent"
           :inverse="true"
           :lfl="data?.lfl != null ? { percent: data.lfl } : null"
+          :plan="getPlan('foodcost', data?.percent)"
           :loading="foodcostStore.isLoadingFoodcost"
         />
         <MetricCard
@@ -100,13 +101,16 @@ import { AlertCircle, Percent } from "lucide-vue-next";
 import PageFilters from "@/components/filters/PageFilters.vue";
 import MetricCard from "@/components/metrics/MetricCard.vue";
 import Card from "@/components/ui/Card.vue";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useRevenueStore } from "@/stores/revenue";
 import { useFoodcostStore } from "@/stores/foodcost";
 import { useFiltersStore } from "@/stores/filters";
+import { usePlansStore } from "@/stores/plans";
 
 const revenueStore = useRevenueStore();
 const foodcostStore = useFoodcostStore();
 const filtersStore = useFiltersStore();
+const plansStore = usePlansStore();
 const error = ref(null);
 
 const data = computed(() => foodcostStore.foodcostData);
@@ -166,6 +170,10 @@ function formatPercent(val) {
   return `${Number(val).toFixed(2)}%`;
 }
 
+function getPlan(metric, currentValue) {
+  return plansStore.getMetricPlan(metric, filtersStore.preset, revenueStore.currentOrganizationId, currentValue);
+}
+
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? revenueStore.currentOrganizationId;
   const dateFrom = payload.dateFrom ?? filtersStore.dateFrom;
@@ -181,9 +189,19 @@ async function handleApply(payload = {}) {
   }
 }
 
+useAutoRefresh(() => {
+  if (data.value) {
+    handleApply();
+  }
+});
+
 onMounted(async () => {
   if (revenueStore.organizations.length === 0) {
     await revenueStore.loadOrganizations();
+  }
+
+  if (!plansStore.plans.length) {
+    await plansStore.loadPlans();
   }
 
   if (!data.value) {

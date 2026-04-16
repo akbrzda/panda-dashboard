@@ -1,6 +1,25 @@
 import axios from "axios";
+import { toast } from "@/lib/sonner";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+function resolveApiBaseUrl() {
+  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
+  const proxyTarget = String(import.meta.env.VITE_API_PROXY_TARGET || "").replace(/\/+$/, "");
+
+  if (typeof window === "undefined") {
+    return rawBaseUrl;
+  }
+
+  const isRelativeBaseUrl = rawBaseUrl.startsWith("/");
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+  if (isRelativeBaseUrl && !isLocalHost && proxyTarget) {
+    return `${proxyTarget}${rawBaseUrl}`;
+  }
+
+  return rawBaseUrl;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
 
 export const apiClient = axios.create({
@@ -31,7 +50,9 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const message = error.response?.data?.error || error.response?.data?.message || error.message || "Не удалось выполнить запрос";
     console.error("❌ API Response Error:", error.response?.status, error.response?.data || error.message);
+    toast.error("Ошибка запроса", message);
     return Promise.reject(error);
   },
 );

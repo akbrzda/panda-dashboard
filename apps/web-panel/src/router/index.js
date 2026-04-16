@@ -5,6 +5,7 @@ import RevenueView from "../views/RevenueView.vue";
 import TopDishesView from "../views/TopDishesView.vue";
 import ClientsView from "../views/ClientsView.vue";
 import FoodcostView from "../views/FoodcostView.vue";
+import PlansView from "../views/PlansView.vue";
 
 const routes = [
   {
@@ -40,6 +41,11 @@ const routes = [
     path: "/foodcost",
     name: "Foodcost",
     component: FoodcostView,
+  },
+  {
+    path: "/plans",
+    name: "Plans",
+    component: PlansView,
   },
 ];
 

@@ -25,6 +25,11 @@
       </p>
     </div>
 
+    <div v-else-if="clientsStore.isLoadingClients && !clientsStore.clientsData" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <MetricCard title="Активная база" :loading="true" />
+      <MetricCard title="Новые клиенты" :loading="true" />
+    </div>
+
     <!-- Пустое состояние -->
     <div v-else-if="!clientsStore.isLoadingClients && !clientsStore.clientsData" class="flex flex-col items-center justify-center py-16 text-center">
       <Users class="w-12 h-12 text-muted-foreground/40 mb-4" />
@@ -79,6 +84,7 @@
 <script setup>
 import { computed, onMounted } from "vue";
 import { Users, UserPlus } from "lucide-vue-next";
+import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useClientsStore } from "../stores/clients";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
@@ -106,6 +112,12 @@ async function handleApply(payload = {}) {
   filtersStore.setDateRange(dateFrom, dateTo);
   await clientsStore.loadClients({ dateFrom, dateTo });
 }
+
+useAutoRefresh(() => {
+  if (filtersStore.dateFrom && filtersStore.dateTo && clientsStore.clientsData) {
+    handleApply();
+  }
+});
 
 onMounted(async () => {
   if (!revenueStore.organizations.length) {

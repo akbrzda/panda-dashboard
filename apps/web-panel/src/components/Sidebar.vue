@@ -1,48 +1,51 @@
 <template>
-  <aside class="w-52 shrink-0 border-r border-border bg-card flex flex-col min-h-screen">
-    <!-- Навигация -->
-    <nav class="flex flex-col gap-1 p-3 flex-1 pt-4">
+  <aside class="flex min-h-screen w-16 shrink-0 flex-col border-r border-border bg-card sm:w-52">
+    <nav class="flex flex-1 flex-col gap-1 p-2 pt-4 sm:p-3">
       <router-link to="/dashboard" class="nav-item" active-class="nav-item--active">
-        <LayoutDashboard class="w-4 h-4 shrink-0" />
-        <span>Дашборд</span>
+        <LayoutDashboard class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Дашборд</span>
       </router-link>
 
       <router-link to="/revenue" class="nav-item" active-class="nav-item--active">
-        <BarChart2 class="w-4 h-4 shrink-0" />
-        <span>Отчёты</span>
+        <BarChart2 class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Отчёты</span>
       </router-link>
 
       <router-link to="/stop-list" class="nav-item" active-class="nav-item--active">
-        <ClipboardList class="w-4 h-4 shrink-0" />
-        <span>Стоп-лист</span>
+        <ClipboardList class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Стоп-лист</span>
       </router-link>
 
       <router-link to="/top-dishes" class="nav-item" active-class="nav-item--active">
-        <UtensilsCrossed class="w-4 h-4 shrink-0" />
-        <span>Топ блюд</span>
+        <UtensilsCrossed class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Топ блюд</span>
       </router-link>
 
       <router-link to="/clients" class="nav-item" active-class="nav-item--active">
-        <Users class="w-4 h-4 shrink-0" />
-        <span>Клиенты</span>
+        <Users class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Клиенты</span>
       </router-link>
 
       <router-link to="/foodcost" class="nav-item" active-class="nav-item--active">
-        <Percent class="w-4 h-4 shrink-0" />
-        <span>Фудкост</span>
+        <Percent class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Фудкост</span>
+      </router-link>
+
+      <router-link to="/plans" class="nav-item" active-class="nav-item--active">
+        <Target class="h-4 w-4 shrink-0" />
+        <span class="hidden sm:inline">Планы</span>
       </router-link>
     </nav>
   </aside>
 </template>
 
 <script setup>
-import { LayoutDashboard, BarChart2, ClipboardList, UtensilsCrossed, Users, Percent } from "lucide-vue-next";
+import { LayoutDashboard, BarChart2, ClipboardList, UtensilsCrossed, Users, Percent, Target } from "lucide-vue-next";
 </script>
 
 <style scoped>
 .nav-item {
-  @apply flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground
-         hover:bg-accent hover:text-accent-foreground transition-colors no-underline;
+  @apply flex items-center justify-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:justify-start sm:px-3 no-underline;
 }
 
 .nav-item--active {

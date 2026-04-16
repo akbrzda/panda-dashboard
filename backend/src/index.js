@@ -3,10 +3,12 @@ require("dotenv").config();
 const express = require("express");
 const config = require("./config");
 const apiRoutes = require("./routes/api");
+const requestLogger = require("./middleware/requestLogger");
 
 const app = express();
 
 // Middleware
+app.use(requestLogger);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

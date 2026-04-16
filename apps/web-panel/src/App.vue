@@ -1,23 +1,23 @@
 <template>
   <div class="min-h-screen bg-background text-foreground flex">
-    <!-- Боковая навигация -->
     <Sidebar />
 
-    <!-- Основная область -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <div class="flex-1 flex min-w-0 flex-col">
       <AppHeader />
       <main class="flex-1 overflow-auto p-4 md:p-6">
         <router-view />
       </main>
     </div>
+
+    <Sonner />
   </div>
 </template>
 
 <script setup>
 import Sidebar from "@/components/Sidebar.vue";
 import AppHeader from "@/components/layout/AppHeader.vue";
+import Sonner from "@/components/ui/Sonner.vue";
 import { useThemeStore } from "@/stores/theme";
 
-// Инициализируем тему при старте приложения
 useThemeStore();
 </script>

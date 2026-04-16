@@ -159,10 +159,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { AlertCircle, Search, UtensilsCrossed } from "lucide-vue-next";
+import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useTopDishesStore } from "../stores/topDishes";
 import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
@@ -180,6 +182,7 @@ const SortIcon = {
 
 const topDishesStore = useTopDishesStore();
 const filtersStore = useFiltersStore();
+const revenueStore = useRevenueStore();
 
 const view = ref("top");
 const search = ref("");
@@ -240,4 +243,20 @@ function formatNumber(val) {
   if (val == null) return "—";
   return new Intl.NumberFormat("ru-RU").format(val);
 }
+
+useAutoRefresh(() => {
+  if (topDishesStore.topDishes && filtersStore.organizationId) {
+    handleApply();
+  }
+});
+
+onMounted(async () => {
+  if (!revenueStore.organizations.length) {
+    await revenueStore.loadOrganizations();
+  }
+
+  if (filtersStore.dateFrom && filtersStore.dateTo && filtersStore.organizationId && !topDishesStore.topDishes) {
+    handleApply();
+  }
+});
 </script>

@@ -34,6 +34,7 @@
             :value="data?.summary.totalRevenue ?? null"
             format="currency"
             icon="TrendingUp"
+            :plan="getPlan('revenue', data?.summary.totalRevenue)"
             :loading="dashboardStore.isLoadingDashboard"
           />
           <MetricCard
@@ -41,6 +42,7 @@
             :value="data?.summary.totalOrders ?? null"
             format="number"
             icon="ShoppingCart"
+            :plan="getPlan('orders', data?.summary.totalOrders)"
             :loading="dashboardStore.isLoadingDashboard"
           />
           <MetricCard
@@ -48,6 +50,7 @@
             :value="data?.summary.avgPerOrder ?? null"
             format="currency"
             icon="BarChart2"
+            :plan="getPlan('avgPerOrder', data?.summary.avgPerOrder)"
             :loading="dashboardStore.isLoadingDashboard"
           />
           <MetricCard
@@ -56,6 +59,7 @@
             format="currency"
             icon="Tag"
             :inverse="true"
+            :plan="getPlan('discountSum', data?.summary.discountSum)"
             :loading="dashboardStore.isLoadingDashboard"
           />
         </div>
@@ -88,8 +92,34 @@
 
       <!-- По подразделениям (только если несколько) -->
       <Card v-if="showOrgChart" class="p-5">
-        <h3 class="text-sm font-semibold text-foreground mb-4">Выручка по подразделениям</h3>
+        <h3 class="mb-4 text-sm font-semibold text-foreground">Выручка по подразделениям</h3>
         <OrgBarChart :orgs="data?.byOrganization ?? []" :loading="dashboardStore.isLoadingDashboard" />
+
+        <div class="mt-5 overflow-x-auto rounded-lg border border-border/70">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-border bg-muted/40">
+                <th class="px-4 py-3 text-left font-medium text-muted-foreground">Подразделение</th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Выручка</th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Заказы</th>
+                <th class="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Ср. чек</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="dashboardStore.isLoadingDashboard" v-for="i in 4" :key="i" class="border-b border-border/40 last:border-0">
+                <td colspan="4" class="px-4 py-3">
+                  <div class="h-6 rounded bg-muted animate-pulse" />
+                </td>
+              </tr>
+              <tr v-else v-for="org in data?.byOrganization ?? []" :key="org.id" class="border-b border-border/40 last:border-0">
+                <td class="px-4 py-3 text-foreground">{{ org.name }}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{{ formatCurrency(org.revenue) }}</td>
+                <td class="px-4 py-3 text-right tabular-nums">{{ formatNumber(org.orders) }}</td>
+                <td class="px-4 py-3 text-right tabular-nums hidden md:table-cell">{{ formatCurrency(org.avgCheck) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       <!-- Топ блюд и аутсайдеры -->
@@ -175,12 +205,17 @@ import DashboardFilters from "@/components/filters/DashboardFilters.vue";
 import Card from "@/components/ui/Card.vue";
 import DonutChart from "@/components/charts/DonutChart.vue";
 import OrgBarChart from "@/components/charts/OrgBarChart.vue";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useRevenueStore } from "@/stores/revenue";
 import { useDashboardStore } from "@/stores/dashboard";
+import { useFiltersStore } from "@/stores/filters";
+import { usePlansStore } from "@/stores/plans";
 import { useTopDishesStore } from "@/stores/topDishes";
 
 const revenueStore = useRevenueStore();
 const dashboardStore = useDashboardStore();
+const filtersStore = useFiltersStore();
+const plansStore = usePlansStore();
 const topDishesStore = useTopDishesStore();
 
 const filtersRef = ref(null);
@@ -190,6 +225,13 @@ const data = computed(() => dashboardStore.dashboardData);
 const hasChannels = computed(() => Object.keys(data.value?.revenueByChannel ?? {}).length > 0);
 const showOrgChart = computed(() => (data.value?.byOrganization?.length ?? 0) > 1);
 const showSingleOrgBlocks = computed(() => (data.value?.byOrganization?.length ?? 0) === 1);
+const currentPlanOrganizationId = computed(() => {
+  if ((data.value?.byOrganization?.length ?? 0) === 1) {
+    return data.value.byOrganization[0].id;
+  }
+
+  return "";
+});
 
 const sections = [
   { to: "/revenue", title: "Отчёт по выручке", desc: "Детальная аналитика по каналам и периодам", icon: BarChart2 },
@@ -197,6 +239,7 @@ const sections = [
   { to: "/top-dishes", title: "Топ блюд", desc: "Рейтинг продаж по позициям меню", icon: UtensilsCrossed },
   { to: "/clients", title: "Клиенты", desc: "Активная база и новые клиенты", icon: Users },
   { to: "/foodcost", title: "Фудкост", desc: "Себестоимость и риск по категориям", icon: Percent },
+  { to: "/plans", title: "Планы", desc: "Цели по KPI и контроль выполнения", icon: TrendingUp },
 ];
 
 async function handleApply({ date, organizationIds }) {
@@ -221,6 +264,10 @@ function reload() {
   filtersRef.value?.apply();
 }
 
+function getPlan(metric, currentValue) {
+  return plansStore.getMetricPlan(metric, filtersStore.preset, currentPlanOrganizationId.value, currentValue);
+}
+
 function formatDate(str) {
   if (!str) return "";
   const [y, m, d] = str.split("-");
@@ -237,12 +284,21 @@ function formatNumber(val) {
   return new Intl.NumberFormat("ru-RU").format(val);
 }
 
+useAutoRefresh(() => {
+  if (data.value) {
+    reload();
+  }
+});
+
 onMounted(async () => {
-  // Загрузить список организаций если пустой
   if (revenueStore.organizations.length === 0) {
     await revenueStore.loadOrganizations();
   }
-  // Автозагрузка — сегодня + все подразделения
+
+  if (!plansStore.plans.length) {
+    await plansStore.loadPlans();
+  }
+
   if (!data.value) {
     filtersRef.value?.apply();
   }

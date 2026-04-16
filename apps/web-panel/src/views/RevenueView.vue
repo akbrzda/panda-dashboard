@@ -33,6 +33,7 @@
             format="currency"
             icon="TrendingUp"
             :lfl="store.summary?.lfl != null ? { percent: store.summary.lfl } : null"
+            :plan="getPlan('revenue', store.summary?.totalRevenue)"
             :loading="isPageLoading"
           />
           <MetricCard
@@ -41,15 +42,24 @@
             format="number"
             icon="ShoppingCart"
             :lfl="reportsStore.revenueData?.summary?.ordersLFL != null ? { percent: reportsStore.revenueData.summary.ordersLFL } : null"
+            :plan="getPlan('orders', store.summary?.totalOrders)"
             :loading="isPageLoading"
           />
-          <MetricCard title="Средний чек" :value="store.summary?.avgPerOrder ?? null" format="currency" icon="BarChart2" :loading="isPageLoading" />
+          <MetricCard
+            title="Средний чек"
+            :value="store.summary?.avgPerOrder ?? null"
+            format="currency"
+            icon="BarChart2"
+            :plan="getPlan('avgPerOrder', store.summary?.avgPerOrder)"
+            :loading="isPageLoading"
+          />
           <MetricCard
             title="Дисконт"
             :value="store.summary?.discountSum ?? null"
             format="currency"
             icon="Percent"
             :inverse="true"
+            :plan="getPlan('discountSum', store.summary?.discountSum)"
             :loading="isPageLoading"
           />
           <MetricCard
@@ -119,9 +129,11 @@
 <script setup>
 import { computed, onMounted } from "vue";
 import { AlertCircle, BarChart2 } from "lucide-vue-next";
+import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useRevenueStore } from "../stores/revenue";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
+import { usePlansStore } from "../stores/plans";
 import PageFilters from "../components/filters/PageFilters.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
@@ -131,6 +143,7 @@ import DonutChart from "../components/charts/DonutChart.vue";
 const store = useRevenueStore();
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
+const plansStore = usePlansStore();
 
 const isPageLoading = computed(() => store.isLoading || reportsStore.isLoadingRevenue);
 const pageError = computed(() => reportsStore.error || store.error);
@@ -153,10 +166,26 @@ async function handleApply(payload = {}) {
   }
 }
 
-onMounted(() => {
+function getPlan(metric, currentValue) {
+  return plansStore.getMetricPlan(metric, filtersStore.preset, store.currentOrganizationId, currentValue);
+}
+
+useAutoRefresh(() => {
+  if (store.hasData) {
+    handleApply();
+  }
+});
+
+onMounted(async () => {
   if (store.organizations.length === 0) {
-    store.loadOrganizations();
-  } else if (!store.hasData) {
+    await store.loadOrganizations();
+  }
+
+  if (!plansStore.plans.length) {
+    await plansStore.loadPlans();
+  }
+
+  if (!store.hasData) {
     handleApply();
   }
 });
