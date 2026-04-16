@@ -1,5 +1,5 @@
 <template>
-  <Card :class="cn('flex flex-col gap-3 p-5', $props.class)">
+  <Card :class="cn('flex h-full flex-col gap-2.5 border border-border/70 bg-card/95 p-4 shadow-sm', $props.class)">
     <!-- Состояние загрузки -->
     <template v-if="loading">
       <div class="flex items-center gap-2">
@@ -22,8 +22,8 @@
     <!-- Нормальное состояние -->
     <template v-else>
       <!-- Иконка + название -->
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 text-muted-foreground">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-2 text-foreground/80">
           <component :is="iconComponent" class="w-4 h-4 shrink-0" />
           <span class="text-sm font-medium">{{ title }}</span>
         </div>
@@ -31,7 +31,7 @@
       </div>
 
       <!-- Значение -->
-      <div class="text-2xl font-bold text-foreground">
+      <div class="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
         {{ formattedValue }}
       </div>
 
@@ -53,7 +53,7 @@
 
 <script setup>
 import { computed } from "vue";
-import { AlertCircle, TrendingUp, ShoppingCart, Truck, Store, Clock, Percent, Users, BarChart2, DollarSign, Star } from "lucide-vue-next";
+import { AlertCircle, TrendingUp, ShoppingCart, Truck, Store, Clock, Percent, Users, UserPlus, BarChart2, DollarSign, Star } from "lucide-vue-next";
 import Card from "@/components/ui/Card.vue";
 import LFLBadge from "@/components/metrics/LFLBadge.vue";
 import { cn } from "@/lib/utils";
@@ -66,6 +66,7 @@ const ICONS = {
   Clock,
   Percent,
   Users,
+  UserPlus,
   BarChart2,
   DollarSign,
   Star,
@@ -109,10 +110,16 @@ function formatValue(val) {
       return `${Number(val).toFixed(2)}%`;
 
     case "time": {
-      // Ожидаем значение в минутах
-      const h = Math.floor(val / 60);
-      const m = Math.floor(val % 60);
-      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const totalMinutes = Number(val) || 0;
+      let minutes = Math.floor(totalMinutes);
+      let seconds = Math.round((totalMinutes - minutes) * 60);
+
+      if (seconds === 60) {
+        minutes += 1;
+        seconds = 0;
+      }
+
+      return `${minutes} мин ${String(seconds).padStart(2, "0")} сек`;
     }
 
     case "number":

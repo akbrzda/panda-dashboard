@@ -74,22 +74,27 @@ class ClientsService {
       }
 
       const groups = this._extractPremiumBonusGroups(groupsResponse);
-      const normalizedGroups = groups.map((group, index) => ({
-        id: group.id || group.client_group_id || `group-${index}`,
-        name: group.name || group.title || group.group_name || "Без названия",
-        count: Number(group.count) || Number(group.members_count) || Number(group.clients_count) || Number(group.buyers_count) || 0,
-      }));
+      const normalizedGroups = groups
+        .map((group, index) => ({
+          id: group.id || group.client_group_id || `group-${index}`,
+          name: group.name || group.title || group.group_name || "Без названия",
+          count: Number(group.count) || Number(group.members_count) || Number(group.clients_count) || Number(group.buyers_count) || 0,
+        }))
+        .filter((group) => group.count > 0);
 
       const activeBase = normalizedGroups.reduce((sum, group) => sum + group.count, 0);
       const newClientsFromResponse = Number(groupsResponse?.new_clients || groupsResponse?.newClients || groupsResponse?.data?.new_clients);
       const newClientsFromGroups = normalizedGroups.filter((group) => /нов/i.test(group.name)).reduce((sum, group) => sum + group.count, 0);
+      const newClients = Number.isFinite(newClientsFromResponse) ? newClientsFromResponse : newClientsFromGroups || null;
+      const hasUsefulData = activeBase > 0 || (Number.isFinite(newClients) && newClients > 0) || normalizedGroups.length > 0;
 
       return {
         configured: true,
-        activeBase: activeBase || 0,
-        newClients: Number.isFinite(newClientsFromResponse) ? newClientsFromResponse : newClientsFromGroups || null,
+        activeBase: hasUsefulData ? activeBase : null,
+        newClients: hasUsefulData ? newClients : null,
         groups: normalizedGroups,
         period: { dateFrom, dateTo },
+        warningMessage: hasUsefulData ? null : "PremiumBonus не вернул клиентские данные за выбранный период",
       };
     } catch (error) {
       console.error("❌ PremiumBonus API error:", error.response?.data || error.message);

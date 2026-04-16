@@ -27,23 +27,12 @@ class TopDishesService extends OlapClient {
   }
 
   parseRows(result) {
-    const rawRows = [];
-
-    if (result.result?.rawData) {
-      rawRows.push(...result.result.rawData);
-    } else if (result.cells) {
-      for (const [key, values] of Object.entries(result.cells)) {
-        const group = JSON.parse(key);
-        rawRows.push({
-          ...group,
-          Sales: parseFloat(values[0]) || 0,
-          DishAmountInt: parseInt(values[1]) || 0,
-          "UniqOrderId.OrdersCount": parseInt(values[2]) || 0,
-        });
-      }
-    }
-
-    return rawRows;
+    return this.parseResultRows(result, (group, values) => ({
+      ...group,
+      Sales: parseFloat(values[0]) || 0,
+      DishAmountInt: parseInt(values[1]) || 0,
+      "UniqOrderId.OrdersCount": parseInt(values[2]) || 0,
+    }));
   }
 
   buildResponseFromRows(rawRows, limit, degraded = false, warningMessage = null) {
@@ -52,8 +41,8 @@ class TopDishesService extends OlapClient {
     let totalQty = 0;
 
     for (const row of rawRows) {
-      const name = row["Dish.Name"] || row.DishName || row.Dish || "Неизвестно";
-      const category = row.ProductCategory || row.Category || "";
+      const name = row.DishName || row["Dish.Name"] || row.Dish || "Неизвестно";
+      const category = row.DishCategory || row["DishCategory.Accounting"] || row.ProductCategory || row.Category || "";
       const revenue = Number(row.Sales) || 0;
       const qty = Number(row.DishAmountInt) || 0;
 
@@ -110,7 +99,7 @@ class TopDishesService extends OlapClient {
         storeIds: [String(storeId)],
         olapType: "SALES",
         categoryFields: [],
-        groupFields: ["Dish.Name", "ProductCategory"],
+        groupFields: ["DishName", "DishCategory", "UniqOrderId.Id", "OrderDeleted", "Storned", "DeletedWithWriteoff", "Delivery.CancelCause"],
         stackByDataFields: false,
         dataFields: ["Sales", "DishAmountInt", "UniqOrderId.OrdersCount"],
         calculatedFields: [
@@ -153,8 +142,8 @@ class TopDishesService extends OlapClient {
             inclusiveList: true,
           },
         ],
-        includeVoidTransactions: false,
-        includeNonBusinessPaymentTypes: false,
+        includeVoidTransactions: true,
+        includeNonBusinessPaymentTypes: true,
       };
 
       try {
@@ -164,7 +153,10 @@ class TopDishesService extends OlapClient {
           logEvery: 10,
         });
 
-        return this.buildResponseFromRows(this.parseRows(result), limit, false, null);
+        const rows = this.parseRows(result);
+        const filteredResult = this.filterCanceledOrders(rows);
+
+        return this.buildResponseFromRows(filteredResult.rows, limit, false, null);
       } catch (error) {
         console.warn("⚠️ Top dishes отработал в деградированном режиме:", {
           storeId,

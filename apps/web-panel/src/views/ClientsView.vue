@@ -31,9 +31,15 @@
       <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
     </div>
 
-    <!-- Данные -->
     <template v-if="clientsStore.clientsData && clientsStore.clientsData.configured !== false">
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div
+        v-if="clientsStore.clientsData.warningMessage"
+        class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-300"
+      >
+        {{ clientsStore.clientsData.warningMessage }}
+      </div>
+
+      <div v-if="hasClientMetrics" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <MetricCard
           title="Активная база"
           :value="clientsStore.clientsData.activeBase ?? null"
@@ -50,7 +56,6 @@
         />
       </div>
 
-      <!-- Группы клиентов -->
       <Card v-if="clientGroups.length > 0" class="p-5">
         <h3 class="text-sm font-semibold text-foreground mb-3">Группы клиентов</h3>
         <div class="space-y-2">
@@ -61,9 +66,10 @@
         </div>
       </Card>
 
-      <Card class="p-5">
+      <Card v-if="hasClientMetrics" class="p-5">
         <p class="text-xs text-muted-foreground">
-          Данные предоставлены PremiumBonus API. Активная база — суммарное кол-во участников во всех группах.
+          Данные предоставлены PremiumBonus API. Если сервис не отдает клиентов по периоду, на экране показывается только доступная агрегированная
+          статистика.
         </p>
       </Card>
     </template>
@@ -84,7 +90,11 @@ const clientsStore = useClientsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
 
-const clientGroups = computed(() => clientsStore.clientsData?.groups || []);
+const clientGroups = computed(() => (clientsStore.clientsData?.groups || []).filter((group) => Number(group.count || 0) > 0));
+const hasClientMetrics = computed(() => {
+  const data = clientsStore.clientsData;
+  return Number(data?.activeBase || 0) > 0 || Number(data?.newClients || 0) > 0 || clientGroups.value.length > 0;
+});
 const pageError = computed(() => clientsStore.clientsData?.error || clientsStore.error || "");
 
 async function handleApply(payload = {}) {

@@ -8,46 +8,48 @@
       <p>Нет данных для отображения</p>
     </div>
 
-    <table v-else class="revenue-table">
-      <thead>
-        <tr>
-          <th>Канал продаж</th>
-          <th class="text-right">Выручка, ₽</th>
-          <th class="text-right">Заказов</th>
-          <th class="text-right">Средний чек, ₽</th>
-          <th class="text-right">Доля, %</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(item, channel) in tableData" :key="channel">
-          <td>
-            <span class="channel-dot" :style="{ backgroundColor: getChannelColor(channel) }"></span>
-            {{ channel }}
-          </td>
-          <td class="text-right">{{ formatMoney(item.revenue) }}</td>
-          <td class="text-right">{{ item.orders }}</td>
-          <td class="text-right">{{ formatMoney(item.avgCheck) }}</td>
-          <td class="text-right">
-            <span class="percentage">{{ item.percentage.toFixed(1) }}%</span>
-          </td>
-        </tr>
-      </tbody>
-      <tfoot>
-        <tr class="total-row">
-          <td><strong>Итого</strong></td>
-          <td class="text-right">
-            <strong>{{ formatMoney(totals.revenue) }}</strong>
-          </td>
-          <td class="text-right">
-            <strong>{{ totals.orders }}</strong>
-          </td>
-          <td class="text-right">
-            <strong>{{ formatMoney(totals.avgCheck) }}</strong>
-          </td>
-          <td class="text-right"><strong>100%</strong></td>
-        </tr>
-      </tfoot>
-    </table>
+    <div v-else class="table-scroll">
+      <table class="revenue-table">
+        <thead>
+          <tr>
+            <th>Канал продаж</th>
+            <th class="text-right">Выручка, ₽</th>
+            <th class="text-right">Заказов</th>
+            <th class="text-right">Средний чек, ₽</th>
+            <th class="text-right">Доля, %</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(item, channel) in tableData" :key="channel">
+            <td>
+              <span class="channel-dot" :style="{ backgroundColor: getChannelColor(channel) }"></span>
+              {{ channel }}
+            </td>
+            <td class="text-right">{{ formatMoney(item.revenue) }}</td>
+            <td class="text-right">{{ item.orders }}</td>
+            <td class="text-right">{{ formatMoney(item.avgCheck) }}</td>
+            <td class="text-right">
+              <span class="percentage">{{ item.percentage.toFixed(1) }}%</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td><strong>Итого</strong></td>
+            <td class="text-right">
+              <strong>{{ formatMoney(totals.revenue) }}</strong>
+            </td>
+            <td class="text-right">
+              <strong>{{ totals.orders }}</strong>
+            </td>
+            <td class="text-right">
+              <strong>{{ formatMoney(totals.avgCheck) }}</strong>
+            </td>
+            <td class="text-right"><strong>100%</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -127,53 +129,63 @@ const formatMoney = (value) => {
 
 <style scoped>
 .revenue-table-container {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  border-radius: 12px;
+  padding: 20px;
 }
 
 .revenue-table-container h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 16px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--card-foreground));
 }
 
 .loading,
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #999;
+  color: hsl(var(--muted-foreground));
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
 }
 
 .revenue-table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 720px;
 }
 
 .revenue-table thead th {
-  background-color: #f5f5f5;
   padding: 12px;
   text-align: left;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: #666;
-  border-bottom: 2px solid #ddd;
+  color: hsl(var(--muted-foreground));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .revenue-table tbody td {
-  padding: 12px;
-  border-bottom: 1px solid #eee;
+  padding: 14px 12px;
+  border-bottom: 1px solid hsl(var(--border));
   font-size: 14px;
-  color: #333;
+  color: hsl(var(--foreground));
+}
+
+.revenue-table tbody tr:hover {
+  background: hsl(var(--muted) / 0.35);
 }
 
 .revenue-table tfoot td {
-  padding: 12px;
-  border-top: 2px solid #ddd;
+  padding: 14px 12px;
+  border-top: 1px solid hsl(var(--border));
   font-size: 14px;
+  color: hsl(var(--foreground));
 }
 
 .text-right {
@@ -184,38 +196,32 @@ const formatMoney = (value) => {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 9999px;
   margin-right: 8px;
 }
 
 .percentage {
   display: inline-block;
   padding: 4px 8px;
-  background-color: #e3f2fd;
-  border-radius: 4px;
-  color: #1976d2;
-  font-weight: 500;
+  background: hsl(var(--primary) / 0.12);
+  border-radius: 9999px;
+  color: hsl(var(--primary));
+  font-weight: 600;
 }
 
 .total-row {
-  background-color: #fafafa;
+  background: hsl(var(--muted) / 0.2);
 }
 
 @media (max-width: 768px) {
-  .revenue-table {
-    font-size: 12px;
+  .revenue-table-container {
+    padding: 16px;
   }
 
   .revenue-table thead th,
   .revenue-table tbody td,
   .revenue-table tfoot td {
-    padding: 8px 4px;
-  }
-
-  .channel-dot {
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
+    padding: 10px 8px;
   }
 }
 </style>

@@ -11,16 +11,24 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class IikoClient {
   constructor() {
-    this.baseUrl = iikoCfg.BASE_URL;
+    this.serverBaseUrl = this.normalizeBaseUrl(iikoCfg.SERVER_BASE_URL);
+    this.legacyBaseUrl = this.normalizeBaseUrl(iikoCfg.LEGACY_BASE_URL);
     this.username = iikoCfg.USERNAME;
     this.password = iikoCfg.PASSWORD;
   }
 
-  createHttpClient() {
+  normalizeBaseUrl(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/resto\/api$/i, "");
+  }
+
+  createHttpClient(baseURL = this.serverBaseUrl || this.legacyBaseUrl) {
     const jar = new CookieJar();
     return wrapper(
       axios.create({
-        baseURL: this.baseUrl,
+        baseURL,
         timeout: iikoCfg.TIMEOUT,
         headers: { "Content-Type": "application/json" },
         jar,
@@ -48,6 +56,16 @@ class IikoClient {
     return null;
   }
 
+  normalizeServerDateValue(value) {
+    const source = String(value || "").trim();
+
+    if (!source) {
+      return source;
+    }
+
+    return source.replace(/\.\d{3}/g, "").replace(/Z$/i, "");
+  }
+
   buildServerReportBody(olapBody = {}) {
     const calculatedFields = Array.isArray(olapBody.calculatedFields) ? olapBody.calculatedFields : [];
     const dataFields = Array.isArray(olapBody.dataFields) ? olapBody.dataFields : [];
@@ -66,8 +84,8 @@ class IikoClient {
             accumulator[filter.field] = {
               filterType: "DateRange",
               periodType: "CUSTOM",
-              from: filter.dateFrom || filter.from,
-              to: filter.dateTo || filter.to,
+              from: this.normalizeServerDateValue(filter.dateFrom || filter.from),
+              to: this.normalizeServerDateValue(filter.dateTo || filter.to),
               includeLow: filter.includeLeft ?? true,
               includeHigh: filter.includeRight ?? false,
             };
@@ -122,7 +140,7 @@ class IikoClient {
   }
 
   async authenticateServerApi(client, restaurantId) {
-    const response = await client.post("/resto/api/auth", null, {
+    const response = await client.get("/resto/api/auth", {
       params: {
         login: this.username,
         pass: this.createPasswordHash(this.password),
@@ -146,7 +164,7 @@ class IikoClient {
   async logout(client) {
     try {
       if (client.__iikoSession?.mode === "server-v2") {
-        await client.post("/resto/api/logout", null, {
+        await client.get("/resto/api/logout", {
           params: client.__iikoSession?.key ? { key: client.__iikoSession.key } : undefined,
           responseType: "text",
           transformResponse: [(data) => data],
@@ -162,6 +180,10 @@ class IikoClient {
 
   async executeOlapQuery(client, restaurantId, olapBody) {
     try {
+      if (this.serverBaseUrl) {
+        client.defaults.baseURL = this.serverBaseUrl;
+      }
+
       await this.authenticateServerApi(client, restaurantId);
 
       const response = await client.post("/resto/api/v2/reports/olap", this.buildServerReportBody(olapBody), {
@@ -171,6 +193,10 @@ class IikoClient {
 
       return this.normalizeServerRows(response.data, olapBody);
     } catch (_) {
+      if (this.legacyBaseUrl) {
+        client.defaults.baseURL = this.legacyBaseUrl;
+      }
+
       await this.authenticate(client, restaurantId);
 
       const initResponse = await client.post("/api/olap/init", olapBody);

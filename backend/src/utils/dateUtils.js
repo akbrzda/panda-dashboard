@@ -2,6 +2,18 @@ const MOSCOW_TZ = "Europe/Moscow";
 
 const pad = (n) => String(n).padStart(2, "0");
 
+function shiftDateString(dateStr, days) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function getMoscowDateString(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: MOSCOW_TZ,
@@ -25,27 +37,21 @@ function getMoscowTimeParts(date = new Date()) {
 }
 
 /**
- * Строит ISO-строки границ OLAP-запроса с учётом московского времени.
+ * Строит границы OLAP-запроса в формате полуинтервала: [start, end).
  *
- * Если endDateStr совпадает с сегодняшней датой по Москве — верхняя граница
- * устанавливается в текущее московское время (не UTC), чтобы не потерять
- * последние 3 часа заказов.
+ * Для iiko ServerAPI это стабильнее, чем передавать текущее время того же дня
+ * или значения с суффиксом UTC, из-за которых сервер может вернуть 409/500.
  *
  * @param {string} startDateStr — дата начала, "YYYY-MM-DD"
  * @param {string} endDateStr   — дата конца,  "YYYY-MM-DD"
  * @returns {{ startIso: string, endIso: string }}
  */
 function buildOlapBounds(startDateStr, endDateStr) {
-  const startIso = `${startDateStr}T00:00:00Z`;
-  const todayMoscow = getMoscowDateString();
+  const startIso = `${startDateStr}T00:00:00`;
+  const endExclusiveDate = shiftDateString(endDateStr, 1);
+  const endIso = `${endExclusiveDate}T00:00:00`;
 
-  if (endDateStr === todayMoscow) {
-    const { hour, minute, second } = getMoscowTimeParts();
-    const endIso = `${endDateStr}T${pad(hour)}:${pad(minute)}:${pad(second)}Z`;
-    return { startIso, endIso };
-  }
-
-  return { startIso, endIso: `${endDateStr}T23:59:59Z` };
+  return { startIso, endIso };
 }
 
 /**

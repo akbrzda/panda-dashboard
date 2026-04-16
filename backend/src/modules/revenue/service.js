@@ -10,7 +10,7 @@ class RevenueService extends OlapClient {
     this.cacheTtlMs = Number(process.env.IIKO_REVENUE_CACHE_TTL_MS || 120000);
     this.reportCache = new Map();
 
-    console.log(`📊 RevenueService initialized with baseUrl: ${this.baseUrl}`);
+    console.log(`📊 RevenueService initialized with serverBaseUrl: ${this.serverBaseUrl}`);
   }
 
   async _resolveStoreId(organizationId) {
@@ -52,6 +52,37 @@ class RevenueService extends OlapClient {
     return normalized;
   }
 
+  _normalizePaymentTypeName(paymentType) {
+    const source = String(paymentType || "").trim();
+    const normalized = source.toLowerCase();
+
+    if (!source || normalized.includes("без оплаты")) {
+      return null;
+    }
+
+    if (normalized.includes("яндекс")) {
+      return "Яндекс.Еда";
+    }
+
+    if (normalized.includes("нал")) {
+      return "Наличные";
+    }
+
+    if (
+      normalized.includes("карт") ||
+      normalized.includes("bank") ||
+      normalized.includes("банк") ||
+      normalized.includes("киоск") ||
+      normalized.includes("эквайр") ||
+      normalized.includes("терминал") ||
+      normalized.includes("курьер")
+    ) {
+      return "Карта";
+    }
+
+    return "Онлайн оплата";
+  }
+
   async getRevenueReport(organizationId, startDate, endDate) {
     const startTime = Date.now();
     const start = startDate instanceof Date ? startDate : new Date(startDate);
@@ -71,9 +102,10 @@ class RevenueService extends OlapClient {
 
     const { startIso, endIso } = buildOlapBounds(toMoscowDateStr(start), toMoscowDateStr(end));
     const isSingleDay = startDateStr === endDateStr;
-    const primaryGroupFields = isSingleDay ? ["OrderType"] : ["OpenDate.Date", "OrderType"];
+    const primaryGroupFields = isSingleDay ? ["OrderType"] : ["OpenDate.Typed", "OrderType"];
 
     let rows = [];
+    let orderStats = null;
     try {
       rows = await this._fetchOlapSales(storeId, startIso, endIso, primaryGroupFields);
     } catch (error) {
@@ -85,38 +117,103 @@ class RevenueService extends OlapClient {
       }
     }
 
+    const filteredResult = this.filterCanceledOrders(rows);
+    rows = filteredResult.rows;
+    orderStats = filteredResult.orderStats;
+
+    let paymentByType = {};
+    try {
+      const paymentRows = await this._fetchOlapPaymentTypes(storeId, startIso, endIso);
+      const activePaymentRows = this.filterCanceledOrders(paymentRows).rows;
+
+      const groupedPaymentTypes = activePaymentRows.reduce((acc, row) => {
+        const paymentType = this._normalizePaymentTypeName(row.PayTypes);
+        const amount = Number(row.Sales) || 0;
+
+        if (!paymentType || amount <= 0) {
+          return acc;
+        }
+
+        if (!acc[paymentType]) {
+          acc[paymentType] = { revenue: 0 };
+        }
+
+        acc[paymentType].revenue += amount;
+        return acc;
+      }, {});
+
+      const paymentTypeOrder = ["Онлайн оплата", "Карта", "Наличные", "Яндекс.Еда"];
+      paymentByType = paymentTypeOrder.reduce((acc, key) => {
+        if (groupedPaymentTypes[key]) {
+          acc[key] = groupedPaymentTypes[key];
+        }
+        return acc;
+      }, {});
+    } catch (error) {
+      console.warn("⚠️ Не удалось получить типы оплат:", error.message);
+    }
+
     const byDate = {};
     const revenueByChannelRaw = {};
     const ordersByChannelRaw = {};
+    const ordersMap = new Map();
     let totalRevenue = 0;
     let totalOrders = 0;
     let totalRevenueBeforeDiscount = 0;
+    let totalDiscountSum = 0;
 
-    for (const row of rows) {
-      const date =
-        row["OpenDate.Date"] ||
-        (row["OpenDate.Typed"] ? String(row["OpenDate.Typed"]).slice(0, 10) : null) ||
-        row.Date ||
-        (isSingleDay ? startDateStr : "");
+    rows.forEach((row, index) => {
+      const orderId = String(row["UniqOrderId.Id"] || `row-${index}`);
+      const rawDate = row["OpenDate.Typed"] || row.OpenDate || row["OpenDate.Date"] || row.Date || (isSingleDay ? startDateStr : "");
+      const date = String(rawDate || "")
+        .slice(0, 10)
+        .replace(/\./g, "-");
       const orderType = row.OrderType || "Unknown";
       const sales = Number(row.Sales) || 0;
-      const orders = Number(row["UniqOrderId.OrdersCount"]) || 0;
       const revenueWD = Number(row.RevenueWithoutDiscount) || 0;
+      const discountSum = Number(row.DiscountSum) || 0;
+      const discountType = String(row.ItemSaleEventDiscountType || "").trim();
 
-      if (date) {
-        if (!byDate[date]) byDate[date] = { revenue: 0, orders: 0 };
-        byDate[date].revenue += sales;
-        byDate[date].orders += orders;
+      if (!ordersMap.has(orderId)) {
+        ordersMap.set(orderId, {
+          date,
+          orderType,
+          sales: 0,
+          revenueWithoutDiscount: 0,
+          discountSum: 0,
+        });
       }
 
-      revenueByChannelRaw[orderType] = (revenueByChannelRaw[orderType] || 0) + sales;
-      ordersByChannelRaw[orderType] = (ordersByChannelRaw[orderType] || 0) + orders;
-      totalRevenue += sales;
-      totalOrders += orders;
-      totalRevenueBeforeDiscount += revenueWD;
+      const order = ordersMap.get(orderId);
+      order.sales += sales;
+      order.revenueWithoutDiscount += revenueWD;
+      if (discountType) {
+        order.discountSum += discountSum;
+      }
+      if (!order.date && date) {
+        order.date = date;
+      }
+      if ((!order.orderType || order.orderType === "Unknown") && orderType) {
+        order.orderType = orderType;
+      }
+    });
+
+    for (const order of ordersMap.values()) {
+      if (order.date) {
+        if (!byDate[order.date]) byDate[order.date] = { revenue: 0, orders: 0 };
+        byDate[order.date].revenue += order.sales;
+        byDate[order.date].orders += 1;
+      }
+
+      revenueByChannelRaw[order.orderType] = (revenueByChannelRaw[order.orderType] || 0) + order.sales;
+      ordersByChannelRaw[order.orderType] = (ordersByChannelRaw[order.orderType] || 0) + 1;
+      totalRevenue += order.sales;
+      totalOrders += 1;
+      totalRevenueBeforeDiscount += order.revenueWithoutDiscount;
+      totalDiscountSum += order.discountSum;
     }
 
-    const computedDiscountSum = Math.max(0, totalRevenueBeforeDiscount - totalRevenue);
+    const computedDiscountSum = totalDiscountSum > 0 ? totalDiscountSum : Math.max(0, totalRevenueBeforeDiscount - totalRevenue);
     const discountPercent = totalRevenueBeforeDiscount > 0 ? Math.round((computedDiscountSum / totalRevenueBeforeDiscount) * 10000) / 100 : 0;
 
     const dailyBreakdown = Object.entries(byDate)
@@ -158,8 +255,10 @@ class RevenueService extends OlapClient {
         discountPercent,
         lfl: null,
         previousPeriodRevenue: null,
+        orderStats,
       },
       revenueByChannel,
+      paymentByType,
       dailyBreakdown,
     };
 
@@ -175,6 +274,56 @@ class RevenueService extends OlapClient {
     return await this.getRevenueReport(organizationId, date, date);
   }
 
+  async _fetchOlapPaymentTypes(storeId, dateFrom, dateTo) {
+    return await this.withAuth(storeId, async (client, delay) => {
+      const body = {
+        storeIds: [String(storeId)],
+        olapType: "SALES",
+        categoryFields: [],
+        groupFields: ["PayTypes", "UniqOrderId.Id", "OrderDeleted", "Storned", "DeletedWithWriteoff", "Delivery.CancelCause"],
+        stackByDataFields: false,
+        dataFields: ["Sales"],
+        calculatedFields: [
+          {
+            name: "Sales",
+            title: "Sales",
+            description: "Net sales",
+            formula: "[DishDiscountSumInt.withoutVAT]",
+            type: "MONEY",
+            canSum: false,
+          },
+        ],
+        filters: [
+          {
+            field: "OpenDate.Typed",
+            filterType: "date_range",
+            dateFrom,
+            dateTo,
+            valueMin: null,
+            valueMax: null,
+            valueList: [],
+            includeLeft: true,
+            includeRight: false,
+            inclusiveList: true,
+          },
+        ],
+        includeVoidTransactions: true,
+        includeNonBusinessPaymentTypes: true,
+      };
+
+      const result = await this.pollOlap(client, delay, body, {
+        maxAttempts: this.maxAttempts,
+        fetchTimeoutMs: this.timeout,
+        logEvery: 20,
+      });
+
+      return this.parseResultRows(result, (group, values) => ({
+        ...group,
+        Sales: parseFloat(values[0]) || 0,
+      }));
+    });
+  }
+
   async _fetchOlapSales(storeId, dateFrom, dateTo, groupFields = ["OrderType"]) {
     console.log(`   🔑 Revenue OLAP [${groupFields.join(", ")}] ${dateFrom.slice(0, 10)} → ${dateTo.slice(0, 10)}`);
 
@@ -183,9 +332,19 @@ class RevenueService extends OlapClient {
         storeIds: [String(storeId)],
         olapType: "SALES",
         categoryFields: [],
-        groupFields,
+        groupFields: [
+          ...new Set([
+            ...groupFields,
+            "UniqOrderId.Id",
+            "OrderDeleted",
+            "Storned",
+            "DeletedWithWriteoff",
+            "Delivery.CancelCause",
+            "ItemSaleEventDiscountType",
+          ]),
+        ],
         stackByDataFields: false,
-        dataFields: ["Sales", "UniqOrderId.OrdersCount", "RevenueWithoutDiscount"],
+        dataFields: ["Sales", "UniqOrderId.OrdersCount", "RevenueWithoutDiscount", "DiscountSum"],
         calculatedFields: [
           {
             name: "Sales",
@@ -211,6 +370,14 @@ class RevenueService extends OlapClient {
             type: "MONEY",
             canSum: true,
           },
+          {
+            name: "DiscountSum",
+            title: "Discount",
+            description: "Actual discount amount",
+            formula: "[DiscountSum]",
+            type: "MONEY",
+            canSum: true,
+          },
         ],
         filters: [
           {
@@ -226,8 +393,8 @@ class RevenueService extends OlapClient {
             inclusiveList: true,
           },
         ],
-        includeVoidTransactions: false,
-        includeNonBusinessPaymentTypes: false,
+        includeVoidTransactions: true,
+        includeNonBusinessPaymentTypes: true,
       };
 
       const result = await this.pollOlap(client, delay, body, {
@@ -241,6 +408,7 @@ class RevenueService extends OlapClient {
         Sales: parseFloat(values[0]) || 0,
         "UniqOrderId.OrdersCount": parseInt(values[1]) || 0,
         RevenueWithoutDiscount: parseFloat(values[2]) || 0,
+        DiscountSum: parseFloat(values[3]) || 0,
       }));
 
       console.log(`   ✅ OLAP вернул ${rows.length} строк`);

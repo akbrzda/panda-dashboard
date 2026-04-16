@@ -6,7 +6,8 @@ const organizationsService = require("../organizations/service");
 
 class OlapClient {
   constructor() {
-    this.baseUrl = process.env.IIKO_BASE_URL;
+    this.serverBaseUrl = this.normalizeBaseUrl(process.env.IIKO_SERVER_BASE_URL || process.env.IIKO_BASE_URL);
+    this.legacyBaseUrl = this.normalizeBaseUrl(process.env.IIKO_WEB_BASE_URL || process.env.IIKO_BASE_URL || process.env.IIKO_SERVER_BASE_URL);
     this.username = process.env.IIKO_USER;
     this.password = process.env.IIKO_PASSWORD;
     this.timeout = Number(process.env.IIKO_TIMEOUT || 45000);
@@ -14,6 +15,13 @@ class OlapClient {
     this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
     this.maxNetworkRetries = Number(process.env.IIKO_NETWORK_RETRIES || 4);
     this.maxConcurrentRequests = Number(process.env.IIKO_MAX_CONCURRENT_REQUESTS || 1);
+  }
+
+  normalizeBaseUrl(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/resto\/api$/i, "");
   }
 
   async delay(ms) {
@@ -156,6 +164,16 @@ class OlapClient {
     return match?.[1] || source || null;
   }
 
+  normalizeServerDateValue(value) {
+    const source = String(value || "").trim();
+
+    if (!source) {
+      return source;
+    }
+
+    return source.replace(/\.\d{3}/g, "").replace(/Z$/i, "");
+  }
+
   normalizeServerFilter(filter = {}) {
     const filterType = String(filter.filterType || "").toLowerCase();
 
@@ -163,8 +181,8 @@ class OlapClient {
       return {
         filterType: "DateRange",
         periodType: "CUSTOM",
-        from: filter.dateFrom || filter.from,
-        to: filter.dateTo || filter.to,
+        from: this.normalizeServerDateValue(filter.dateFrom || filter.from),
+        to: this.normalizeServerDateValue(filter.dateTo || filter.to),
         includeLow: filter.includeLeft ?? filter.includeLow ?? true,
         includeHigh: filter.includeRight ?? filter.includeHigh ?? false,
       };
@@ -219,13 +237,23 @@ class OlapClient {
           })
           .filter(Boolean);
 
+    const filters = this.normalizeFilters(body.filters);
+    const storeIds = Array.isArray(body.storeIds) ? body.storeIds.map((value) => String(value || "").trim()).filter(Boolean) : [];
+
+    if (storeIds.length > 0 && !filters["Department.Id"]) {
+      filters["Department.Id"] = {
+        filterType: "IncludeValues",
+        values: storeIds,
+      };
+    }
+
     return {
       reportType: body.reportType || body.olapType || "SALES",
       buildSummary: body.buildSummary ?? true,
       groupByRowFields: Array.isArray(body.groupByRowFields) ? body.groupByRowFields : Array.isArray(body.groupFields) ? body.groupFields : [],
       groupByColFields: Array.isArray(body.groupByColFields) ? body.groupByColFields : [],
       aggregateFields,
-      filters: this.normalizeFilters(body.filters),
+      filters,
     };
   }
 
@@ -262,6 +290,117 @@ class OlapClient {
     };
   }
 
+  normalizeFlag(value) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    return String(value).trim().toUpperCase();
+  }
+
+  isTrueFlag(value) {
+    if (value === true || value === 1) {
+      return true;
+    }
+
+    const flag = this.normalizeFlag(value);
+    return flag === "TRUE" || flag === "YES" || flag === "1";
+  }
+
+  isDeletedOrderFlag(value) {
+    const flag = this.normalizeFlag(value);
+    return flag === "DELETED" || flag === "ORDER_DELETED";
+  }
+
+  hasItemDeletionFlag(value) {
+    const flag = this.normalizeFlag(value);
+    return Boolean(flag) && flag !== "NOT_DELETED";
+  }
+
+  getOrderId(row = {}) {
+    return row["UniqOrderId.Id"] || row.OrderId || `${row.OrderNum || "NA"}|${row.OpenTime || ""}|${row.CloseTime || ""}`;
+  }
+
+  filterCanceledOrders(rows = []) {
+    const ordersMap = new Map();
+
+    for (const row of rows) {
+      const orderId = this.getOrderId(row);
+      const isOrderDeleted = this.isDeletedOrderFlag(row.OrderDeleted);
+      const isStorned = this.isTrueFlag(row.Storned);
+      const hasCancelCause = Boolean(String(row["Delivery.CancelCause"] || "").trim());
+      const hasItemDeletion = this.hasItemDeletionFlag(row.DeletedWithWriteoff);
+      const sales = Number(row.Sales ?? row["DishDiscountSumInt.withoutVAT"] ?? 0);
+      const revenueWithoutDiscount = Number(row.RevenueWithoutDiscount ?? row.DishSumInt ?? 0);
+
+      if (!ordersMap.has(orderId)) {
+        ordersMap.set(orderId, {
+          rows: [],
+          isOrderDeleted: false,
+          isStorned: false,
+          hasCancelCause: false,
+          hasItemDeletion: false,
+          sales: 0,
+          revenueWithoutDiscount: 0,
+        });
+      }
+
+      const order = ordersMap.get(orderId);
+      order.rows.push(row);
+      order.isOrderDeleted = order.isOrderDeleted || isOrderDeleted;
+      order.isStorned = order.isStorned || isStorned;
+      order.hasCancelCause = order.hasCancelCause || hasCancelCause;
+      order.hasItemDeletion = order.hasItemDeletion || hasItemDeletion;
+      order.sales += sales;
+      order.revenueWithoutDiscount += revenueWithoutDiscount;
+    }
+
+    const activeRows = [];
+    let includedRows = 0;
+    let excludedRows = 0;
+    const orderStats = {
+      totalDistinctOrders: ordersMap.size,
+      canceledOrders: 0,
+      orderDeleted: 0,
+      storned: 0,
+      withCancelCause: 0,
+      withItemDeletion: 0,
+      activeOrders: 0,
+      stornoAdjustment: 0,
+    };
+
+    for (const order of ordersMap.values()) {
+      const isCanceledOrder = order.isOrderDeleted || order.isStorned || order.hasCancelCause;
+
+      if (order.isOrderDeleted) orderStats.orderDeleted += 1;
+      if (order.isStorned) orderStats.storned += 1;
+      if (order.hasCancelCause) orderStats.withCancelCause += 1;
+      if (order.hasItemDeletion) orderStats.withItemDeletion += 1;
+
+      if (isCanceledOrder) {
+        orderStats.canceledOrders += 1;
+
+        if (order.isStorned && order.revenueWithoutDiscount < 0) {
+          orderStats.stornoAdjustment += order.revenueWithoutDiscount;
+        }
+
+        excludedRows += order.rows.length;
+        continue;
+      }
+
+      includedRows += order.rows.length;
+      orderStats.activeOrders += 1;
+      activeRows.push(...order.rows);
+    }
+
+    return {
+      rows: activeRows,
+      includedRows,
+      excludedRows,
+      orderStats,
+    };
+  }
+
   async resolveStoreId(organizationId) {
     const normalizedId = String(organizationId || "");
     const organizations = await organizationsService.getOrganizations().catch(() => []);
@@ -272,16 +411,22 @@ class OlapClient {
             (item) =>
               String(item.id) === normalizedId ||
               String(item.storeId) === normalizedId ||
+              String(item.serverStoreId) === normalizedId ||
+              String(item.legacyStoreId) === normalizedId ||
               String(item.iikoId) === normalizedId ||
               String(item.restaurantId) === normalizedId ||
               String(item.code) === normalizedId,
           );
 
+    if (organization?.serverStoreId) {
+      return String(organization.serverStoreId);
+    }
+
     if (organization?.storeId) {
       return String(organization.storeId);
     }
 
-    const fallbackCandidates = [organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
+    const fallbackCandidates = [organization?.legacyStoreId, organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
 
     for (const candidate of fallbackCandidates) {
       const normalizedCandidate = String(candidate || "").trim();
@@ -297,11 +442,42 @@ class OlapClient {
     throw new Error(`Не удалось получить storeId из iiko для организации ${normalizedId}`);
   }
 
-  createClient() {
+  async resolveLegacyStoreId(storeId) {
+    const normalizedId = String(storeId || "").trim();
+
+    if (/^\d+$/.test(normalizedId)) {
+      return normalizedId;
+    }
+
+    const organizations = await organizationsService.getOrganizations().catch(() => []);
+    const organization = organizations.find(
+      (item) =>
+        String(item.id) === normalizedId ||
+        String(item.storeId) === normalizedId ||
+        String(item.serverStoreId) === normalizedId ||
+        String(item.legacyStoreId) === normalizedId ||
+        String(item.iikoId) === normalizedId ||
+        String(item.restaurantId) === normalizedId ||
+        String(item.code) === normalizedId,
+    );
+
+    const fallbackCandidates = [organization?.legacyStoreId, organization?.iikoId, organization?.restaurantId];
+
+    for (const candidate of fallbackCandidates) {
+      const normalizedCandidate = String(candidate || "").trim();
+      if (/^\d+$/.test(normalizedCandidate)) {
+        return normalizedCandidate;
+      }
+    }
+
+    return normalizedId;
+  }
+
+  createClient(baseURL = this.serverBaseUrl || this.legacyBaseUrl) {
     const jar = new CookieJar();
     return wrapper(
       axios.create({
-        baseURL: this.baseUrl,
+        baseURL,
         timeout: this.timeout,
         headers: {
           "Content-Type": "application/json",
@@ -317,7 +493,7 @@ class OlapClient {
     const response = await this.requestWithRetry(
       client,
       {
-        method: "post",
+        method: "get",
         url: "/resto/api/auth",
         params: {
           login: this.username,
@@ -345,6 +521,8 @@ class OlapClient {
   }
 
   async authenticateLegacyApi(client, storeId) {
+    const legacyStoreId = await this.resolveLegacyStoreId(storeId);
+
     await this.requestWithRetry(
       client,
       {
@@ -352,16 +530,16 @@ class OlapClient {
         url: "/api/auth/login",
         data: { login: this.username, password: this.password },
       },
-      { stage: "auth-login", storeId },
+      { stage: "auth-login", storeId: legacyStoreId },
     );
 
     const selectResponse = await this.requestWithRetry(
       client,
       {
         method: "post",
-        url: `/api/stores/select/${storeId}`,
+        url: `/api/stores/select/${legacyStoreId}`,
       },
-      { stage: "auth-select-store", storeId },
+      { stage: "auth-select-store", storeId: legacyStoreId },
     );
 
     if (selectResponse.data?.error) {
@@ -376,7 +554,7 @@ class OlapClient {
 
     try {
       if (session.mode === "server-v2") {
-        await client.post("/resto/api/logout", null, {
+        await client.get("/resto/api/logout", {
           params: session.key ? { key: session.key } : undefined,
           responseType: "text",
           transformResponse: [(data) => data],
@@ -395,9 +573,13 @@ class OlapClient {
 
       try {
         try {
+          if (this.serverBaseUrl) {
+            client.defaults.baseURL = this.serverBaseUrl;
+          }
+
           session = await this.authenticateWithServerApi(client, storeId);
         } catch (error) {
-          if (!this.shouldFallbackToLegacy(error)) {
+          if (!this.shouldFallbackToLegacy(error) || !this.legacyBaseUrl) {
             throw error;
           }
 
@@ -406,6 +588,7 @@ class OlapClient {
             message: error?.message,
           });
 
+          client.defaults.baseURL = this.legacyBaseUrl;
           session = await this.authenticateLegacyApi(client, storeId);
         }
 
@@ -534,6 +717,10 @@ class OlapClient {
           storeId: session.storeId,
           message: error?.message,
         });
+
+        if (this.legacyBaseUrl) {
+          client.defaults.baseURL = this.legacyBaseUrl;
+        }
 
         const fallbackSession = await this.authenticateLegacyApi(client, session.storeId);
         client.__iikoSession = { ...session, ...fallbackSession };

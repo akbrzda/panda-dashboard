@@ -1,41 +1,43 @@
 <template>
-  <div class="table-container">
-    <div v-if="isLoading" class="loading">Загрузка данных...</div>
+  <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div v-if="isLoading" class="flex items-center justify-center px-4 py-10 text-sm text-muted-foreground">Загрузка данных...</div>
 
-    <div v-else-if="error" class="error-message">
+    <div v-else-if="error" class="px-4 py-6 text-sm text-destructive">
       {{ error }}
     </div>
 
-    <div v-else-if="items.length === 0" class="empty-state">
+    <div v-else-if="items.length === 0" class="px-4 py-10 text-center text-sm text-muted-foreground">
       <p>Нет данных для отображения</p>
     </div>
 
-    <table v-else class="data-table">
-      <thead>
-        <tr>
-          <th>Дата создания</th>
-          <th>Наименование</th>
-          <th>SKU</th>
-          <th>Филиал</th>
-          <th>Причина</th>
-          <th>Статус</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(item, index) in items" :key="index">
-          <td class="item-date">{{ formatDate(item) }}</td>
-          <td class="product-name">{{ getProductName(item) }}</td>
-          <td class="product-sku">{{ item.sku || item.productCode || "—" }}</td>
-          <td>{{ item.organizationName || "—" }}</td>
-          <td class="reason">{{ item.reason || "—" }}</td>
-          <td>
-            <span :class="['status-badge', getStatusClass(item)]">
-              {{ getStatusText(item) }}
-            </span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-else class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-muted/40">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Дата создания</th>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Наименование</th>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">SKU</th>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Филиал</th>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Причина</th>
+            <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(item, index) in items" :key="index" class="border-t border-border/70 hover:bg-muted/20">
+            <td class="px-4 py-3 text-foreground/80 whitespace-nowrap">{{ formatDate(item) }}</td>
+            <td class="px-4 py-3 font-medium text-foreground">{{ getProductName(item) }}</td>
+            <td class="px-4 py-3 text-foreground/80 whitespace-nowrap">{{ item.sku || item.productCode || "—" }}</td>
+            <td class="px-4 py-3 text-foreground/80">{{ item.organizationName || "—" }}</td>
+            <td class="px-4 py-3 text-foreground/80">{{ item.reason || "—" }}</td>
+            <td class="px-4 py-3">
+              <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
+                {{ getStatusText(item) }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -110,9 +112,9 @@ const getProductName = (item) => {
 
 const getStatusClass = (item) => {
   if (item.balance > 0) {
-    return "status-low-stock";
+    return "bg-emerald-500/15 text-emerald-400";
   }
-  return "status-stopped";
+  return "bg-rose-500/15 text-rose-400";
 };
 
 const getStatusText = (item) => {

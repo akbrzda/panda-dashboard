@@ -98,12 +98,16 @@ class FoodcostService extends OlapClient {
     };
   }
 
-  createFoodcostBody(storeId, startIso, endIso, groupFields = ["ProductCategory"]) {
+  createFoodcostBody(storeId, startIso, endIso, groupFields = ["DishCategory"]) {
+    const normalizedGroupFields = [
+      ...new Set([...groupFields, "UniqOrderId.Id", "OrderDeleted", "Storned", "DeletedWithWriteoff", "Delivery.CancelCause"]),
+    ];
+
     return {
       storeIds: [String(storeId)],
       olapType: "SALES",
       categoryFields: [],
-      groupFields,
+      groupFields: normalizedGroupFields,
       stackByDataFields: false,
       dataFields: ["Sales", "ProductCost"],
       calculatedFields: [
@@ -138,8 +142,8 @@ class FoodcostService extends OlapClient {
           inclusiveList: true,
         },
       ],
-      includeVoidTransactions: false,
-      includeNonBusinessPaymentTypes: false,
+      includeVoidTransactions: true,
+      includeNonBusinessPaymentTypes: true,
     };
   }
 
@@ -151,7 +155,7 @@ class FoodcostService extends OlapClient {
     }));
   }
 
-  async fetchFoodcostRows(client, delay, storeId, dateFrom, dateTo, groupFields = ["ProductCategory"]) {
+  async fetchFoodcostRows(client, delay, storeId, dateFrom, dateTo, groupFields = ["DishCategory"]) {
     const { startIso, endIso } = buildOlapBounds(dateFrom, dateTo);
     const body = this.createFoodcostBody(storeId, startIso, endIso, groupFields);
     const isSummaryMode = groupFields.length === 0;
@@ -160,13 +164,15 @@ class FoodcostService extends OlapClient {
       fetchTimeoutMs: this.fetchTimeoutMs,
       logEvery: 10,
     });
-    return this.parseFoodcostRows(result);
+
+    const rows = this.parseFoodcostRows(result);
+    return this.filterCanceledOrders(rows).rows;
   }
 
   async loadChunkRows(client, delay, storeId, chunk) {
     try {
       return {
-        rows: await this.fetchFoodcostRows(client, delay, storeId, chunk.dateFrom, chunk.dateTo, ["ProductCategory"]),
+        rows: await this.fetchFoodcostRows(client, delay, storeId, chunk.dateFrom, chunk.dateTo, ["DishCategory"]),
         degraded: false,
         warningMessage: null,
       };
@@ -235,8 +241,8 @@ class FoodcostService extends OlapClient {
     const current = await this.getFoodcostForPeriod({ organizationId, dateFrom, dateTo });
 
     let lfl = null;
-    let degraded = Boolean(current.degraded);
-    let warningMessage = current.warningMessage || null;
+    const degraded = Boolean(current.degraded);
+    const warningMessage = current.warningMessage || null;
     const currentDurationMs = Date.now() - currentStartedAt;
 
     if (lflDateFrom && lflDateTo && currentDurationMs < this.lflMaxWaitMs) {
@@ -248,8 +254,6 @@ class FoodcostService extends OlapClient {
           }),
         ]);
       } catch (error) {
-        degraded = true;
-        warningMessage = this.appendWarningMessage(warningMessage, "LFL временно недоступен для ускорения ответа");
         console.warn("⚠️ Не удалось получить LFL по фудкосту:", {
           organizationId,
           dateFrom: lflDateFrom,
@@ -257,9 +261,6 @@ class FoodcostService extends OlapClient {
           message: error?.message || String(error),
         });
       }
-    } else if (lflDateFrom && lflDateTo) {
-      degraded = true;
-      warningMessage = this.appendWarningMessage(warningMessage, "LFL пропущен для ускорения ответа");
     }
 
     return {
@@ -328,7 +329,7 @@ class FoodcostService extends OlapClient {
     let totalCost = 0;
 
     for (const row of rows) {
-      const category = row.ProductCategory || row.Category || "Без категории";
+      const category = row.DishCategory || row["DishCategory.Accounting"] || row.ProductCategory || row.Category || "Без категории";
       const revenue = Number(row.Sales) || 0;
       const cost = Number(row.ProductCost) || 0;
 
