@@ -1,4 +1,4 @@
-﻿module.exports = {
+module.exports = {
   TIMEZONE: "Europe/Moscow",
 
   // Daily at 03:30 MSK

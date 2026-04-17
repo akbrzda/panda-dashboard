@@ -1,46 +1,80 @@
 <template>
-  <aside class="flex min-h-screen w-16 shrink-0 flex-col border-r border-border bg-card sm:w-52">
-    <nav class="flex flex-1 flex-col gap-1 p-2 pt-4 sm:p-3">
-      <router-link to="/dashboard" class="nav-item" active-class="nav-item--active">
-        <LayoutDashboard class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Дашборд</span>
-      </router-link>
+  <aside class="flex min-h-screen w-16 shrink-0 flex-col border-r border-border bg-card sm:w-56">
+    <nav class="flex flex-1 flex-col gap-4 overflow-y-auto p-2 pt-4 sm:p-3">
+      <section v-for="section in menuSections" :key="section.title" class="space-y-1">
+        <p class="hidden px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:block">
+          {{ section.title }}
+        </p>
 
-      <router-link to="/revenue" class="nav-item" active-class="nav-item--active">
-        <BarChart2 class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Отчёты</span>
-      </router-link>
-
-      <router-link to="/stop-list" class="nav-item" active-class="nav-item--active">
-        <ClipboardList class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Стоп-лист</span>
-      </router-link>
-
-      <router-link to="/top-dishes" class="nav-item" active-class="nav-item--active">
-        <UtensilsCrossed class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Топ блюд</span>
-      </router-link>
-
-      <router-link to="/clients" class="nav-item" active-class="nav-item--active">
-        <Users class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Клиенты</span>
-      </router-link>
-
-      <router-link to="/foodcost" class="nav-item" active-class="nav-item--active">
-        <Percent class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Фудкост</span>
-      </router-link>
-
-      <router-link to="/plans" class="nav-item" active-class="nav-item--active">
-        <Target class="h-4 w-4 shrink-0" />
-        <span class="hidden sm:inline">Планы</span>
-      </router-link>
+        <router-link v-for="item in section.items" :key="item.to" :to="item.to" class="nav-item" active-class="nav-item--active">
+          <component :is="item.icon" class="h-4 w-4 shrink-0" />
+          <span class="hidden sm:inline">{{ item.label }}</span>
+        </router-link>
+      </section>
     </nav>
   </aside>
 </template>
 
 <script setup>
-import { LayoutDashboard, BarChart2, ClipboardList, UtensilsCrossed, Users, Percent, Target } from "lucide-vue-next";
+import {
+  LayoutDashboard,
+  BarChart2,
+  Clock3,
+  ShieldCheck,
+  Truck,
+  Bike,
+  Map,
+  Megaphone,
+  Tag,
+  Store,
+  ClipboardList,
+  UtensilsCrossed,
+  Users,
+  Percent,
+  Target,
+} from "lucide-vue-next";
+
+const menuSections = [
+  {
+    title: "Обзор",
+    items: [{ to: "/dashboard", label: "Дашборд", icon: LayoutDashboard }],
+  },
+  {
+    title: "Продажи",
+    items: [
+      { to: "/revenue", label: "Выручка", icon: BarChart2 },
+      { to: "/hourly-sales", label: "Продажи по часам", icon: Clock3 },
+      { to: "/top-dishes", label: "Топ блюд", icon: UtensilsCrossed },
+      { to: "/promotions", label: "Акции и промо", icon: Tag },
+      { to: "/marketing-sources", label: "Источники", icon: Megaphone },
+    ],
+  },
+  {
+    title: "Доставка",
+    items: [
+      { to: "/delivery-summary", label: "Сводка доставки", icon: Truck },
+      { to: "/delivery-sla", label: "SLA доставки", icon: ShieldCheck },
+      { to: "/delivery-delays", label: "Опоздания", icon: Clock3 },
+      { to: "/courier-kpi", label: "KPI курьеров", icon: Bike },
+      { to: "/courier-map", label: "Карта курьеров", icon: Map },
+    ],
+  },
+  {
+    title: "Ассортимент",
+    items: [
+      { to: "/menu-assortment", label: "Ассортимент", icon: Store },
+      { to: "/stop-list", label: "Стоп-лист", icon: ClipboardList },
+      { to: "/foodcost", label: "Фудкост", icon: Percent },
+    ],
+  },
+  {
+    title: "Клиенты и цели",
+    items: [
+      { to: "/clients", label: "Клиенты", icon: Users },
+      { to: "/plans", label: "Планы", icon: Target },
+    ],
+  },
+];
 </script>
 
 <style scoped>
@@ -49,6 +83,6 @@ import { LayoutDashboard, BarChart2, ClipboardList, UtensilsCrossed, Users, Perc
 }
 
 .nav-item--active {
-  @apply bg-primary/10 text-primary font-medium;
+  @apply bg-primary/10 font-medium text-primary;
 }
 </style>

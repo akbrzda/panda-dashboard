@@ -6,6 +6,13 @@ class StopListService {
     this.iikoService = new IikoService();
   }
 
+  round(value, digits = 2) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return null;
+    const factor = 10 ** digits;
+    return Math.round(numericValue * factor) / factor;
+  }
+
   parseIdQuery(value) {
     if (!value) return [];
 
@@ -57,6 +64,24 @@ class StopListService {
     }
   }
 
+  parseStopTimestamp(value) {
+    if (!value) return null;
+
+    try {
+      let dateObj;
+      if (typeof value === "string" && value.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/)) {
+        dateObj = new Date(value.replace(" ", "T") + "Z");
+      } else {
+        dateObj = new Date(value);
+      }
+
+      const timestamp = dateObj.getTime();
+      return Number.isFinite(timestamp) ? timestamp : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   normalizeDates(items, timezone = "Europe/Moscow") {
     return items.map((item) => {
       const result = { ...item };
@@ -74,6 +99,24 @@ class StopListService {
       if (item.closedAt) {
         result.closedAtOriginal = item.closedAt;
         result.closedAt = this.formatDateForTimezone(item.closedAt, timezone);
+      }
+
+      const startAt =
+        this.parseStopTimestamp(result.dateAddOriginal) ||
+        this.parseStopTimestamp(result.openedAtOriginal) ||
+        this.parseStopTimestamp(result.dateAdd) ||
+        this.parseStopTimestamp(result.openedAt);
+      const endAt = this.parseStopTimestamp(result.closedAtOriginal) || this.parseStopTimestamp(result.closedAt) || Date.now();
+
+      if (startAt && endAt >= startAt) {
+        const durationMinutes = (endAt - startAt) / (1000 * 60);
+        result.inStopMinutes = this.round(durationMinutes, 0);
+        result.inStopHours = this.round(durationMinutes / 60, 2);
+        result.inStopDays = this.round(durationMinutes / (60 * 24), 2);
+      } else {
+        result.inStopMinutes = null;
+        result.inStopHours = null;
+        result.inStopDays = null;
       }
 
       return result;

@@ -14,6 +14,14 @@
       </button>
     </div>
 
+    <ReportInfoBlock
+      title="Отчет «Планы KPI»"
+      purpose="Фиксирует целевые значения показателей и позволяет контролировать выполнение по периодам и подразделениям."
+      meaning="Показывает список целевых KPI, формат метрики, период действия и целевое значение."
+      calculation="Прогресс рассчитывается на карточках метрик как сравнение фактического значения с плановым на выбранный период."
+      responsibility="Отвечает за управленческое целеполагание и прозрачный контроль выполнения KPI."
+    />
+
     <div v-if="plansStore.error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       {{ plansStore.error }}
     </div>
@@ -140,6 +148,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import Card from "@/components/ui/Card.vue";
 import Select from "@/components/ui/Select.vue";
 import SelectItem from "@/components/ui/SelectItem.vue";
+import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
 import { PERIOD_PRESETS } from "@/composables/usePeriod";
 import { toast } from "@/lib/sonner";
 import { usePlansStore } from "@/stores/plans";

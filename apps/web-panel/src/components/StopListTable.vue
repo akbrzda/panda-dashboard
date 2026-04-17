@@ -19,6 +19,7 @@
             <th class="px-4 py-3 text-left font-semibold text-muted-foreground">SKU</th>
             <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Филиал</th>
             <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Причина</th>
+            <th class="px-4 py-3 text-right font-semibold text-muted-foreground">В стопе</th>
             <th class="px-4 py-3 text-left font-semibold text-muted-foreground">Статус</th>
           </tr>
         </thead>
@@ -29,6 +30,7 @@
             <td class="px-4 py-3 text-foreground/80 whitespace-nowrap">{{ item.sku || item.productCode || "—" }}</td>
             <td class="px-4 py-3 text-foreground/80">{{ item.organizationName || "—" }}</td>
             <td class="px-4 py-3 text-foreground/80">{{ item.reason || "—" }}</td>
+            <td class="px-4 py-3 text-right text-foreground tabular-nums">{{ formatDuration(item) }}</td>
             <td class="px-4 py-3">
               <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
                 {{ getStatusText(item) }}
@@ -42,9 +44,9 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { formatDateTimeWithSeconds } from "../lib/utils";
 
-const props = defineProps({
+defineProps({
   items: {
     type: Array,
     default: () => [],
@@ -60,49 +62,34 @@ const props = defineProps({
 });
 
 const formatDate = (item) => {
-  // Приоритет: dateAdd -> openedAt -> дефолтное значение
   const dateString = item.dateAdd || item.openedAt;
-
   if (!dateString) return "—";
+  return formatDateTimeWithSeconds(dateString);
+};
 
-  try {
-    // Если дата уже в формате "YYYY-MM-DD HH:mm:ss" (от сервера)
-    if (typeof dateString === "string" && dateString.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-      const [datePart, timePart] = dateString.split(" ");
-      const [year, month, day] = datePart.split("-");
-      const [hours, minutes] = timePart.split(":");
-      return `${day}.${month}.${year} ${hours}:${minutes}`;
+const formatDuration = (item) => {
+  const hours = Number(item.inStopHours);
+  if (!Number.isFinite(hours) || hours < 0) return "—";
+
+  if (hours >= 24) {
+    const days = Number(item.inStopDays);
+    if (Number.isFinite(days)) {
+      return `${days.toFixed(1)} дн`;
     }
-
-    // Если это ISO дата или другой формат
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return dateString;
-    }
-
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${day}.${month}.${year} ${hours}:${minutes}`;
-  } catch (e) {
-    return dateString;
   }
+
+  return `${hours.toFixed(1)} ч`;
 };
 
 const getProductName = (item) => {
-  // Если есть полное название продукта
   if (item.productFullName) return item.productFullName;
   if (item.productName) return item.productName;
   if (item.itemName) return item.itemName;
 
-  // Если нет названия, показываем SKU или ID
   if (item.sku) {
     return `SKU: ${item.sku}`;
   }
 
-  // В крайнем случае показываем ID
   if (item.productId) {
     return `ID: ${item.productId.substring(0, 8)}...`;
   }

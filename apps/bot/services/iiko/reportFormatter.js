@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Report Formatter - formatting reports for Telegram
  */
 

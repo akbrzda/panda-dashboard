@@ -10,6 +10,13 @@
       </div>
       <DashboardFilters ref="filtersRef" :loading="dashboardStore.isLoadingDashboard" @apply="handleApply" />
     </div>
+    <ReportInfoBlock
+      title="Страница «Дашборд»"
+      purpose="Дает сводную картину бизнеса и помогает быстро увидеть отклонения по ключевым показателям."
+      meaning="Показывает выручку, заказы, средний чек, скидки, структуру каналов и срез по подразделениям."
+      calculation="Карточки формируются из агрегированных данных за период. Дополнительно отображаются краткие срезы по меню и переходы в детальные отчеты."
+      responsibility="Отвечает за оперативный управленческий контроль и приоритизацию дальнейшего анализа."
+    />
 
     <!-- Ошибка -->
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -199,12 +206,28 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { AlertCircle, BarChart2, ArrowRight, TrendingUp, ShoppingCart, ClipboardList, UtensilsCrossed, Users, Tag, Percent } from "lucide-vue-next";
+import {
+  AlertCircle,
+  BarChart2,
+  Clock3,
+  ArrowRight,
+  TrendingUp,
+  ShoppingCart,
+  ClipboardList,
+  UtensilsCrossed,
+  Users,
+  Tag,
+  Percent,
+  Truck,
+  Map,
+  Store,
+} from "lucide-vue-next";
 import MetricCard from "@/components/metrics/MetricCard.vue";
 import DashboardFilters from "@/components/filters/DashboardFilters.vue";
 import Card from "@/components/ui/Card.vue";
 import DonutChart from "@/components/charts/DonutChart.vue";
 import OrgBarChart from "@/components/charts/OrgBarChart.vue";
+import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useRevenueStore } from "@/stores/revenue";
 import { useDashboardStore } from "@/stores/dashboard";
@@ -235,6 +258,11 @@ const currentPlanOrganizationId = computed(() => {
 
 const sections = [
   { to: "/revenue", title: "Отчёт по выручке", desc: "Детальная аналитика по каналам и периодам", icon: BarChart2 },
+  { to: "/delivery-summary", title: "Сводка доставки", desc: "Заказы, выручка, статусы и каналы", icon: Truck },
+  { to: "/delivery-delays", title: "Опоздания", desc: "Обещанное и фактическое время", icon: Clock3 },
+  { to: "/courier-map", title: "Карта курьеров", desc: "Оперативный мониторинг с polling", icon: Map },
+  { to: "/promotions", title: "Акции и промокоды", desc: "Скидки, доли и динамика", icon: Tag },
+  { to: "/menu-assortment", title: "Ассортимент", desc: "Категории, доступность, стоп-лист", icon: Store },
   { to: "/stop-list", title: "Стоп-лист", desc: "Управление стоп-листами ресторанов", icon: ClipboardList },
   { to: "/top-dishes", title: "Топ блюд", desc: "Рейтинг продаж по позициям меню", icon: UtensilsCrossed },
   { to: "/clients", title: "Клиенты", desc: "Активная база и новые клиенты", icon: Users },

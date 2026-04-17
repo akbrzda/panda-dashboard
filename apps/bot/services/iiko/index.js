@@ -1,4 +1,4 @@
-﻿/**
+/**
  * iiko Report Service - main module for iiko OLAP reports
  */
 

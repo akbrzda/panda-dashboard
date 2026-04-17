@@ -26,6 +26,43 @@ class OrganizationsService {
       .trim();
   }
 
+  _extractCityFromOrganizationName(name) {
+    const source = String(name || "");
+    const match = source.match(/\(([^)]+)\)/);
+    if (!match) return "";
+    const [cityPart] = String(match[1] || "")
+      .split(",")
+      .map((part) => part.trim());
+    return cityPart || "";
+  }
+
+  _resolveTimezoneFromCity(city) {
+    const normalizedCity = String(city || "")
+      .toLowerCase()
+      .trim();
+    if (!normalizedCity) return null;
+
+    const cityTimezoneMap = [
+      { aliases: ["москва", "moscow", "пенза", "penza"], timezone: "Europe/Moscow" },
+      { aliases: ["екатеринбург", "yekaterinburg", "тюмень", "tyumen", "когалым", "kogalym"], timezone: "Asia/Yekaterinburg" },
+      { aliases: ["омск", "omsk"], timezone: "Asia/Omsk" },
+      { aliases: ["красноярск", "krasnoyarsk"], timezone: "Asia/Krasnoyarsk" },
+      { aliases: ["иркутск", "irkutsk"], timezone: "Asia/Irkutsk" },
+      { aliases: ["новосибирск", "novosibirsk"], timezone: "Asia/Novosibirsk" },
+      { aliases: ["владивосток", "vladivostok"], timezone: "Asia/Vladivostok" },
+      { aliases: ["самара", "samara"], timezone: "Europe/Samara" },
+      { aliases: ["калининград", "kaliningrad"], timezone: "Europe/Kaliningrad" },
+      { aliases: ["ташкент", "tashkent"], timezone: "Asia/Tashkent" },
+    ];
+
+    for (const item of cityTimezoneMap) {
+      if (item.aliases.some((alias) => normalizedCity.includes(alias))) {
+        return item.timezone;
+      }
+    }
+
+    return null;
+  }
   _createPasswordHash(password) {
     return crypto
       .createHash("sha1")
@@ -200,6 +237,9 @@ class OrganizationsService {
 
     const organizations = remoteOrganizations.map((org) => {
       const name = org.name || org.organizationName || `Организация ${org.id}`;
+      const city = org.city || this._extractCityFromOrganizationName(name);
+      const timezone =
+        org.timezone || org.timeZone || org.time_zone || org.timeZoneId || org.timezoneId || this._resolveTimezoneFromCity(city) || "Europe/Moscow";
       const matchedStoreId = storeIdsByName.get(this._normalizeName(name)) || null;
       const matchedStoreValue = String(matchedStoreId || "").trim();
       const isNumericStoreId = /^\d+$/.test(matchedStoreValue);
@@ -216,6 +256,8 @@ class OrganizationsService {
         iikoId: org.iikoId != null ? String(org.iikoId) : null,
         threadId: org.threadId ?? null,
         disabled: Boolean(org.disabled),
+        city: String(city || "").trim() || null,
+        timezone: String(timezone || "Europe/Moscow"),
       };
     });
 

@@ -3,8 +3,16 @@
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Отчёт по выручке</h1>
-      <PageFilters :loading="isPageLoading" @apply="handleApply" />
+      <PageFilters :loading="isPageLoading" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
     </div>
+
+    <ReportInfoBlock
+      title="О отчете выручки"
+      purpose="Базовый финансовый отчет по выручке, заказам, среднему чеку и каналам продаж."
+      meaning="Показывает, сколько заработано, где формируется выручка и как меняется динамика по дням."
+      calculation="Строится на OLAP SALES с исключением отмененных/удаленных заказов; LFL рассчитывается только для этого сценария."
+      responsibility="Используется как основной коммерческий отчет для контроля выполнения планов."
+    />
 
     <!-- Ошибка -->
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -139,6 +147,7 @@ import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
+import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
 
 const store = useRevenueStore();
 const reportsStore = useReportsStore();

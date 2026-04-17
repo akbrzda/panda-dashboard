@@ -2,8 +2,15 @@
   <div class="space-y-6">
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Фудкост</h1>
-      <PageFilters :loading="foodcostStore.isLoadingFoodcost" @apply="handleApply" />
+      <PageFilters :loading="foodcostStore.isLoadingFoodcost" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
     </div>
+    <ReportInfoBlock
+      title="Отчет «Фудкост»"
+      purpose="Контролирует долю себестоимости в выручке и помогает вовремя замечать риск падения маржинальности."
+      meaning="Показывает общий фудкост, разрез по категориям, вклад выручки и себестоимости по каждой категории."
+      calculation="Фудкост считается как Себестоимость / Выручка × 100. По категориям используется тот же принцип с агрегацией за выбранный период."
+      responsibility="Отвечает за контроль закупок, рецептур, списаний и ценовой политики меню."
+    />
 
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="w-5 h-5 shrink-0" />
@@ -106,6 +113,7 @@ import { useRevenueStore } from "@/stores/revenue";
 import { useFoodcostStore } from "@/stores/foodcost";
 import { useFiltersStore } from "@/stores/filters";
 import { usePlansStore } from "@/stores/plans";
+import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
 
 const revenueStore = useRevenueStore();
 const foodcostStore = useFoodcostStore();

@@ -28,6 +28,14 @@
       </div>
     </header>
 
+    <ReportInfoBlock
+      title="Отчет «Стоп-лист»"
+      purpose="Показывает позиции, которые недоступны к продаже, и помогает быстро восстанавливать ассортимент."
+      meaning="Отчет отражает дату попадания в стоп, причину, текущий статус и длительность нахождения позиции в стоп-листе."
+      calculation="Длительность считается как разница между временем открытия стопа и текущим моментом или временем закрытия, если позиция уже возвращена."
+      responsibility="Отвечает за операционное управление доступностью меню и скорость реакции кухни/склада."
+    />
+
     <StopListTable :items="filteredItems" :is-loading="isLoading" :error="error" />
   </div>
 </template>
@@ -39,6 +47,7 @@ import { useStopListStore } from "../stores/stopList";
 import StopListTable from "../components/StopListTable.vue";
 import Select from "../components/ui/Select.vue";
 import SelectItem from "../components/ui/SelectItem.vue";
+import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
 
 const store = useStopListStore();
 

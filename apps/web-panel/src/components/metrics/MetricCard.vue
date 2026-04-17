@@ -56,7 +56,7 @@ import { computed } from "vue";
 import { AlertCircle, TrendingUp, ShoppingCart, Truck, Store, Clock, Percent, Users, UserPlus, BarChart2, DollarSign, Star } from "lucide-vue-next";
 import Card from "@/components/ui/Card.vue";
 import LFLBadge from "@/components/metrics/LFLBadge.vue";
-import { cn } from "@/lib/utils";
+import { cn, formatMinutesToHms } from "@/lib/utils";
 
 const ICONS = {
   TrendingUp,
@@ -110,16 +110,7 @@ function formatValue(val) {
       return `${Number(val).toFixed(2)}%`;
 
     case "time": {
-      const totalMinutes = Number(val) || 0;
-      let minutes = Math.floor(totalMinutes);
-      let seconds = Math.round((totalMinutes - minutes) * 60);
-
-      if (seconds === 60) {
-        minutes += 1;
-        seconds = 0;
-      }
-
-      return `${minutes} мин ${String(seconds).padStart(2, "0")} сек`;
+      return formatMinutesToHms(val);
     }
 
     case "number":

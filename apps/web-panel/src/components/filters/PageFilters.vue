@@ -32,7 +32,7 @@
     </button>
 
     <!-- Период LFL для справки -->
-    <div v-if="filtersStore.lflDateFrom && !loading" class="ml-auto self-end pb-1.5 text-xs text-muted-foreground hidden lg:block">
+    <div v-if="showLflHint && filtersStore.lflDateFrom && !loading" class="ml-auto self-end pb-1.5 text-xs text-muted-foreground hidden lg:block">
       LFL: {{ filtersStore.lflDateFrom }} — {{ filtersStore.lflDateTo }}
     </div>
   </div>
@@ -51,6 +51,8 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   requireOrganization: { type: Boolean, default: true },
   showOrganization: { type: Boolean, default: true },
+  includeLfl: { type: Boolean, default: false },
+  showLflHint: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["apply"]);
@@ -61,13 +63,18 @@ const filtersStore = useFiltersStore();
 const isApplyDisabled = computed(() => props.loading || (props.requireOrganization && !revenueStore.currentOrganizationId));
 
 function handleApplyClick() {
-  emit("apply", {
+  const payload = {
     organizationId: revenueStore.currentOrganizationId,
     dateFrom: filtersStore.dateFrom,
     dateTo: filtersStore.dateTo,
-    lflDateFrom: filtersStore.lflDateFrom,
-    lflDateTo: filtersStore.lflDateTo,
-  });
+  };
+
+  if (props.includeLfl) {
+    payload.lflDateFrom = filtersStore.lflDateFrom;
+    payload.lflDateTo = filtersStore.lflDateTo;
+  }
+
+  emit("apply", payload);
 }
 
 // Двухсторонняя привязка организации через вычисляемое свойство

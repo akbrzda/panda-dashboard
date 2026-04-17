@@ -99,6 +99,7 @@ class OlapClient {
           code: error?.code,
           status: error?.response?.status,
           message: error?.message,
+          detail: error?.response?.data?.errorMessage || error?.response?.data?.detail || undefined,
         };
 
         if (!retriable || attempt === retries) {
@@ -370,7 +371,7 @@ class OlapClient {
     };
 
     for (const order of ordersMap.values()) {
-      const isCanceledOrder = order.isOrderDeleted || order.isStorned || order.hasCancelCause;
+      const isCanceledOrder = order.isOrderDeleted || order.isStorned || order.hasCancelCause || order.hasItemDeletion;
 
       if (order.isOrderDeleted) orderStats.orderDeleted += 1;
       if (order.isStorned) orderStats.storned += 1;
@@ -533,17 +534,31 @@ class OlapClient {
       { stage: "auth-login", storeId: legacyStoreId },
     );
 
-    const selectResponse = await this.requestWithRetry(
-      client,
-      {
-        method: "post",
-        url: `/api/stores/select/${legacyStoreId}`,
-      },
-      { stage: "auth-select-store", storeId: legacyStoreId },
-    );
+    try {
+      const selectResponse = await this.requestWithRetry(
+        client,
+        {
+          method: "post",
+          url: `/api/stores/select/${legacyStoreId}`,
+        },
+        { stage: "auth-select-store", storeId: legacyStoreId },
+      );
 
-    if (selectResponse.data?.error) {
-      throw new Error(selectResponse.data?.errorMessage || `IIKO отказал в доступе к store ${storeId}`);
+      if (selectResponse.data?.error) {
+        throw new Error(selectResponse.data?.errorMessage || `IIKO отказал в доступе к store ${storeId}`);
+      }
+    } catch (error) {
+      const status = error?.response?.status;
+      const message = String(error?.response?.data?.errorMessage || error?.message || "").toLowerCase();
+      const routeMissing = status === 404 && message.includes("no route found");
+
+      if (!routeMissing) {
+        throw error;
+      }
+
+      console.warn("⚠️ Legacy API не поддерживает выбор стора через /api/stores/select, продолжаем без этого шага:", {
+        storeId: legacyStoreId,
+      });
     }
 
     return { mode: "legacy", key: null };
@@ -566,8 +581,9 @@ class OlapClient {
     } catch (_) {}
   }
 
-  async withAuth(storeId, fn) {
+  async withAuth(storeId, fn, options = {}) {
     return await this.runWithConcurrencyLimit(async () => {
+      const allowLegacy = options.allowLegacy !== false;
       const client = this.createClient();
       let session = null;
 
@@ -579,7 +595,7 @@ class OlapClient {
 
           session = await this.authenticateWithServerApi(client, storeId);
         } catch (error) {
-          if (!this.shouldFallbackToLegacy(error) || !this.legacyBaseUrl) {
+          if (!allowLegacy || !this.shouldFallbackToLegacy(error) || !this.legacyBaseUrl) {
             throw error;
           }
 
@@ -619,7 +635,28 @@ class OlapClient {
   }
 
   async executeLegacyOlap(client, delay, body, options = {}) {
-    const storeId = body?.storeIds?.[0];
+    const normalizedStoreIds = [];
+    const sourceStoreIds = Array.isArray(body?.storeIds) ? body.storeIds : [];
+
+    for (const sourceStoreId of sourceStoreIds) {
+      const legacyStoreId = await this.resolveLegacyStoreId(sourceStoreId);
+      if (/^\d+$/.test(String(legacyStoreId || "").trim())) {
+        normalizedStoreIds.push(String(legacyStoreId).trim());
+      }
+    }
+
+    const normalizedBody = {
+      ...body,
+      storeIds: normalizedStoreIds.length > 0 ? normalizedStoreIds : sourceStoreIds,
+    };
+
+    if (normalizedStoreIds.length === 0) {
+      console.warn("⚠️ Для legacy OLAP не найден числовой storeId, используется исходный storeId:", {
+        sourceStoreIds,
+      });
+    }
+
+    const storeId = normalizedStoreIds[0] || sourceStoreIds[0];
     const maxAttempts = Number(options.maxAttempts || this.maxAttempts);
     const fetchTimeoutMs = Number(options.fetchTimeoutMs || Math.min(this.timeout, 5000));
     const logEvery = Number(options.logEvery || 20);
@@ -629,7 +666,7 @@ class OlapClient {
       {
         method: "post",
         url: "/api/olap/init",
-        data: body,
+        data: normalizedBody,
         timeout: Math.min(this.timeout, 10000),
       },
       { stage: "olap-init", storeId },
@@ -703,13 +740,14 @@ class OlapClient {
   }
 
   async pollOlap(client, delay, body, options = {}) {
+    const allowLegacy = options.allowLegacy !== false;
     const session = client.__iikoSession || {};
 
     if (session.mode === "server-v2") {
       try {
         return await this.executeServerOlap(client, body, options);
       } catch (error) {
-        if (!this.shouldFallbackToLegacy(error)) {
+        if (!allowLegacy || !this.shouldFallbackToLegacy(error)) {
           throw error;
         }
 

@@ -5,6 +5,13 @@
       <h1 class="text-2xl font-bold text-foreground">Топ блюд</h1>
       <PageFilters :loading="topDishesStore.isLoadingTopDishes" @apply="handleApply" />
     </div>
+    <ReportInfoBlock
+      title="Отчет «Топ блюд»"
+      purpose="Показывает ассортиментных лидеров и аутсайдеров продаж, чтобы управлять меню на основе фактов."
+      meaning="Показывает количество продаж, выручку, среднюю цену и долю блюда в общей выручке за период."
+      calculation="Рейтинг строится по выручке и количеству продаж. Аутсайдеры определяются как позиции с минимальной выручкой и спросом."
+      responsibility="Отвечает за решения по матрице меню, выводу/усилению позиций и промо-поддержке блюд."
+    />
 
     <!-- Ошибка -->
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -168,6 +175,7 @@ import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
+import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
 
 // Компонент иконки сортировки
 const SortIcon = {

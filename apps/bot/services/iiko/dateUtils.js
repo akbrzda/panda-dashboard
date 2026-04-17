@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Date utilities for reports (Moscow timezone aware)
  */
 

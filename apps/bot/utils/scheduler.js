@@ -1,4 +1,4 @@
-﻿const schedule = require("node-schedule");
+const schedule = require("node-schedule");
 const schedulerCfg = require("../config/scheduler.config");
 const telegramCfg = require("../config/telegram.config");
 const fileLogger = require("./fileLogger");
