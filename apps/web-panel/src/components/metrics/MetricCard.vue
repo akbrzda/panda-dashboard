@@ -53,7 +53,23 @@
 
 <script setup>
 import { computed } from "vue";
-import { AlertCircle, TrendingUp, ShoppingCart, Truck, Store, Clock, Percent, Users, UserPlus, BarChart2, DollarSign, Star } from "lucide-vue-next";
+import {
+  AlertCircle,
+  TrendingUp,
+  ShoppingCart,
+  Truck,
+  Store,
+  Clock,
+  Percent,
+  Users,
+  UserPlus,
+  BarChart2,
+  DollarSign,
+  Star,
+  Factory,
+  CalendarCheck,
+  Gauge,
+} from "lucide-vue-next";
 import Card from "@/components/ui/Card.vue";
 import LFLBadge from "@/components/metrics/LFLBadge.vue";
 import { cn, formatMinutesToHms } from "@/lib/utils";
@@ -70,6 +86,9 @@ const ICONS = {
   BarChart2,
   DollarSign,
   Star,
+  Factory,
+  CalendarCheck,
+  Gauge,
 };
 
 const props = defineProps({

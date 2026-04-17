@@ -33,7 +33,7 @@ class ReportsService extends OlapClient {
   isDeliveryOrder(row = {}) {
     const courierId = String(row["Delivery.Courier.Id"] || "").trim();
     const orderType = String(row.OrderType || "").toLowerCase();
-    return Boolean(courierId) || orderType.includes("достав") || orderType.includes("delivery") || orderType.includes("courier");
+    return Boolean(courierId) || orderType.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || orderType.includes("delivery") || orderType.includes("courier");
   }
 
   extractOrderServiceType(row = {}) {
@@ -51,29 +51,29 @@ class ReportsService extends OlapClient {
     const serviceType = String(order.orderServiceType || order.OrderServiceType || "")
       .trim()
       .toUpperCase();
-    if (serviceType === "DELIVERY_BY_COURIER") return "Доставка курьером";
-    if (serviceType === "DELIVERY_BY_CLIENT") return "Самовывоз";
-    if (serviceType === "COMMON") return "В зале";
+    if (serviceType === "DELIVERY_BY_COURIER") return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В° Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚Р С•Р С";
+    if (serviceType === "DELIVERY_BY_CLIENT") return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р†Р С•Р В·";
+    if (serviceType === "COMMON") return "Р вЂ™ Р В·Р В°Р В»Р Вµ";
 
     const orderType = String(order.orderType || order.OrderType || "")
       .trim()
       .toLowerCase();
-    if (orderType.includes("достав") || orderType.includes("delivery") || orderType.includes("courier")) return "Доставка курьером";
-    if (orderType.includes("самовы") || orderType.includes("pickup") || orderType.includes("takeaway")) return "Самовывоз";
-    if (orderType.includes("зал") || orderType.includes("dine")) return "В зале";
-    return String(order.orderType || order.OrderType || "Неизвестно");
+    if (orderType.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || orderType.includes("delivery") || orderType.includes("courier")) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В° Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚Р С•Р С";
+    if (orderType.includes("РЎРѓР В°Р СР С•Р Р†РЎвЂ№") || orderType.includes("pickup") || orderType.includes("takeaway")) return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р†Р С•Р В·";
+    if (orderType.includes("Р В·Р В°Р В»") || orderType.includes("dine")) return "Р вЂ™ Р В·Р В°Р В»Р Вµ";
+    return String(order.orderType || order.OrderType || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р С•");
   }
 
   normalizeChannelName(channel) {
     const source = String(channel || "")
       .trim()
       .toLowerCase();
-    if (!source) return "Неизвестный канал";
-    if (source.includes("яндекс") || source.includes("yandex")) return "Яндекс.Еда";
-    if (source.includes("самовыв") || source.includes("takeaway") || source.includes("pickup")) return "Самовынос";
-    if (source.includes("достав") || source.includes("delivery") || source.includes("courier")) return "Доставка";
-    if (source.includes("зал") || source.includes("dine")) return "Зал";
-    return String(channel || "Прочее");
+    if (!source) return "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…РЎвЂ№Р в„– Р С”Р В°Р Р…Р В°Р В»";
+    if (source.includes("РЎРЏР Р…Р Т‘Р ВµР С”РЎРѓ") || source.includes("yandex")) return "Р Р‡Р Р…Р Т‘Р ВµР С”РЎРѓ.Р вЂўР Т‘Р В°";
+    if (source.includes("РЎРѓР В°Р СР С•Р Р†РЎвЂ№Р Р†") || source.includes("takeaway") || source.includes("pickup")) return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р…Р С•РЎРѓ";
+    if (source.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || source.includes("delivery") || source.includes("courier")) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В°";
+    if (source.includes("Р В·Р В°Р В»") || source.includes("dine")) return "Р вЂ”Р В°Р В»";
+    return String(channel || "Р СџРЎР‚Р С•РЎвЂЎР ВµР Вµ");
   }
 
   extractOrderNumber(row = {}) {
@@ -88,7 +88,7 @@ class ReportsService extends OlapClient {
   }
 
   formatDisplayOrderNumber(row = {}) {
-    return this.extractOrderNumber(row) || "Без номера";
+    return this.extractOrderNumber(row) || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°";
   }
 
   extractDateOnly(value) {
@@ -303,7 +303,7 @@ class ReportsService extends OlapClient {
   }
 
   buildExcelXmlBuffer({ sheetName, headers, rows }) {
-    const safeSheetName = this.escapeXml(String(sheetName || "Отчет").slice(0, 31));
+    const safeSheetName = this.escapeXml(String(sheetName || "Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ").slice(0, 31));
     const headerRow = headers.map((header) => `<Cell><Data ss:Type=\"String\">${this.escapeXml(header)}</Data></Cell>`).join("");
     const bodyRows = rows
       .map((row) => {
@@ -369,16 +369,16 @@ class ReportsService extends OlapClient {
   extractOrderStatus(row = {}, order = null) {
     const cancelCause = String(row["Delivery.CancelCause"] || "").trim();
     const isCanceled = this.isDeletedOrderFlag(row.OrderDeleted) || this.isTrueFlag(row.Storned) || Boolean(cancelCause);
-    if (isCanceled) return "Отменен";
+    if (isCanceled) return "Р С›РЎвЂљР СР ВµР Р…Р ВµР Р…";
 
     const deliveredAt = order?.deliveredAt || this.parseDateTime(row["Delivery.CloseTime"]);
     const sentAt = order?.sentAt || this.parseDateTime(row["Delivery.SendTime"]);
     const cookedAt = order?.cookedAt || this.parseDateTime(row["Delivery.CookingFinishTime"]);
 
-    if (deliveredAt) return "Доставлен";
-    if (sentAt) return "В пути";
-    if (cookedAt) return "Готов";
-    return "Создан";
+    if (deliveredAt) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р В»Р ВµР Р…";
+    if (sentAt) return "Р вЂ™ Р С—РЎС“РЎвЂљР С‘";
+    if (cookedAt) return "Р вЂњР С•РЎвЂљР С•Р Р†";
+    return "Р РЋР С•Р В·Р Т‘Р В°Р Р…";
   }
 
   getStablePoint(seed) {
@@ -482,7 +482,7 @@ class ReportsService extends OlapClient {
           logEvery: 10,
         });
       } catch (error) {
-        console.warn("⚠️ getOperationalRowsForPeriod fallback без OrderNum:", error?.message);
+        console.warn("РІС™В РїС‘РЏ getOperationalRowsForPeriod fallback Р В±Р ВµР В· OrderNum:", error?.message);
         return await this.pollOlap(client, delay, buildBody(fallbackGroupFields), {
           maxAttempts: this.maxAttempts,
           fetchTimeoutMs: this.timeout,
@@ -691,14 +691,14 @@ class ReportsService extends OlapClient {
         orderMap.set(orderId, {
           orderId,
           orderNumber,
-          displayOrderNumber: orderNumber || "Без номера",
-          orderType: row.OrderType || "Неизвестно",
+          displayOrderNumber: orderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°",
+          orderType: row.OrderType || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р С•",
           orderServiceType: this.extractOrderServiceType(row) || null,
           channel: this.normalizeChannelName(row.OrderType),
           departmentId: String(row["Department.Id"] || row["Department.Code"] || "").trim() || "unknown",
           departmentName: this.pickFirstValue(row, ["Department", "Department.Name"]) || null,
           courierId: String(row["Delivery.Courier.Id"] || "").trim() || "unknown",
-          courierName: String(row["Delivery.Courier"] || "").trim() || "Неизвестный курьер",
+          courierName: String(row["Delivery.Courier"] || "").trim() || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…РЎвЂ№Р в„– Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚",
           cancelCause: String(row["Delivery.CancelCause"] || "").trim(),
           isOrderDeleted: this.isDeletedOrderFlag(row.OrderDeleted),
           isStorned: this.isTrueFlag(row.Storned),
@@ -723,7 +723,7 @@ class ReportsService extends OlapClient {
       const order = orderMap.get(orderId);
       if (!order.orderNumber) {
         order.orderNumber = this.extractOrderNumber(row);
-        order.displayOrderNumber = order.orderNumber || "Без номера";
+        order.displayOrderNumber = order.orderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°";
       }
       order.revenue += Number(row.Sales) || 0;
       order.cancelCause = order.cancelCause || String(row["Delivery.CancelCause"] || "").trim();
@@ -747,7 +747,7 @@ class ReportsService extends OlapClient {
     });
     return [...orderMap.values()].map((order) => ({
       ...order,
-      status: order.isOrderDeleted || order.isStorned || order.cancelCause ? "Отменен" : this.extractOrderStatus({}, order),
+      status: order.isOrderDeleted || order.isStorned || order.cancelCause ? "Р С›РЎвЂљР СР ВµР Р…Р ВµР Р…" : this.extractOrderStatus({}, order),
     }));
   }
 
@@ -1027,8 +1027,7 @@ class ReportsService extends OlapClient {
 
       delayedOrders.push({
         date: order.date || "",
-        orderId: order.orderId || "",
-        orderNumber: order.displayOrderNumber || "Без номера",
+        orderNumber: order.displayOrderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°",
         orderType: order.orderType || "",
         orderTypeNormalized: this.normalizeOrderType(order),
         orderServiceType: order.orderServiceType || "",
@@ -1055,9 +1054,9 @@ class ReportsService extends OlapClient {
 
     delayedOrders.sort((left, right) => Number(right.lateMinutes) - Number(left.lateMinutes));
 
+
     const headers = [
       "Дата",
-      "ID заказа",
       "Номер заказа",
       "Тип заказа",
       "Тип заказа (норм.)",
@@ -1084,7 +1083,6 @@ class ReportsService extends OlapClient {
 
     const tableRows = delayedOrders.map((item) => [
       item.date,
-      item.orderId,
       item.orderNumber,
       item.orderType,
       item.orderTypeNormalized,
@@ -1110,7 +1108,7 @@ class ReportsService extends OlapClient {
     ]);
 
     const buffer = this.buildExcelXmlBuffer({
-      sheetName: "Опоздания",
+      sheetName: "Р С›Р С—Р С•Р В·Р Т‘Р В°Р Р…Р С‘РЎРЏ",
       headers,
       rows: tableRows,
     });

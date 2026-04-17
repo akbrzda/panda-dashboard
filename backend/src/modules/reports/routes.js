@@ -7,6 +7,7 @@ router.post("/revenue", reportsController.getRevenue.bind(reportsController));
 router.post("/operational", reportsController.getOperational.bind(reportsController));
 router.post("/courier-routes", reportsController.getCourierRoutes.bind(reportsController));
 router.post("/hourly-sales", reportsController.getHourlySales.bind(reportsController));
+router.post("/production-forecast", reportsController.getProductionForecast.bind(reportsController));
 router.post("/sla", reportsController.getSla.bind(reportsController));
 router.post("/courier-kpi", reportsController.getCourierKpi.bind(reportsController));
 router.post("/marketing-sources", reportsController.getMarketingSources.bind(reportsController));

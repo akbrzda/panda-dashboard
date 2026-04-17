@@ -3,6 +3,7 @@ import DashboardView from "../views/DashboardView.vue";
 import StopListView from "../views/StopListView.vue";
 import RevenueView from "../views/RevenueView.vue";
 import HourlySalesView from "../views/HourlySalesView.vue";
+import ProductionForecastView from "../views/ProductionForecastView.vue";
 import DeliverySlaView from "../views/DeliverySlaView.vue";
 import CourierKpiView from "../views/CourierKpiView.vue";
 import MarketingSourcesView from "../views/MarketingSourcesView.vue";
@@ -40,6 +41,11 @@ const routes = [
     path: "/hourly-sales",
     name: "HourlySales",
     component: HourlySalesView,
+  },
+  {
+    path: "/production-forecast",
+    name: "ProductionForecast",
+    component: ProductionForecastView,
   },
   {
     path: "/delivery-sla",

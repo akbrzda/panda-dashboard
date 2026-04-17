@@ -4,6 +4,7 @@ const express = require("express");
 const config = require("./config");
 const apiRoutes = require("./routes/api");
 const requestLogger = require("./middleware/requestLogger");
+const fileLogger = require("./utils/fileLogger");
 
 const app = express();
 
@@ -44,6 +45,12 @@ app.get("/", (req, res) => {
 
 // 404 handler
 app.use((req, res) => {
+  fileLogger.warn("Неизвестный endpoint", {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+  });
+
   res.status(404).json({
     success: false,
     error: "Endpoint not found",
@@ -54,6 +61,14 @@ app.use((req, res) => {
 // Error handling
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
+  fileLogger.error("Необработанная ошибка запроса", {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    message: err.message,
+    stack: err.stack,
+  });
+
   res.status(500).json({
     success: false,
     error: config.env === "development" ? err.message : "Internal server error",
@@ -66,6 +81,26 @@ app.listen(PORT, () => {
   console.log(`🚀 Backend server running on http://localhost:${PORT}`);
   console.log(`📝 Environment: ${config.env}`);
   console.log("🏢 Организации загружаются динамически из IIKO API");
+  fileLogger.info("Backend server запущен", {
+    port: PORT,
+    environment: config.env,
+  });
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+  fileLogger.error("Unhandled Rejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  fileLogger.error("Uncaught Exception", {
+    message: error.message,
+    stack: error.stack,
+  });
 });
 
 module.exports = app;

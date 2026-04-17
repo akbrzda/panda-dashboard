@@ -16,6 +16,21 @@ export const reportsApi = {
     return response.data;
   },
 
+  async getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }) {
+    const response = await apiClient.post(
+      "/reports/operational",
+      {
+        organizationId,
+        dateFrom,
+        dateTo,
+        lflDateFrom,
+        lflDateTo,
+      },
+      { signal },
+    );
+    return response.data;
+  },
+
   async getCourierRoutes({ organizationId, dateFrom, dateTo, signal }) {
     const response = await apiClient.post(
       "/reports/courier-routes",
@@ -36,6 +51,20 @@ export const reportsApi = {
         organizationId,
         dateFrom,
         dateTo,
+      },
+      { signal },
+    );
+    return response.data;
+  },
+
+  async getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate, signal }) {
+    const response = await apiClient.post(
+      "/reports/production-forecast",
+      {
+        organizationId,
+        dateFrom,
+        dateTo,
+        forecastDate,
       },
       { signal },
     );

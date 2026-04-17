@@ -70,7 +70,7 @@
 
           <div
             v-for="order in report?.orders || []"
-            :key="`order-${order.orderId}`"
+            :key="`order-${order.orderNumber || order.orderId}`"
             class="absolute -translate-x-1/2 -translate-y-1/2"
             :style="{ left: `${order.x}%`, top: `${order.y}%` }"
           >

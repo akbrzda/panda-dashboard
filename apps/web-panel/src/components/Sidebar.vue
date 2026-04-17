@@ -16,65 +16,7 @@
 </template>
 
 <script setup>
-import {
-  LayoutDashboard,
-  BarChart2,
-  Clock3,
-  ShieldCheck,
-  Truck,
-  Bike,
-  Map,
-  Megaphone,
-  Tag,
-  Store,
-  ClipboardList,
-  UtensilsCrossed,
-  Users,
-  Percent,
-  Target,
-} from "lucide-vue-next";
-
-const menuSections = [
-  {
-    title: "Обзор",
-    items: [{ to: "/dashboard", label: "Дашборд", icon: LayoutDashboard }],
-  },
-  {
-    title: "Продажи",
-    items: [
-      { to: "/revenue", label: "Выручка", icon: BarChart2 },
-      { to: "/hourly-sales", label: "Продажи по часам", icon: Clock3 },
-      { to: "/top-dishes", label: "Топ блюд", icon: UtensilsCrossed },
-      { to: "/promotions", label: "Акции и промо", icon: Tag },
-      { to: "/marketing-sources", label: "Источники", icon: Megaphone },
-    ],
-  },
-  {
-    title: "Доставка",
-    items: [
-      { to: "/delivery-summary", label: "Сводка доставки", icon: Truck },
-      { to: "/delivery-sla", label: "SLA доставки", icon: ShieldCheck },
-      { to: "/delivery-delays", label: "Опоздания", icon: Clock3 },
-      { to: "/courier-kpi", label: "KPI курьеров", icon: Bike },
-      { to: "/courier-map", label: "Карта курьеров", icon: Map },
-    ],
-  },
-  {
-    title: "Ассортимент",
-    items: [
-      { to: "/menu-assortment", label: "Ассортимент", icon: Store },
-      { to: "/stop-list", label: "Стоп-лист", icon: ClipboardList },
-      { to: "/foodcost", label: "Фудкост", icon: Percent },
-    ],
-  },
-  {
-    title: "Клиенты и цели",
-    items: [
-      { to: "/clients", label: "Клиенты", icon: Users },
-      { to: "/plans", label: "Планы", icon: Target },
-    ],
-  },
-];
+import { reportSectionsCatalog as menuSections } from "@/config/reportCatalog";
 </script>
 
 <style scoped>

@@ -129,57 +129,6 @@
         </div>
       </Card>
 
-      <!-- Топ блюд и аутсайдеры -->
-      <div v-if="showSingleOrgBlocks" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Топ-10 -->
-        <Card class="p-5">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-foreground">Топ блюд</h3>
-            <router-link to="/top-dishes" class="text-xs text-primary hover:underline no-underline">Все →</router-link>
-          </div>
-          <div v-if="topDishesStore.isLoadingTopDishes" class="space-y-2">
-            <div v-for="i in 5" :key="i" class="h-8 rounded bg-muted animate-pulse" />
-          </div>
-          <div v-else-if="!topDishesStore.topDishes?.top?.length" class="text-sm text-muted-foreground py-4 text-center">Нет данных</div>
-          <div v-else class="space-y-1">
-            <div
-              v-for="(dish, idx) in topDishesStore.topDishes.top.slice(0, 10)"
-              :key="dish.name"
-              class="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0"
-            >
-              <span class="text-xs text-muted-foreground w-5 shrink-0">{{ idx + 1 }}</span>
-              <span class="text-sm text-foreground flex-1 min-w-0 truncate">{{ dish.name }}</span>
-              <span class="text-xs text-muted-foreground shrink-0">{{ formatNumber(dish.qty) }} шт.</span>
-              <span class="text-xs font-medium text-foreground shrink-0 tabular-nums">{{ formatCurrency(dish.revenue) }}</span>
-            </div>
-          </div>
-        </Card>
-
-        <!-- Аутсайдеры -->
-        <Card class="p-5">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-foreground">Аутсайдеры</h3>
-            <router-link to="/top-dishes" class="text-xs text-primary hover:underline no-underline">Все →</router-link>
-          </div>
-          <div v-if="topDishesStore.isLoadingTopDishes" class="space-y-2">
-            <div v-for="i in 5" :key="i" class="h-8 rounded bg-muted animate-pulse" />
-          </div>
-          <div v-else-if="!topDishesStore.topDishes?.outsiders?.length" class="text-sm text-muted-foreground py-4 text-center">Нет данных</div>
-          <div v-else class="space-y-1">
-            <div
-              v-for="(dish, idx) in topDishesStore.topDishes.outsiders.slice(0, 10)"
-              :key="dish.name"
-              class="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0"
-            >
-              <span class="text-xs text-muted-foreground w-5 shrink-0">{{ idx + 1 }}</span>
-              <span class="text-sm text-foreground flex-1 min-w-0 truncate">{{ dish.name }}</span>
-              <span class="text-xs text-muted-foreground shrink-0">{{ formatNumber(dish.qty) }} шт.</span>
-              <span class="text-xs font-medium text-foreground shrink-0 tabular-nums">{{ formatCurrency(dish.revenue) }}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
       <!-- Навигация -->
       <section>
         <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Разделы</h2>
@@ -209,18 +158,7 @@ import { ref, computed, onMounted } from "vue";
 import {
   AlertCircle,
   BarChart2,
-  Clock3,
   ArrowRight,
-  TrendingUp,
-  ShoppingCart,
-  ClipboardList,
-  UtensilsCrossed,
-  Users,
-  Tag,
-  Percent,
-  Truck,
-  Map,
-  Store,
 } from "lucide-vue-next";
 import MetricCard from "@/components/metrics/MetricCard.vue";
 import DashboardFilters from "@/components/filters/DashboardFilters.vue";
@@ -233,13 +171,12 @@ import { useRevenueStore } from "@/stores/revenue";
 import { useDashboardStore } from "@/stores/dashboard";
 import { useFiltersStore } from "@/stores/filters";
 import { usePlansStore } from "@/stores/plans";
-import { useTopDishesStore } from "@/stores/topDishes";
+import { dashboardQuickLinksCatalog } from "@/config/reportCatalog";
 
 const revenueStore = useRevenueStore();
 const dashboardStore = useDashboardStore();
 const filtersStore = useFiltersStore();
 const plansStore = usePlansStore();
-const topDishesStore = useTopDishesStore();
 
 const filtersRef = ref(null);
 const error = ref(null);
@@ -247,7 +184,6 @@ const error = ref(null);
 const data = computed(() => dashboardStore.dashboardData);
 const hasChannels = computed(() => Object.keys(data.value?.revenueByChannel ?? {}).length > 0);
 const showOrgChart = computed(() => (data.value?.byOrganization?.length ?? 0) > 1);
-const showSingleOrgBlocks = computed(() => (data.value?.byOrganization?.length ?? 0) === 1);
 const currentPlanOrganizationId = computed(() => {
   if ((data.value?.byOrganization?.length ?? 0) === 1) {
     return data.value.byOrganization[0].id;
@@ -256,33 +192,12 @@ const currentPlanOrganizationId = computed(() => {
   return "";
 });
 
-const sections = [
-  { to: "/revenue", title: "Отчёт по выручке", desc: "Детальная аналитика по каналам и периодам", icon: BarChart2 },
-  { to: "/delivery-summary", title: "Сводка доставки", desc: "Заказы, выручка, статусы и каналы", icon: Truck },
-  { to: "/delivery-delays", title: "Опоздания", desc: "Обещанное и фактическое время", icon: Clock3 },
-  { to: "/courier-map", title: "Карта курьеров", desc: "Оперативный мониторинг с polling", icon: Map },
-  { to: "/promotions", title: "Акции и промокоды", desc: "Скидки, доли и динамика", icon: Tag },
-  { to: "/menu-assortment", title: "Ассортимент", desc: "Категории, доступность, стоп-лист", icon: Store },
-  { to: "/stop-list", title: "Стоп-лист", desc: "Управление стоп-листами ресторанов", icon: ClipboardList },
-  { to: "/top-dishes", title: "Топ блюд", desc: "Рейтинг продаж по позициям меню", icon: UtensilsCrossed },
-  { to: "/clients", title: "Клиенты", desc: "Активная база и новые клиенты", icon: Users },
-  { to: "/foodcost", title: "Фудкост", desc: "Себестоимость и риск по категориям", icon: Percent },
-  { to: "/plans", title: "Планы", desc: "Цели по KPI и контроль выполнения", icon: TrendingUp },
-];
+const sections = dashboardQuickLinksCatalog;
 
 async function handleApply({ date, organizationIds }) {
   error.value = null;
   try {
     await dashboardStore.loadDashboard({ organizationIds, date });
-
-    const selectedOrgs = data.value?.byOrganization || [];
-    if (selectedOrgs.length === 1) {
-      const organizationId = selectedOrgs[0].id;
-      await topDishesStore.loadTopDishes({ organizationId, dateFrom: date, dateTo: date, limit: 10 });
-      return;
-    }
-
-    topDishesStore.topDishes = null;
   } catch (e) {
     error.value = e.message || "Ошибка загрузки дашборда";
   }

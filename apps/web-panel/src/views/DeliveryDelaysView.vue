@@ -138,7 +138,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in topDelayedOrders" :key="item.orderId" class="border-t border-border/50">
+              <tr v-for="item in topDelayedOrders" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
                 <td class="px-3 py-2 text-foreground">{{ item.date }}</td>
                 <td class="px-3 py-2 text-foreground">{{ item.orderNumber || "Без номера" }}</td>
                 <td class="px-3 py-2 text-foreground">{{ item.courierName }}</td>

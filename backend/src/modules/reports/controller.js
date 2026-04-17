@@ -1,10 +1,14 @@
-const reportsService = require("./service");
+const salesDomain = require("./domains/sales");
+const deliveryDomain = require("./domains/delivery");
+const marketingDomain = require("./domains/marketing");
+const assortmentDomain = require("./domains/assortment");
+const { validateCommonParams } = require("./shared/reportQuery");
 
 class ReportsController {
   validateCommonParams(res, payload = {}) {
-    const { organizationId, dateFrom, dateTo } = payload;
-    if (!organizationId || !dateFrom || !dateTo) {
-      res.status(400).json({ error: "Обязательные параметры: organizationId, dateFrom, dateTo" });
+    const validation = validateCommonParams(payload);
+    if (!validation.isValid) {
+      res.status(400).json({ error: validation.message });
       return false;
     }
     return true;
@@ -15,7 +19,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+      const data = await salesDomain.getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getRevenue:", error);
@@ -28,7 +32,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+      const data = await salesDomain.getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getOperational:", error);
@@ -41,7 +45,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getCourierRoutes({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getCourierRoutes({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getCourierRoutes:", error);
@@ -54,7 +58,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getHourlySalesReport({ organizationId, dateFrom, dateTo });
+      const data = await salesDomain.getHourlySales({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getHourlySales:", error);
@@ -67,7 +71,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getSlaReport({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getSla({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getSla:", error);
@@ -80,7 +84,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getCourierKpiReport({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getCourierKpi({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getCourierKpi:", error);
@@ -93,7 +97,7 @@ class ReportsController {
       const { organizationId, dateFrom, dateTo } = req.body;
       if (!this.validateCommonParams(res, req.body)) return;
 
-      const data = await reportsService.getMarketingSourcesReport({ organizationId, dateFrom, dateTo });
+      const data = await marketingDomain.getMarketingSources({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getMarketingSources:", error);
@@ -105,7 +109,7 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await reportsService.getDeliverySummaryReport({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getDeliverySummary({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getDeliverySummary:", error);
@@ -117,7 +121,7 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await reportsService.getDeliveryDelaysReport({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getDeliveryDelays({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryDelays:", error);
@@ -129,7 +133,7 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const { buffer, filename } = await reportsService.exportDeliveryDelaysReport({ organizationId, dateFrom, dateTo });
+      const { buffer, filename } = await deliveryDomain.exportDeliveryDelays({ organizationId, dateFrom, dateTo });
 
       res.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
@@ -144,7 +148,7 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await reportsService.getCourierMapReport({ organizationId, dateFrom, dateTo });
+      const data = await deliveryDomain.getCourierMap({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getCourierMap:", error);
@@ -156,7 +160,7 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await reportsService.getPromotionsReport({ organizationId, dateFrom, dateTo });
+      const data = await marketingDomain.getPromotions({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getPromotions:", error);
@@ -168,11 +172,23 @@ class ReportsController {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
       const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await reportsService.getMenuAssortmentReport({ organizationId, dateFrom, dateTo });
+      const data = await assortmentDomain.getMenuAssortment({ organizationId, dateFrom, dateTo });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getMenuAssortment:", error);
       return res.status(500).json({ error: "Ошибка получения отчета по ассортименту", message: error.message });
+    }
+  }
+
+  async getProductionForecast(req, res) {
+    try {
+      if (!this.validateCommonParams(res, req.body)) return;
+      const { organizationId, dateFrom, dateTo, forecastDate } = req.body;
+      const data = await salesDomain.getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate });
+      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error("❌ ReportsController.getProductionForecast:", error);
+      return res.status(500).json({ error: "Ошибка получения прогноза загрузки производства", message: error.message });
     }
   }
 }

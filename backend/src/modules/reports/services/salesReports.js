@@ -162,7 +162,214 @@ function buildHourlySalesReport(rows = [], timezone = "Europe/Moscow", ctx) {
   };
 }
 
+function buildProductionForecastReport(
+  {
+    historicalRows = [],
+    preorderRows = [],
+    forecastDate,
+    timezone = "Europe/Moscow",
+    organizationId = null,
+    verifiedColumns = [],
+    missingColumns = [],
+  },
+  ctx,
+) {
+  const forecastDateOnly = String(forecastDate || "").slice(0, 10);
+  const forecastDateTs = new Date(`${forecastDateOnly}T12:00:00Z`).getTime();
+  const forecastWeekdayIndex = Number.isFinite(forecastDateTs) ? (new Date(forecastDateTs).getUTCDay() || 7) : 1;
+  const normalizedWeekdayIndex = forecastWeekdayIndex === 0 ? 7 : forecastWeekdayIndex;
+
+  const historicalOrders = ctx.toOrderEntities(historicalRows, timezone);
+  const preorderOrders = ctx.toOrderEntities(preorderRows, timezone).filter((order) => order.date === forecastDateOnly);
+
+  const historicalWeekdayOrders = historicalOrders.filter((order) => Number(order.weekdayIndex) === normalizedWeekdayIndex);
+  const historicalDays = new Set(historicalWeekdayOrders.map((order) => order.date)).size || 1;
+
+  const byHourBase = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    orders: 0,
+    revenue: 0,
+    departmentCapacity: new Map(),
+  }));
+  const byHourPreorders = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    orders: 0,
+    revenue: 0,
+    departmentOrders: new Map(),
+  }));
+
+  const departmentHistory = new Map();
+  const departmentPreorders = new Map();
+
+  const registerDepartment = (map, departmentId, departmentName) => {
+    if (!map.has(departmentId)) {
+      map.set(departmentId, {
+        departmentId,
+        departmentName: departmentName || departmentId || "Неизвестно",
+        hourly: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, revenue: 0 })),
+      });
+    }
+    return map.get(departmentId);
+  };
+
+  for (const order of historicalWeekdayOrders) {
+    if (!Number.isInteger(order.hour) || order.hour < 0 || order.hour > 23) continue;
+
+    const revenue = Number(order.revenue || 0);
+    const departmentId = String(order.departmentId || "unknown");
+    const departmentName = order.departmentName || departmentId;
+    const hourBucket = byHourBase[order.hour];
+    hourBucket.orders += 1;
+    hourBucket.revenue += revenue;
+    hourBucket.departmentCapacity.set(departmentId, (hourBucket.departmentCapacity.get(departmentId) || 0) + 1);
+
+    const dep = registerDepartment(departmentHistory, departmentId, departmentName);
+    dep.hourly[order.hour].orders += 1;
+    dep.hourly[order.hour].revenue += revenue;
+  }
+
+  for (const order of preorderOrders) {
+    if (!Number.isInteger(order.hour) || order.hour < 0 || order.hour > 23) continue;
+
+    const revenue = Number(order.revenue || 0);
+    const departmentId = String(order.departmentId || "unknown");
+    const departmentName = order.departmentName || departmentId;
+    const hourBucket = byHourPreorders[order.hour];
+    hourBucket.orders += 1;
+    hourBucket.revenue += revenue;
+    hourBucket.departmentOrders.set(departmentId, (hourBucket.departmentOrders.get(departmentId) || 0) + 1);
+
+    const dep = registerDepartment(departmentPreorders, departmentId, departmentName);
+    dep.hourly[order.hour].orders += 1;
+    dep.hourly[order.hour].revenue += revenue;
+  }
+
+  const toCapacity = (avgOrders) => Math.max(1, Math.round(avgOrders * 1.2 + 1));
+  const hourly = byHourBase.map((base, index) => {
+    const preorder = byHourPreorders[index];
+    const baseOrders = historicalDays > 0 ? base.orders / historicalDays : 0;
+    const baseRevenue = historicalDays > 0 ? base.revenue / historicalDays : 0;
+    const forecastOrders = baseOrders + preorder.orders;
+    const forecastRevenue = baseRevenue + preorder.revenue;
+    const capacity = toCapacity(baseOrders);
+
+    return {
+      hour: index,
+      baseOrders: ctx.roundMetric(baseOrders),
+      preorderOrders: preorder.orders,
+      forecastOrders: ctx.roundMetric(forecastOrders),
+      baseRevenue: ctx.roundMetric(baseRevenue),
+      preorderRevenue: ctx.roundMetric(preorder.revenue),
+      forecastRevenue: ctx.roundMetric(forecastRevenue),
+      capacity,
+      overload: forecastOrders > capacity,
+      loadPercent: capacity > 0 ? ctx.roundMetric((forecastOrders / capacity) * 100) : 0,
+    };
+  });
+
+  const departmentsMap = new Map();
+  for (const [departmentId, depHistory] of departmentHistory.entries()) {
+    const depPreorders = departmentPreorders.get(departmentId);
+    let forecastOrders = 0;
+    let capacity = 0;
+    let overloadHours = 0;
+    let revenue = 0;
+
+    const hourlyForecast = depHistory.hourly.map((cell, hour) => {
+      const baseOrders = historicalDays > 0 ? cell.orders / historicalDays : 0;
+      const baseRevenue = historicalDays > 0 ? cell.revenue / historicalDays : 0;
+      const preorderOrders = depPreorders?.hourly?.[hour]?.orders || 0;
+      const preorderRevenue = depPreorders?.hourly?.[hour]?.revenue || 0;
+      const hourForecast = baseOrders + preorderOrders;
+      const hourCapacity = toCapacity(baseOrders);
+      const hourOverload = hourForecast > hourCapacity;
+
+      forecastOrders += hourForecast;
+      capacity += hourCapacity;
+      revenue += baseRevenue + preorderRevenue;
+      if (hourOverload) overloadHours += 1;
+
+      return {
+        hour,
+        forecastOrders: ctx.roundMetric(hourForecast),
+        capacity: hourCapacity,
+        overload: hourOverload,
+      };
+    });
+
+    departmentsMap.set(departmentId, {
+      departmentId,
+      departmentName: depHistory.departmentName,
+      forecastOrders: ctx.roundMetric(forecastOrders),
+      forecastRevenue: ctx.roundMetric(revenue),
+      capacity,
+      overloadHours,
+      loadPercent: capacity > 0 ? ctx.roundMetric((forecastOrders / capacity) * 100) : 0,
+      isOverloaded: overloadHours > 0,
+      hourly: hourlyForecast,
+    });
+  }
+
+  for (const [departmentId, depPreorders] of departmentPreorders.entries()) {
+    if (departmentsMap.has(departmentId)) continue;
+    const hourlyForecast = depPreorders.hourly.map((cell) => ({
+      hour: cell.hour,
+      forecastOrders: ctx.roundMetric(cell.orders),
+      capacity: 1,
+      overload: cell.orders > 1,
+    }));
+    const forecastOrders = depPreorders.hourly.reduce((sum, cell) => sum + cell.orders, 0);
+    const revenue = depPreorders.hourly.reduce((sum, cell) => sum + cell.revenue, 0);
+    const overloadHours = hourlyForecast.filter((cell) => cell.overload).length;
+    const capacity = 24;
+
+    departmentsMap.set(departmentId, {
+      departmentId,
+      departmentName: depPreorders.departmentName,
+      forecastOrders: ctx.roundMetric(forecastOrders),
+      forecastRevenue: ctx.roundMetric(revenue),
+      capacity,
+      overloadHours,
+      loadPercent: capacity > 0 ? ctx.roundMetric((forecastOrders / capacity) * 100) : 0,
+      isOverloaded: overloadHours > 0,
+      hourly: hourlyForecast,
+    });
+  }
+
+  const departments = [...departmentsMap.values()].sort((left, right) => right.loadPercent - left.loadPercent);
+  const totalForecastOrders = hourly.reduce((sum, item) => sum + item.forecastOrders, 0);
+  const totalForecastRevenue = hourly.reduce((sum, item) => sum + item.forecastRevenue, 0);
+  const totalCapacity = hourly.reduce((sum, item) => sum + item.capacity, 0);
+  const overloadHours = hourly.filter((item) => item.overload).length;
+  const confirmedPreorders = preorderOrders.length;
+
+  return {
+    summary: {
+      organizationId,
+      forecastDate: forecastDateOnly,
+      weekdayIndex: normalizedWeekdayIndex,
+      historicalDays,
+      totalForecastOrders: ctx.roundMetric(totalForecastOrders),
+      totalForecastRevenue: ctx.roundMetric(totalForecastRevenue),
+      totalCapacity,
+      loadPercent: totalCapacity > 0 ? ctx.roundMetric((totalForecastOrders / totalCapacity) * 100) : 0,
+      overloadHours,
+      overloadDepartments: departments.filter((item) => item.isOverloaded).length,
+      confirmedPreorders,
+    },
+    hourly,
+    departments,
+    metadata: {
+      timezone,
+      verifiedColumns,
+      missingColumns,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
 module.exports = {
   buildOperationalSummary,
   buildHourlySalesReport,
+  buildProductionForecastReport,
 };
