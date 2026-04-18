@@ -1,7 +1,20 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Маркетинговые источники</h1>
+      <ReportPageHeader
+        title="Маркетинговые источники"
+        description="Customer Pack: каналы привлечения, вклад в выручку и переход к клиентским сегментам."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
 
@@ -16,6 +29,19 @@
     </div>
 
     <template v-if="report || isPageLoading">
+      <Card class="border-border/70 bg-card/95 p-4 md:p-5">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-foreground">Drill-down: Customer Pack</h2>
+          <Button type="button" variant="outline" size="sm" :disabled="!selectedSource" @click="openClientsDrilldown">
+            Перейти к клиентам
+          </Button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <Badge v-if="selectedSource" variant="outline">Выбран источник: {{ selectedSource }}</Badge>
+          <Badge v-else variant="secondary">Выберите строку источника в таблице</Badge>
+        </div>
+      </Card>
+
       <section>
         <h2 class="mb-4 text-lg font-semibold text-foreground">Сводка по каналам</h2>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -59,7 +85,13 @@
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="item in report?.sources || []" :key="item.source" class="border-t border-border/50">
+              <TableRow
+                v-for="item in report?.sources || []"
+                :key="item.source"
+                class="cursor-pointer border-t border-border/50 transition-colors hover:bg-muted/20"
+                :class="selectedSource === item.source ? 'bg-muted/40' : ''"
+                @click="selectSource(item.source)"
+              >
                 <TableCell class="text-foreground">{{ item.source }}</TableCell>
                 <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
@@ -74,21 +106,46 @@
           </Table>
         </div>
       </Card>
+
+      <Card v-if="selectedSource" class="border-border/70 bg-card/95 p-4 md:p-5">
+        <h3 class="mb-3 text-sm font-semibold text-foreground">Динамика источника: {{ selectedSource }}</h3>
+        <div class="space-y-2">
+          <div
+            v-for="item in selectedSourceBreakdown"
+            :key="`source-breakdown-${item.date}`"
+            class="grid grid-cols-1 gap-2 rounded-md border border-border/60 p-3 text-xs md:grid-cols-4"
+          >
+            <span class="text-muted-foreground">{{ item.date }}</span>
+            <span class="text-foreground">Заказов: {{ formatNumber(item.orders) }}</span>
+            <span class="text-foreground">Выручка: {{ formatCurrency(item.revenue) }}</span>
+            <span class="text-foreground">Средний чек: {{ formatCurrency(item.avgCheck) }}</span>
+          </div>
+          <p v-if="selectedSourceBreakdown.length === 0" class="text-sm text-muted-foreground">
+            По выбранному источнику нет ежедневной детализации за период.
+          </p>
+        </div>
+      </Card>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, Megaphone } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
+import Badge from "../components/ui/Badge.vue";
+import Button from "../components/ui/Button.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
+import { pickQueryValue } from "@/composables/filterQuery";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -100,10 +157,38 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
+const router = useRouter();
+const lastLoadedAt = ref(null);
+const selectedSource = ref("");
 
 const report = computed(() => reportsStore.marketingSourcesReport);
 const isPageLoading = computed(() => reportsStore.isLoadingMarketingSources);
 const pageError = computed(() => reportsStore.error);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
+const selectedSourceBreakdown = computed(() => {
+  if (!selectedSource.value) return [];
+  return (report.value?.dailyBreakdown || [])
+    .map((item) => {
+      const channel = item.channels?.[selectedSource.value];
+      if (!channel) return null;
+      return {
+        date: item.date,
+        orders: Number(channel.orders || 0),
+        revenue: Number(channel.revenue || 0),
+        avgCheck: Number(channel.orders || 0) > 0 ? Number(channel.revenue || 0) / Number(channel.orders || 0) : 0,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 31);
+});
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
@@ -120,7 +205,26 @@ async function handleApply(payload = {}) {
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  await reportsStore.loadMarketingSources({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadMarketingSources({ organizationId, dateFrom, dateTo });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
+}
+
+function selectSource(source) {
+  selectedSource.value = selectedSource.value === source ? "" : source;
+}
+
+function openClientsDrilldown() {
+  if (!selectedSource.value) return;
+  router.push({
+    path: "/clients",
+    query: {
+      ...route.query,
+      customerSource: selectedSource.value,
+      drill: "customer-pack-source",
+    },
+  });
 }
 
 onMounted(async () => {
@@ -131,4 +235,12 @@ onMounted(async () => {
     await handleApply();
   }
 });
+
+watch(
+  () => route.query,
+  (query) => {
+    selectedSource.value = pickQueryValue(query, ["source", "customerSource"]);
+  },
+  { immediate: true, deep: true },
+);
 </script>

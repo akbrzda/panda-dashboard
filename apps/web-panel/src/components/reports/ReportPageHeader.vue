@@ -44,6 +44,7 @@
 
 <script setup>
 import { computed } from "vue";
+import { getReadinessStatusBadgeVariant, getReadinessStatusLabel } from "@/config/readinessUi";
 import Badge from "@/components/ui/Badge.vue";
 import Button from "@/components/ui/Button.vue";
 
@@ -64,20 +65,11 @@ const props = defineProps({
 const emit = defineEmits(["refresh"]);
 
 const statusLabel = computed(() => {
-  const labels = {
-    ready: "Ready",
-    beta: "Beta",
-    partial: "Partial",
-    planned: "Planned",
-  };
-  return labels[props.status] || "Planned";
+  return getReadinessStatusLabel(props.status);
 });
 
 const statusVariant = computed(() => {
-  if (props.status === "ready") return "success";
-  if (props.status === "beta") return "secondary";
-  if (props.status === "partial") return "warning";
-  return "outline";
+  return getReadinessStatusBadgeVariant(props.status);
 });
 
 function formatDateTime(value) {

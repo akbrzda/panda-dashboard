@@ -1,7 +1,20 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Сводка доставки за период</h1>
+      <ReportPageHeader
+        title="Сводка доставки за период"
+        description="Delivery Pack: сводные KPI, каналы и переходы к проблемным зонам по доставке."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -31,6 +44,45 @@
           />
         </div>
       </section>
+
+      <Card class="border-border/70 bg-card/95 p-4 md:p-5">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-foreground">Drill-down: Delivery Pack</h3>
+          <span class="text-xs text-muted-foreground">Сценарий: сводка → опоздания/SLA → карта/стоп-лист</span>
+        </div>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div class="space-y-2 rounded-md border border-border/60 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Статусы</p>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                v-for="item in statusDrillItems"
+                :key="`status-drill-${item.status}`"
+                type="button"
+                variant="outline"
+                size="sm"
+                @click="goToStatusDrill(item.status)"
+              >
+                {{ item.status }} · {{ formatNumber(item.orders) }}
+              </Button>
+            </div>
+          </div>
+          <div class="space-y-2 rounded-md border border-border/60 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Подразделения</p>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                v-for="item in departmentDrillItems"
+                :key="`department-drill-${item.departmentId}`"
+                type="button"
+                variant="outline"
+                size="sm"
+                @click="goToDepartmentDrill(item.departmentId)"
+              >
+                {{ item.departmentId }} · {{ formatNumber(item.orders) }}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-[1.3fr_1fr]">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
@@ -96,16 +148,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, Truck } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
+import Button from "../components/ui/Button.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -117,10 +173,21 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
+const router = useRouter();
+const lastLoadedAt = ref(null);
 
 const report = computed(() => reportsStore.deliverySummaryReport);
 const isPageLoading = computed(() => reportsStore.isLoadingDeliverySummary);
 const pageError = computed(() => reportsStore.error);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
 const channelsAsObject = computed(() =>
   (report.value?.channels || []).reduce((accumulator, item) => {
@@ -128,6 +195,8 @@ const channelsAsObject = computed(() =>
     return accumulator;
   }, {}),
 );
+const statusDrillItems = computed(() => (report.value?.statuses || []).slice(0, 6));
+const departmentDrillItems = computed(() => (report.value?.departments || []).slice(0, 6));
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
@@ -144,7 +213,40 @@ async function handleApply(payload = {}) {
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  await reportsStore.loadDeliverySummary({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadDeliverySummary({ organizationId, dateFrom, dateTo });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
+}
+
+function buildDrillQuery(overrides = {}) {
+  return {
+    ...route.query,
+    ...overrides,
+  };
+}
+
+function goToStatusDrill(status) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (normalizedStatus.includes("достав")) {
+    router.push({ path: "/delivery-sla", query: buildDrillQuery({ drill: "delivery-pack-status", status }) });
+    return;
+  }
+  if (normalizedStatus.includes("отмен")) {
+    router.push({ path: "/stop-list", query: buildDrillQuery({ drill: "delivery-pack-status", status }) });
+    return;
+  }
+  router.push({ path: "/delivery-delays", query: buildDrillQuery({ drill: "delivery-pack-status", status }) });
+}
+
+function goToDepartmentDrill(departmentId) {
+  router.push({
+    path: "/delivery-delays",
+    query: buildDrillQuery({
+      drill: "delivery-pack-department",
+      department: String(departmentId || ""),
+    }),
+  });
 }
 
 onMounted(async () => {

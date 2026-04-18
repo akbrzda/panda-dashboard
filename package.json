@@ -13,7 +13,13 @@
     "start:backend": "cd backend && npm start",
     "dev:web": "cd apps/web-panel && npm run dev",
     "dev:telegram": "cd apps/telegram-miniapp && npm run dev",
-    "install:all": "npm install && cd backend && npm install"
+    "install:all": "npm install && cd backend && npm install",
+    "lint": "node scripts/ci/lint.js",
+    "build": "npm run build:web",
+    "build:web": "npm --prefix apps/web-panel run build",
+    "smoke": "node scripts/ci/smoke.js && npm --prefix backend run test",
+    "check:components": "node scripts/ci/component-checks.js",
+    "quality:gates": "npm run lint && npm run build && npm run smoke && npm run check:components"
   },
   "engines": {
     "node": ">=18.0.0"

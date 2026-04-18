@@ -1,0 +1,8 @@
+{
+  "apps/web-panel/src/views/DeliverySummaryView.vue": "f8ec3d2938bb022591c29f67a59d2e457a0ea41ae58bc9cf704e787c4df173fe",
+  "apps/web-panel/src/views/DeliveryDelaysView.vue": "b3b8a3b5030d1546e0900c9c315eaae79f727dbf4e56079adb7bc4c966649f5f",
+  "apps/web-panel/src/views/MarketingSourcesView.vue": "6c1a22d5bdf4c58b98f19e1dc725a24d7c66062e5d89616a168f750d62c399a3",
+  "apps/web-panel/src/views/ClientsView.vue": "2fa0abbc5b9b7c77dd5c49f64e4f15166253af26d363c56390c026b420e1f2af",
+  "apps/web-panel/src/components/reports/ReportPageHeader.vue": "9d39e7b613933339304190f79a5b05b9f3bee644ba1fc0199da67b85b9d6c174",
+  "apps/web-panel/src/components/Sidebar.vue": "8a7a9d182f98e1401daa89ea5c11434cbc3224edbf70fc599e9c7d25de44a27d"
+}

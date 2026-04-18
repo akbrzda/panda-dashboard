@@ -141,7 +141,9 @@
             <div
               v-for="segment in report.segments || []"
               :key="segment.segment"
-              class="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+              class="flex cursor-pointer items-center justify-between rounded-md border border-border/60 px-3 py-2 transition-colors hover:bg-muted/20"
+              :class="selectedSegment === segment.segment ? 'bg-muted/40' : ''"
+              @click="selectSegment(segment.segment)"
             >
               <span class="text-sm text-foreground">{{ getSegmentLabel(segment.segment) }}</span>
               <Badge :variant="getSegmentBadgeVariant(segment.segment)">{{ formatNumber(segment.count) }}</Badge>
@@ -159,12 +161,20 @@
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 class="text-sm font-semibold text-foreground">Клиенты</h3>
             <div class="flex flex-wrap gap-2">
+              <Badge v-if="selectedSegment" variant="outline">Сегмент: {{ getSegmentLabel(selectedSegment) }}</Badge>
+              <Badge v-if="customerSource" variant="outline">Источник: {{ customerSource }}</Badge>
               <Badge v-if="report.filters?.terminalGroupId" variant="outline">TG: {{ report.filters.terminalGroupId }}</Badge>
               <Badge v-if="selectedStatuses.length > 0" variant="outline">Статусов: {{ selectedStatuses.length }}</Badge>
             </div>
           </div>
           <div class="space-y-2 md:hidden">
-            <div v-for="client in visibleClients" :key="`${client.clientKey}-mobile`" class="rounded-lg border border-border/70 bg-background/70 p-3">
+            <div
+              v-for="client in visibleClients"
+              :key="`${client.clientKey}-mobile`"
+              class="rounded-lg border border-border/70 bg-background/70 p-3 transition-colors"
+              :class="selectedClientKey === client.clientKey ? 'bg-muted/40' : ''"
+              @click="selectClient(client.clientKey)"
+            >
               <div class="mb-2 flex items-start justify-between gap-2">
                 <div class="min-w-0">
                   <p class="truncate text-sm font-semibold text-foreground">{{ client.phone || client.clientKey }}</p>
@@ -211,7 +221,13 @@
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="client in visibleClients" :key="client.clientKey" class="border-t border-border/50 align-top">
+                <TableRow
+                  v-for="client in visibleClients"
+                  :key="client.clientKey"
+                  class="cursor-pointer border-t border-border/50 align-top transition-colors hover:bg-muted/20"
+                  :class="selectedClientKey === client.clientKey ? 'bg-muted/40' : ''"
+                  @click="selectClient(client.clientKey)"
+                >
                   <TableCell class="text-foreground">
                     <div class="flex flex-col gap-1">
                       <span>{{ client.phone || client.clientKey }}</span>
@@ -239,6 +255,49 @@
           </div>
         </Card>
       </div>
+
+      <Card v-if="selectedClient" class="p-4 md:p-5">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-foreground">Карточка клиента (drill-down)</h3>
+          <Button type="button" variant="outline" size="sm" @click="openMarketingContext">Открыть источники</Button>
+        </div>
+        <div class="grid grid-cols-1 gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Телефон</p>
+            <p class="font-medium text-foreground">{{ selectedClient.phone || selectedClient.clientKey }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Сегмент</p>
+            <p class="font-medium text-foreground">{{ getSegmentLabel(selectedClient.segment) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Заказов</p>
+            <p class="font-medium text-foreground">{{ formatNumber(selectedClient.ordersCount) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Выручка</p>
+            <p class="font-medium text-foreground">{{ formatCurrency(selectedClient.revenue) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Средний чек</p>
+            <p class="font-medium text-foreground">{{ formatCurrency(selectedClient.avgCheck) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Последний заказ</p>
+            <p class="font-medium text-foreground">{{ formatDateTime(selectedClient.lastOrderAt) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Частота</p>
+            <p class="font-medium text-foreground">{{ formatDecimal(selectedClient.orderFrequency) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Профиль</p>
+            <p class="font-medium text-foreground">
+              {{ [selectedClient.profile?.name, selectedClient.profile?.surname].filter(Boolean).join(" ") || "Не обогащен" }}
+            </p>
+          </div>
+        </div>
+      </Card>
     </template>
   </div>
 </template>
@@ -288,6 +347,9 @@ const profileMode = ref("top");
 const profileLimitInput = ref("20");
 const terminalGroupValue = ref("__all__");
 const lastLoadedAt = ref(null);
+const selectedSegment = ref("");
+const selectedClientKey = ref("");
+const customerSource = ref("");
 const isSyncingQuery = ref(false);
 
 let applyTimer = null;
@@ -306,7 +368,12 @@ const statusOptions = computed(() => {
   }
   return [...optionMap.values()];
 });
-const visibleClients = computed(() => (report.value?.clients || []).slice(0, 200));
+const visibleClients = computed(() => {
+  const clients = report.value?.clients || [];
+  const filteredBySegment = selectedSegment.value ? clients.filter((client) => client.segment === selectedSegment.value) : clients;
+  return filteredBySegment.slice(0, 200);
+});
+const selectedClient = computed(() => visibleClients.value.find((client) => client.clientKey === selectedClientKey.value) || null);
 const trustCoverage = computed(() => {
   if (!route.query.org) {
     return `Все подразделения (${revenueStore.organizations.length || 0})`;
@@ -422,6 +489,14 @@ async function toggleProfiles() {
   includeProfile.value = !includeProfile.value;
 }
 
+function selectSegment(segment) {
+  selectedSegment.value = selectedSegment.value === segment ? "" : segment;
+}
+
+function selectClient(clientKey) {
+  selectedClientKey.value = selectedClientKey.value === clientKey ? "" : clientKey;
+}
+
 async function handleRefresh() {
   await applyCurrentFilters({ refresh: true });
 }
@@ -440,12 +515,18 @@ function applyQueryState(query) {
   const includeProfiles = pickQueryValue(query, ["profiles", "includeProfile"]);
   const mode = pickQueryValue(query, ["profileMode"]);
   const limit = pickQueryValue(query, ["profileLimit"]);
+  const segment = pickQueryValue(query, ["segment"]);
+  const clientKey = pickQueryValue(query, ["clientKey"]);
+  const source = pickQueryValue(query, ["customerSource", "source"]);
 
   terminalGroupValue.value = terminalGroup || "__all__";
   selectedStatuses.value = parseStatuses(statuses);
   includeProfile.value = includeProfiles === "1";
   profileMode.value = mode === "all" ? "all" : "top";
   profileLimitInput.value = limit || "20";
+  selectedSegment.value = segment || "";
+  selectedClientKey.value = clientKey || "";
+  customerSource.value = source || "";
 }
 
 function buildCanonicalQuery() {
@@ -479,6 +560,24 @@ function buildCanonicalQuery() {
     delete nextQuery.profiles;
     delete nextQuery.profileMode;
     delete nextQuery.profileLimit;
+  }
+
+  if (selectedSegment.value) {
+    nextQuery.segment = selectedSegment.value;
+  } else {
+    delete nextQuery.segment;
+  }
+
+  if (selectedClientKey.value) {
+    nextQuery.clientKey = selectedClientKey.value;
+  } else {
+    delete nextQuery.clientKey;
+  }
+
+  if (customerSource.value) {
+    nextQuery.customerSource = customerSource.value;
+  } else {
+    delete nextQuery.customerSource;
   }
 
   return nextQuery;
@@ -534,11 +633,30 @@ watch(
 );
 
 watch(
-  () => [terminalGroupValue.value, selectedStatuses.value.join(","), includeProfile.value, profileMode.value, profileLimitInput.value],
+  () => [
+    terminalGroupValue.value,
+    selectedStatuses.value.join(","),
+    includeProfile.value,
+    profileMode.value,
+    profileLimitInput.value,
+    selectedSegment.value,
+    selectedClientKey.value,
+  ],
   () => {
     syncQueryState();
   },
 );
+
+function openMarketingContext() {
+  router.push({
+    path: "/marketing-sources",
+    query: {
+      ...route.query,
+      source: customerSource.value || undefined,
+      drill: "customer-pack-client",
+    },
+  });
+}
 
 watch(
   () => route.query,

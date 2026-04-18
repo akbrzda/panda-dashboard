@@ -102,6 +102,7 @@ import { onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { Panda, PanelLeftClose, PanelLeftOpen, X } from "lucide-vue-next";
 import { reportSectionsCatalog as menuSections } from "@/config/reportCatalog";
+import { getReadinessStatusBadgeVariant, getReadinessStatusLabel } from "@/config/readinessUi";
 import { useSidebarStore } from "@/stores/sidebar";
 import Badge from "@/components/ui/Badge.vue";
 import Button from "@/components/ui/Button.vue";
@@ -117,25 +118,11 @@ onUnmounted(() => {
 });
 
 function getStatusVariant(status) {
-  const map = {
-    ready: "success",
-    beta: "warning",
-    partial: "outline",
-    planned: "secondary",
-  };
-
-  return map[status] || "secondary";
+  return getReadinessStatusBadgeVariant(status);
 }
 
 function getStatusLabel(status) {
-  const map = {
-    ready: "Ready",
-    beta: "Beta",
-    partial: "Partial",
-    planned: "Planned",
-  };
-
-  return map[status] || "Planned";
+  return getReadinessStatusLabel(status);
 }
 </script>
 

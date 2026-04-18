@@ -52,7 +52,7 @@ export const featureReadinessCatalog = {
     owner: "analytics",
     source: "iiko-cloud-deliveries",
     lastReviewedAt: "2026-04-18",
-    knownLimitations: ["Требуется активный iikoCloud API, иначе отчет недоступен"],
+    knownLimitations: ["Переход к клиентскому профилю идет через агрегированный контекст источника"],
   },
   "/top-dishes": {
     status: FEATURE_STATUS.BETA,
@@ -68,7 +68,7 @@ export const featureReadinessCatalog = {
     owner: "operations",
     source: "iiko-cloud-deliveries",
     lastReviewedAt: "2026-04-18",
-    knownLimitations: ["Требуется активный iikoCloud API, иначе отчет недоступен"],
+    knownLimitations: ["Drill-down поддерживает основные сценарии; детальная трассировка до заказа будет расширяться"],
   },
   "/delivery-delays": {
     status: FEATURE_STATUS.BETA,
@@ -76,7 +76,7 @@ export const featureReadinessCatalog = {
     owner: "operations",
     source: "iiko-cloud-deliveries",
     lastReviewedAt: "2026-04-18",
-    knownLimitations: ["Требуется активный iikoCloud API, иначе отчет недоступен"],
+    knownLimitations: ["Часть заказов не содержит полный набор временных меток"],
   },
   "/foodcost": {
     status: FEATURE_STATUS.BETA,

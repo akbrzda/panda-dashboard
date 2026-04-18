@@ -2,7 +2,20 @@
   <div class="space-y-5">
     <div class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="text-2xl font-bold text-foreground">Опоздания доставок</h1>
+        <ReportPageHeader
+          title="Опоздания доставок"
+          description="Delivery Pack drill-down: часы риска → курьер → проблемный заказ."
+          :status="readiness.status"
+          :tier="readiness.tier"
+          :source="readiness.source"
+          :coverage="trustCoverage"
+          :updated-at="lastLoadedAt"
+          :last-reviewed-at="readiness.lastReviewedAt"
+          :warnings="readiness.knownLimitations"
+          :show-refresh="true"
+          :refreshing="isPageLoading"
+          @refresh="handleApply()"
+        />
         <Button type="button" variant="outline" size="sm" :disabled="isExportLoading || isPageLoading" @click="handleExport">
           {{ isExportLoading ? "Подготовка файла..." : "Выгрузить в Excel" }}
         </Button>
@@ -20,6 +33,22 @@
     </div>
 
     <template v-if="report || isPageLoading">
+      <Card class="border-border/70 bg-card/95 p-4 md:p-5">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-foreground">Активный drill-down</h2>
+          <Button type="button" variant="outline" size="sm" @click="resetDrilldownFilters">Сбросить</Button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <Badge v-if="selectedDepartmentId" variant="outline">Подразделение: {{ selectedDepartmentId }}</Badge>
+          <Badge v-if="selectedHour != null" variant="outline">Час: {{ formatHourRange(selectedHour) }}</Badge>
+          <Badge v-if="selectedCourierId" variant="outline">Курьер: {{ selectedCourierName || selectedCourierId }}</Badge>
+          <Badge v-if="selectedStatus" variant="outline">Статус: {{ selectedStatus }}</Badge>
+          <Badge v-if="!selectedDepartmentId && selectedHour == null && !selectedCourierId && !selectedStatus" variant="secondary">
+            Фильтр не выбран
+          </Badge>
+        </div>
+      </Card>
+
       <section>
         <h2 class="mb-4 text-lg font-semibold text-foreground">Сводка по опозданиям</h2>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
@@ -71,7 +100,13 @@
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="item in report?.hourly || []" :key="item.hour" class="border-t border-border/50">
+                <TableRow
+                  v-for="item in report?.hourly || []"
+                  :key="item.hour"
+                  class="cursor-pointer border-t border-border/50 transition-colors hover:bg-muted/20"
+                  :class="selectedHour === item.hour ? 'bg-muted/40' : ''"
+                  @click="selectHour(item.hour)"
+                >
                   <TableCell class="text-foreground">{{ formatHourRange(item.hour) }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(item.total) }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(item.delayed) }}</TableCell>
@@ -94,7 +129,13 @@
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="item in topCouriers" :key="item.courierId" class="border-t border-border/50">
+                <TableRow
+                  v-for="item in topCouriers"
+                  :key="item.courierId"
+                  class="cursor-pointer border-t border-border/50 transition-colors hover:bg-muted/20"
+                  :class="selectedCourierId === item.courierId ? 'bg-muted/40' : ''"
+                  @click="selectCourier(item.courierId, item.courierName)"
+                >
                   <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(item.total) }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(item.delayed) }}</TableCell>
@@ -123,7 +164,9 @@
               <TableRow
                 v-for="item in topDelayedOrders"
                 :key="`${item.orderNumber || item.orderId}-${item.date || ''}`"
-                class="border-t border-border/50"
+                class="cursor-pointer border-t border-border/50 transition-colors hover:bg-muted/20"
+                :class="selectedOrderId === String(item.orderId || item.orderNumber || '') ? 'bg-muted/40' : ''"
+                @click="selectOrder(item)"
               >
                 <TableCell class="text-foreground">{{ item.date }}</TableCell>
                 <TableCell class="text-foreground">{{ item.orderNumber || "Без номера" }}</TableCell>
@@ -136,12 +179,47 @@
           </Table>
         </div>
       </Card>
+
+      <Card v-if="selectedOrder" class="border-border/70 bg-card/95 p-4 md:p-5">
+        <h3 class="mb-3 text-sm font-semibold text-foreground">Карточка заказа (drill-down)</h3>
+        <div class="grid grid-cols-1 gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Номер заказа</p>
+            <p class="font-medium text-foreground">{{ selectedOrder.orderNumber || "Без номера" }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Дата</p>
+            <p class="font-medium text-foreground">{{ selectedOrder.date || "—" }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Курьер</p>
+            <p class="font-medium text-foreground">{{ selectedOrder.courierName || "—" }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Подразделение</p>
+            <p class="font-medium text-foreground">{{ selectedOrder.departmentId || "—" }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Обещано</p>
+            <p class="font-medium text-foreground">{{ formatDuration(selectedOrder.promisedMinutes) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Факт</p>
+            <p class="font-medium text-foreground">{{ formatDuration(selectedOrder.actualMinutes) }}</p>
+          </div>
+          <div class="rounded-md border border-border/60 p-2">
+            <p class="text-xs text-muted-foreground">Опоздание</p>
+            <p class="font-medium text-foreground">{{ formatDuration(selectedOrder.lateMinutes) }}</p>
+          </div>
+        </div>
+      </Card>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, Clock } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
@@ -151,8 +229,12 @@ import { toast } from "../lib/sonner";
 import { formatMinutesToHms } from "../lib/utils";
 import PageFilters from "../components/filters/PageFilters.vue";
 import Card from "../components/ui/Card.vue";
+import Badge from "../components/ui/Badge.vue";
 import Button from "../components/ui/Button.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
+import { pickQueryValue } from "@/composables/filterQuery";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -164,14 +246,76 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
+const router = useRouter();
 
 const report = computed(() => reportsStore.deliveryDelaysReport);
 const isPageLoading = computed(() => reportsStore.isLoadingDeliveryDelays);
 const pageError = computed(() => reportsStore.error);
 const isExportLoading = ref(false);
+const lastLoadedAt = ref(null);
+const selectedDepartmentId = ref("");
+const selectedHour = ref(null);
+const selectedCourierId = ref("");
+const selectedCourierName = ref("");
+const selectedOrderId = ref("");
+const selectedStatus = ref("");
 
-const topCouriers = computed(() => (report.value?.couriers || []).slice(0, 20));
-const topDelayedOrders = computed(() => (report.value?.delayedOrders || []).slice(0, 50));
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
+
+const filteredDelayedOrders = computed(() => {
+  return (report.value?.delayedOrders || []).filter((item) => {
+    if (selectedDepartmentId.value && String(item.departmentId || "") !== selectedDepartmentId.value) return false;
+    if (selectedCourierId.value && String(item.courierId || "") !== selectedCourierId.value) return false;
+    if (selectedHour.value != null) {
+      const hourFromDate = Number(String(item.date || "").slice(11, 13));
+      if (Number.isInteger(hourFromDate) && hourFromDate !== selectedHour.value) return false;
+    }
+    return true;
+  });
+});
+
+const topDelayedOrders = computed(() => filteredDelayedOrders.value.slice(0, 50));
+const selectedOrder = computed(() => {
+  return filteredDelayedOrders.value.find((item) => String(item.orderId || item.orderNumber || "") === selectedOrderId.value) || null;
+});
+
+const topCouriers = computed(() => {
+  if (!selectedDepartmentId.value && selectedHour.value == null) {
+    return (report.value?.couriers || []).slice(0, 20);
+  }
+
+  const couriersMap = new Map();
+  for (const item of filteredDelayedOrders.value) {
+    const key = String(item.courierId || "unknown");
+    if (!couriersMap.has(key)) {
+      couriersMap.set(key, {
+        courierId: key,
+        courierName: item.courierName || "Неизвестный курьер",
+        total: 0,
+        delayed: 0,
+        delayRate: 0,
+      });
+    }
+    const courier = couriersMap.get(key);
+    courier.total += 1;
+    courier.delayed += 1;
+  }
+
+  return [...couriersMap.values()]
+    .map((item) => ({
+      ...item,
+      delayRate: item.total > 0 ? (item.delayed / item.total) * 100 : 0,
+    }))
+    .slice(0, 20);
+});
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
@@ -194,8 +338,73 @@ async function handleApply(payload = {}) {
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  await reportsStore.loadDeliveryDelays({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadDeliveryDelays({ organizationId, dateFrom, dateTo });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
 }
+
+function selectHour(hour) {
+  selectedHour.value = selectedHour.value === hour ? null : hour;
+}
+
+function selectCourier(courierId, courierName = "") {
+  const normalized = String(courierId || "");
+  if (!normalized) return;
+  if (selectedCourierId.value === normalized) {
+    selectedCourierId.value = "";
+    selectedCourierName.value = "";
+    return;
+  }
+  selectedCourierId.value = normalized;
+  selectedCourierName.value = courierName;
+}
+
+function selectOrder(item) {
+  selectedOrderId.value = String(item?.orderId || item?.orderNumber || "");
+}
+
+function resetDrilldownFilters() {
+  selectedDepartmentId.value = "";
+  selectedHour.value = null;
+  selectedCourierId.value = "";
+  selectedCourierName.value = "";
+  selectedOrderId.value = "";
+  selectedStatus.value = "";
+}
+
+function applyRouteDrilldown(query) {
+  selectedDepartmentId.value = pickQueryValue(query, ["department"]);
+  selectedStatus.value = pickQueryValue(query, ["status"]);
+  const hourValue = pickQueryValue(query, ["hour"]);
+  const parsedHour = Number.parseInt(hourValue, 10);
+  selectedHour.value = Number.isInteger(parsedHour) && parsedHour >= 0 && parsedHour <= 23 ? parsedHour : null;
+  selectedCourierId.value = pickQueryValue(query, ["courierId"]);
+}
+
+watch(
+  () => route.query,
+  (query) => {
+    applyRouteDrilldown(query);
+  },
+  { immediate: true, deep: true },
+);
+
+watch(
+  () => [selectedDepartmentId.value, selectedHour.value, selectedCourierId.value, selectedStatus.value],
+  () => {
+    const nextQuery = {
+      ...route.query,
+      department: selectedDepartmentId.value || undefined,
+      hour: selectedHour.value != null ? String(selectedHour.value) : undefined,
+      courierId: selectedCourierId.value || undefined,
+      status: selectedStatus.value || undefined,
+    };
+    if (JSON.stringify(route.query) !== JSON.stringify(nextQuery)) {
+      router.replace({ query: nextQuery });
+    }
+  },
+);
 
 function extractFilename(headers = {}, fallback = "opozdaniya.xls") {
   const contentDisposition = headers["content-disposition"] || headers["Content-Disposition"];
