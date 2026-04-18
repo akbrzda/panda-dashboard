@@ -97,3 +97,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .table-shell {
+    @apply min-w-0 overflow-auto;
+    scrollbar-gutter: stable both-edges;
+    -webkit-overflow-scrolling: touch;
+  }
+}

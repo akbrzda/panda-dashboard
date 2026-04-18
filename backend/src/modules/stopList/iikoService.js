@@ -163,6 +163,7 @@ class IikoService {
           dateAdd: item.dateAdd || item.date || group.dateAdd || null,
           openedAt: item.openedAt || item.dateAdd || item.date || null,
           closedAt: item.closedAt || null,
+          isInStopList: !item.closedAt,
         });
       }
     }

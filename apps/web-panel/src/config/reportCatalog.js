@@ -111,13 +111,13 @@ export const reportSectionsCatalog = [
     ],
   },
   {
-    title: "Ассортимент",
+    title: "Меню",
     items: [
       {
         to: "/menu-assortment",
-        label: "Ассортимент",
-        title: "Ассортимент",
-        desc: "Категории, доступность, стоп-лист",
+        label: "ABC-анализ",
+        title: "ABC-анализ меню",
+        desc: "Группы A/B/C по вкладу в выручку",
         icon: Store,
       },
       {
@@ -143,7 +143,7 @@ export const reportSectionsCatalog = [
         to: "/clients",
         label: "Клиенты",
         title: "Клиенты",
-        desc: "Активная база и новые клиенты",
+        desc: "Клиентская аналитика по доставкам",
         icon: Users,
       },
       {

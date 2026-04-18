@@ -39,7 +39,7 @@
       </section>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-full border-collapse text-sm">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -59,7 +59,7 @@
                     class="rounded-full px-2 py-1 text-xs font-semibold"
                     :class="stage.avg <= stage.threshold ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'"
                   >
-                    {{ stage.avg <= stage.threshold ?"В норме" :"Выше порога" }}
+                    {{ stage.avg <= stage.threshold ? "В норме" : "Выше порога" }}
                   </span>
                 </TableCell>
               </TableRow>
@@ -82,7 +82,7 @@
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="overflow-x-auto">
+          <div class="table-shell">
             <Table class="min-w-full border-collapse text-xs">
               <TableHeader>
                 <TableRow class="bg-muted/30 text-muted-foreground">
@@ -106,7 +106,7 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-full border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -118,9 +118,13 @@
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="item in topViolations" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
-                <TableCell class="text-foreground">{{ item.date ||"—" }}</TableCell>
-                <TableCell class="text-foreground">{{ item.orderNumber ||"Без номера" }}</TableCell>
+              <TableRow
+                v-for="item in topViolations"
+                :key="`${item.orderNumber || item.orderId}-${item.date || ''}`"
+                class="border-t border-border/50"
+              >
+                <TableCell class="text-foreground">{{ item.date || "—" }}</TableCell>
+                <TableCell class="text-foreground">{{ item.orderNumber || "Без номера" }}</TableCell>
                 <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
                 <TableCell class="text-foreground">{{ formatDuration(item.totalMinutes) }}</TableCell>
                 <TableCell class="text-foreground">{{ item.violations.join(",") }}</TableCell>
@@ -137,22 +141,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from"vue";
-import { AlertCircle, Truck } from"lucide-vue-next";
-import { useReportsStore } from"../stores/reports";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import PageFilters from"../components/filters/PageFilters.vue";
-import Card from"../components/ui/Card.vue";
-import MetricCard from"../components/metrics/MetricCard.vue";
-import { formatMinutesToHms } from"../lib/utils";
+import { computed, onMounted } from "vue";
+import { AlertCircle, Truck } from "lucide-vue-next";
+import { useReportsStore } from "../stores/reports";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import PageFilters from "../components/filters/PageFilters.vue";
+import Card from "../components/ui/Card.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
+import { formatMinutesToHms } from "../lib/utils";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -165,20 +169,20 @@ const pageError = computed(() => reportsStore.error);
 const stageRows = computed(() => {
   const stageKpi = report.value?.stageKpi || {};
   return [
-    { key:"prep", title:"Приготовление", avg: Number(stageKpi.prep?.avg || 0), threshold: Number(stageKpi.prep?.threshold || 0) },
-    { key:"shelf", title:"Полка", avg: Number(stageKpi.shelf?.avg || 0), threshold: Number(stageKpi.shelf?.threshold || 0) },
-    { key:"route", title:"В пути", avg: Number(stageKpi.route?.avg || 0), threshold: Number(stageKpi.route?.threshold || 0) },
-    { key:"total", title:"Общее SLA", avg: Number(stageKpi.total?.avg || 0), threshold: Number(stageKpi.total?.threshold || 0) },
+    { key: "prep", title: "Приготовление", avg: Number(stageKpi.prep?.avg || 0), threshold: Number(stageKpi.prep?.threshold || 0) },
+    { key: "shelf", title: "Полка", avg: Number(stageKpi.shelf?.avg || 0), threshold: Number(stageKpi.shelf?.threshold || 0) },
+    { key: "route", title: "В пути", avg: Number(stageKpi.route?.avg || 0), threshold: Number(stageKpi.route?.threshold || 0) },
+    { key: "total", title: "Общее SLA", avg: Number(stageKpi.total?.avg || 0), threshold: Number(stageKpi.total?.threshold || 0) },
   ];
 });
 
 const funnelRows = computed(() => {
   const funnel = report.value?.funnel || {};
   return [
-    { key:"created", title:"Создано", value: Number(funnel.created || 0) },
-    { key:"cooked", title:"Приготовлено", value: Number(funnel.cooked || 0) },
-    { key:"dispatched", title:"Отправлено", value: Number(funnel.dispatched || 0) },
-    { key:"delivered", title:"Доставлено", value: Number(funnel.delivered || 0) },
+    { key: "created", title: "Создано", value: Number(funnel.created || 0) },
+    { key: "cooked", title: "Приготовлено", value: Number(funnel.cooked || 0) },
+    { key: "dispatched", title: "Отправлено", value: Number(funnel.dispatched || 0) },
+    { key: "delivered", title: "Доставлено", value: Number(funnel.delivered || 0) },
   ];
 });
 
@@ -193,8 +197,8 @@ function formatDuration(value) {
 }
 
 function formatHourRange(hour) {
-  const start = String(hour).padStart(2,"0");
-  const end = String((hour + 1) % 24).padStart(2,"0");
+  const start = String(hour).padStart(2, "0");
+  const end = String((hour + 1) % 24).padStart(2, "0");
   return `${start}:00-${end}:00`;
 }
 

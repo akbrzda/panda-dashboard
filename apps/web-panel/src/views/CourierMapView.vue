@@ -99,7 +99,7 @@
       </Card>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-full border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">

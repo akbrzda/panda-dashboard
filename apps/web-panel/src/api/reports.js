@@ -239,16 +239,23 @@ export const reportsApi = {
     return response.data;
   },
 
-  async getMenuAssortment({ organizationId, dateFrom, dateTo, signal }) {
+  async getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, signal }) {
     const response = await apiClient.post(
-      "/reports/menu-assortment",
+      "/reports/menu-abc",
       {
         organizationId,
         dateFrom,
         dateTo,
+        abcGroup,
+        page,
+        limit,
       },
       { signal },
     );
     return response.data;
+  },
+
+  async getMenuAssortment({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, signal }) {
+    return await this.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit, signal });
   },
 };

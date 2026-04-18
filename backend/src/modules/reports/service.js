@@ -5,11 +5,9 @@ const path = require("path");
 const organizationsService = require("../organizations/service");
 const revenueService = require("../revenue/service");
 const topDishesService = require("../topDishes/service");
-const { stopListService } = require("../stopList/service");
 const deliveryReports = require("./services/deliveryReports");
 const salesReports = require("./services/salesReports");
 const marketingReports = require("./services/marketingReports");
-const assortmentReports = require("./services/assortmentReports");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class ReportsService extends OlapClient {
@@ -1448,10 +1446,6 @@ class ReportsService extends OlapClient {
     return marketingReports.buildPromotionsReport(rows, this);
   }
 
-  buildMenuAssortmentReport({ topDishes, stopListItems, timezone = "Europe/Moscow" }) {
-    return assortmentReports.buildMenuAssortmentReport({ topDishes, stopListItems, timezone }, this);
-  }
-
   async getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo }) {
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
@@ -1802,24 +1796,8 @@ class ReportsService extends OlapClient {
     return this.buildPromotionsReport(rows);
   }
 
-  async getMenuAssortmentReport({ organizationId, dateFrom, dateTo }) {
-    const timezone = await this.getOrganizationTimezone(organizationId);
-    const [topDishes, stopListPayload] = await Promise.all([
-      topDishesService.getTopDishes({ organizationId, dateFrom, dateTo, limit: 200 }).catch(() => ({ top: [], outsiders: [] })),
-      stopListService
-        .getStopLists({
-          organizationId,
-          includeOrganizations: false,
-          timezone,
-        })
-        .catch(() => ({ normalizedItems: [] })),
-    ]);
-
-    return this.buildMenuAssortmentReport({
-      topDishes,
-      stopListItems: stopListPayload.normalizedItems || [],
-      timezone,
-    });
+  async getMenuAbcReport({ organizationId, dateFrom, dateTo, abcGroup, page, limit }) {
+    return await topDishesService.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
   }
 
   async getCourierRoutes({ organizationId, dateFrom, dateTo }) {

@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="min-w-0 space-y-6">
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
       <h1 class="text-2xl font-bold text-foreground">Топ блюд</h1>
@@ -31,7 +31,7 @@
 
     <template v-if="topDishesStore.topDishes || topDishesStore.isLoadingTopDishes">
       <!-- Итоги -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
         <MetricCard title="Блюд в меню" :value="topDishesStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
         <MetricCard
           title="Выручка (блюда)"
@@ -45,30 +45,13 @@
 
       <!-- Переключатель -->
       <div class="flex items-center gap-2">
-        <Button
-          @click="view = 'top'"
-          size="sm"
-          :variant="view === 'top' ? 'default' : 'secondary'"
-        >
-          Топ-{{ limit }}
-        </Button>
-        <Button
-          @click="view = 'outsiders'"
-          size="sm"
-          :variant="view === 'outsiders' ? 'default' : 'secondary'"
-        >
-          Аутсайдеры
-        </Button>
+        <Button @click="view = 'top'" size="sm" :variant="view === 'top' ? 'default' : 'secondary'"> Топ-{{ limit }} </Button>
+        <Button @click="view = 'outsiders'" size="sm" :variant="view === 'outsiders' ? 'default' : 'secondary'"> Аутсайдеры </Button>
 
         <!-- Поиск -->
         <div class="ml-auto relative">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            v-model="search"
-            type="text"
-            placeholder="Поиск блюда..."
-            class="h-9 w-56 pl-9"
-          />
+          <Input v-model="search" type="text" placeholder="Поиск блюда..." class="h-9 w-56 pl-9" />
         </div>
       </div>
 
@@ -78,105 +61,107 @@
       </div>
 
       <!-- Таблица -->
-      <Card v-else class="overflow-hidden">
-        <Table class="w-full text-sm">
-          <TableHeader>
-            <TableRow class="border-b border-border bg-muted/50">
-              <TableHead class="text-left font-medium text-muted-foreground w-8">#</TableHead>
-              <TableHead
-                class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                @click="toggleSort('name')"
-              >
-                Блюдо
-                <SortIcon field="name" :sort="sort" />
-              </TableHead>
-              <TableHead
-                class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
-                @click="toggleSort('category')"
-              >
-                Категория
-                <SortIcon field="category" :sort="sort" />
-              </TableHead>
-              <TableHead
-                class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                @click="toggleSort('qty')"
-              >
-                Кол-во
-                <SortIcon field="qty" :sort="sort" />
-              </TableHead>
-              <TableHead
-                class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
-                @click="toggleSort('revenue')"
-              >
-                Выручка
-                <SortIcon field="revenue" :sort="sort" />
-              </TableHead>
-              <TableHead
-                class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
-                @click="toggleSort('revenueShare')"
-              >
-                % от итога
-                <SortIcon field="revenueShare" :sort="sort" />
-              </TableHead>
-              <TableHead
-                class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
-                @click="toggleSort('avgPrice')"
-              >
-                Ср. цена
-                <SortIcon field="avgPrice" :sort="sort" />
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow v-if="filteredRows.length === 0">
-              <TableCell colspan="7" class="text-center text-muted-foreground">Ничего не найдено</TableCell>
-            </TableRow>
-            <TableRow v-for="(dish, idx) in filteredRows" :key="dish.name" class="border-b border-border/50 hover:bg-muted/30 transition-colors">
-              <TableCell class="text-muted-foreground">{{ idx + 1 }}</TableCell>
-              <TableCell class="font-medium text-foreground">{{ dish.name }}</TableCell>
-              <TableCell class="text-muted-foreground hidden sm:table-cell">{{ dish.category ||"—" }}</TableCell>
-              <TableCell class="text-right tabular-nums">{{ formatNumber(dish.qty) }}</TableCell>
-              <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(dish.revenue) }}</TableCell>
-              <TableCell class="text-right hidden md:table-cell">
-                <span class="inline-flex items-center gap-1">
-                  <span class="text-xs text-muted-foreground">{{ dish.revenueShare }}%</span>
-                  <div class="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(dish.revenueShare * 2, 100)}%` }" />
-                  </div>
-                </span>
-              </TableCell>
-              <TableCell class="text-right tabular-nums hidden lg:table-cell text-muted-foreground">{{ formatCurrency(dish.avgPrice) }}</TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
+      <Card v-else class="overflow-hidden min-w-0">
+        <div class="overflow-auto">
+          <Table class="min-w-[980px] w-full text-sm">
+            <TableHeader>
+              <TableRow class="border-b border-border bg-muted/50">
+                <TableHead class="text-left font-medium text-muted-foreground w-8">#</TableHead>
+                <TableHead
+                  class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                  @click="toggleSort('name')"
+                >
+                  Блюдо
+                  <SortIcon field="name" :sort="sort" />
+                </TableHead>
+                <TableHead
+                  class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
+                  @click="toggleSort('category')"
+                >
+                  Категория
+                  <SortIcon field="category" :sort="sort" />
+                </TableHead>
+                <TableHead
+                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                  @click="toggleSort('qty')"
+                >
+                  Кол-во
+                  <SortIcon field="qty" :sort="sort" />
+                </TableHead>
+                <TableHead
+                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
+                  @click="toggleSort('revenue')"
+                >
+                  Выручка
+                  <SortIcon field="revenue" :sort="sort" />
+                </TableHead>
+                <TableHead
+                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
+                  @click="toggleSort('revenueShare')"
+                >
+                  % от итога
+                  <SortIcon field="revenueShare" :sort="sort" />
+                </TableHead>
+                <TableHead
+                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
+                  @click="toggleSort('avgPrice')"
+                >
+                  Ср. цена
+                  <SortIcon field="avgPrice" :sort="sort" />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-if="filteredRows.length === 0">
+                <TableCell colspan="7" class="text-center text-muted-foreground">Ничего не найдено</TableCell>
+              </TableRow>
+              <TableRow v-for="(dish, idx) in filteredRows" :key="dish.name" class="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                <TableCell class="text-muted-foreground">{{ idx + 1 }}</TableCell>
+                <TableCell class="font-medium text-foreground">{{ dish.name }}</TableCell>
+                <TableCell class="text-muted-foreground hidden sm:table-cell">{{ dish.category || "—" }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatNumber(dish.qty) }}</TableCell>
+                <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(dish.revenue) }}</TableCell>
+                <TableCell class="text-right hidden md:table-cell">
+                  <span class="inline-flex items-center gap-1">
+                    <span class="text-xs text-muted-foreground">{{ dish.revenueShare }}%</span>
+                    <div class="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
+                      <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(dish.revenueShare * 2, 100)}%` }" />
+                    </div>
+                  </span>
+                </TableCell>
+                <TableCell class="text-right tabular-nums hidden lg:table-cell text-muted-foreground">{{ formatCurrency(dish.avgPrice) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
       </Card>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from"vue";
-import { AlertCircle, Search, UtensilsCrossed } from"lucide-vue-next";
-import { useAutoRefresh } from"../composables/useAutoRefresh";
-import { useTopDishesStore } from"../stores/topDishes";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import PageFilters from"../components/filters/PageFilters.vue";
-import MetricCard from"../components/metrics/MetricCard.vue";
-import Card from"../components/ui/Card.vue";
-import Button from"../components/ui/Button.vue";
-import Input from"../components/ui/Input.vue";
+import { ref, computed, onMounted } from "vue";
+import { AlertCircle, Search, UtensilsCrossed } from "lucide-vue-next";
+import { useAutoRefresh } from "../composables/useAutoRefresh";
+import { useTopDishesStore } from "../stores/topDishes";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import PageFilters from "../components/filters/PageFilters.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
+import Card from "../components/ui/Card.vue";
+import Button from "../components/ui/Button.vue";
+import Input from "../components/ui/Input.vue";
 
 // Компонент иконки сортировки
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const SortIcon = {
-  props: ["field","sort"],
+  props: ["field", "sort"],
   template: `
     <span class="ml-1 inline-block text-xs">
       <template v-if="sort.field === field">{{ sort.dir === 'asc' ? '↑' : '↓' }}</template>
@@ -193,7 +178,7 @@ const view = ref("top");
 const search = ref("");
 const limit = ref(20);
 const error = ref(null);
-const sort = ref({ field:"revenue", dir:"desc" });
+const sort = ref({ field: "revenue", dir: "desc" });
 
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? filtersStore.organizationId ?? null;
@@ -207,45 +192,45 @@ async function handleApply(payload = {}) {
   try {
     await topDishesStore.loadTopDishes({ organizationId, dateFrom, dateTo, limit: limit.value });
   } catch (e) {
-    error.value = e.message ||"Ошибка загрузки";
+    error.value = e.message || "Ошибка загрузки";
   }
 }
 
 function toggleSort(field) {
   if (sort.value.field === field) {
-    sort.value = { field, dir: sort.value.dir ==="asc" ?"desc" :"asc" };
+    sort.value = { field, dir: sort.value.dir === "asc" ? "desc" : "asc" };
   } else {
-    sort.value = { field, dir:"desc" };
+    sort.value = { field, dir: "desc" };
   }
 }
 
 const currentList = computed(() => {
   if (!topDishesStore.topDishes) return [];
-  return view.value ==="top" ? topDishesStore.topDishes.top : topDishesStore.topDishes.outsiders;
+  return view.value === "top" ? topDishesStore.topDishes.top : topDishesStore.topDishes.outsiders;
 });
 
 const filteredRows = computed(() => {
   let rows = currentList.value;
   if (search.value.trim()) {
     const q = search.value.trim().toLowerCase();
-    rows = rows.filter((d) => d.name.toLowerCase().includes(q) || (d.category ||"").toLowerCase().includes(q));
+    rows = rows.filter((d) => d.name.toLowerCase().includes(q) || (d.category || "").toLowerCase().includes(q));
   }
   const { field, dir } = sort.value;
   return [...rows].sort((a, b) => {
-    const av = a[field] ??"";
-    const bv = b[field] ??"";
-    const cmp = typeof av ==="string" ? av.localeCompare(bv) : av - bv;
-    return dir ==="asc" ? cmp : -cmp;
+    const av = a[field] ?? "";
+    const bv = b[field] ?? "";
+    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return dir === "asc" ? cmp : -cmp;
   });
 });
 
 function formatCurrency(val) {
-  if (val == null) return"—";
-  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(val);
+  if (val == null) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
 }
 
 function formatNumber(val) {
-  if (val == null) return"—";
+  if (val == null) return "—";
   return new Intl.NumberFormat("ru-RU").format(val);
 }
 

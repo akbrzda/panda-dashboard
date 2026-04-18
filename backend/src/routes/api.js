@@ -8,6 +8,7 @@ const reportsModule = require("../modules/reports");
 const foodcostModule = require("../modules/foodcost");
 const topDishesModule = require("../modules/topDishes");
 const clientsModule = require("../modules/clients");
+const clientAnalyticsModule = require("../modules/clientAnalytics");
 const plansModule = require("../modules/plans");
 const webhookModule = require("../modules/webhook");
 
@@ -27,6 +28,7 @@ router.use("/reports", reportsModule.routes);
 router.use("/foodcost", foodcostModule.routes);
 router.use("/top-dishes", topDishesModule.routes);
 router.use("/clients", clientsModule.routes);
+router.use("/client-analytics", clientAnalyticsModule.routes);
 router.use("/plans", plansModule.routes);
 router.use("/", webhookModule.routes);
 

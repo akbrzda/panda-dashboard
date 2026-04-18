@@ -6,12 +6,8 @@
         <p class="text-sm text-muted-foreground">Управление целями для KPI и прогрессом выполнения.</p>
       </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        @click="resetForm"
-      >
-        {{ isEditing ?"Новый план" :"Очистить форму" }}
+      <Button variant="outline" size="sm" @click="resetForm">
+        {{ isEditing ? "Новый план" : "Очистить форму" }}
       </Button>
     </div>
 
@@ -22,7 +18,7 @@
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-[360px_1fr]">
       <Card class="p-5">
         <h2 class="mb-4 text-sm font-semibold text-foreground">
-          {{ isEditing ?"Редактирование плана" :"Новый план" }}
+          {{ isEditing ? "Редактирование плана" : "Новый план" }}
         </h2>
 
         <div class="space-y-4">
@@ -56,47 +52,27 @@
 
           <div class="space-y-1.5">
             <label class="text-xs font-medium text-muted-foreground">Целевое значение</label>
-            <Input
-              v-model="form.targetValue"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Например, 150000"
-              :disabled="plansStore.isSaving"
-            />
+            <Input v-model="form.targetValue" type="number" min="0" step="0.01" placeholder="Например, 150000" :disabled="plansStore.isSaving" />
           </div>
 
           <div class="flex gap-2 pt-2">
-            <Button
-              class="h-9 flex-1"
-              :disabled="plansStore.isSaving"
-              @click="handleSubmit"
-            >
-              {{ plansStore.isSaving ?"Сохранение..." : isEditing ?"Сохранить" :"Добавить" }}
+            <Button class="h-9 flex-1" :disabled="plansStore.isSaving" @click="handleSubmit">
+              {{ plansStore.isSaving ? "Сохранение..." : isEditing ? "Сохранить" : "Добавить" }}
             </Button>
 
-            <Button
-              v-if="isEditing"
-              variant="outline"
-              class="h-9"
-              :disabled="plansStore.isSaving"
-              @click="resetForm"
-            >
-              Отмена
-            </Button>
+            <Button v-if="isEditing" variant="outline" class="h-9" :disabled="plansStore.isSaving" @click="resetForm"> Отмена </Button>
           </div>
         </div>
       </Card>
 
       <Card class="overflow-hidden">
-
         <div v-if="plansStore.isLoading" class="space-y-2 p-4">
           <div v-for="i in 6" :key="i" class="h-11 rounded bg-muted animate-pulse" />
         </div>
 
         <div v-else-if="!plans.length" class="p-8 text-center text-sm text-muted-foreground">Планы пока не добавлены</div>
 
-        <div v-else class="overflow-x-auto">
+        <div v-else class="table-shell">
           <Table class="w-full text-sm">
             <TableHeader>
               <TableRow class="border-b border-border bg-muted/50">
@@ -111,19 +87,12 @@
               <TableRow v-for="plan in plans" :key="plan.id" class="border-b border-border/50 last:border-0">
                 <TableCell class="text-foreground">{{ getMetricLabel(plan.metric) }}</TableCell>
                 <TableCell class="text-muted-foreground">{{ getPeriodLabel(plan.period) }}</TableCell>
-                <TableCell class="text-muted-foreground hidden md:table-cell">{{ plan.organizationName ||"Все подразделения" }}</TableCell>
+                <TableCell class="text-muted-foreground hidden md:table-cell">{{ plan.organizationName || "Все подразделения" }}</TableCell>
                 <TableCell class="text-right font-medium text-foreground">{{ formatValue(plan) }}</TableCell>
                 <TableCell class="">
                   <div class="flex justify-end gap-2">
                     <Button size="sm" variant="outline" class="h-7 px-2.5 text-xs" @click="startEdit(plan)">Изменить</Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      class="h-7 px-2.5 text-xs"
-                      @click="handleDelete(plan)"
-                    >
-                      Удалить
-                    </Button>
+                    <Button size="sm" variant="destructive" class="h-7 px-2.5 text-xs" @click="handleDelete(plan)"> Удалить </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -136,44 +105,44 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from"vue";
-import Card from"@/components/ui/Card.vue";
-import Select from"@/components/ui/Select.vue";
-import SelectItem from"@/components/ui/SelectItem.vue";
-import Input from"@/components/ui/Input.vue";
-import Button from"@/components/ui/Button.vue";
-import { PERIOD_PRESETS } from"@/composables/usePeriod";
-import { toast } from"@/lib/sonner";
-import { usePlansStore } from"@/stores/plans";
-import { useRevenueStore } from"@/stores/revenue";
+import { computed, onMounted, reactive, ref } from "vue";
+import Card from "@/components/ui/Card.vue";
+import Select from "@/components/ui/Select.vue";
+import SelectItem from "@/components/ui/SelectItem.vue";
+import Input from "@/components/ui/Input.vue";
+import Button from "@/components/ui/Button.vue";
+import { PERIOD_PRESETS } from "@/composables/usePeriod";
+import { toast } from "@/lib/sonner";
+import { usePlansStore } from "@/stores/plans";
+import { useRevenueStore } from "@/stores/revenue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const plansStore = usePlansStore();
 const revenueStore = useRevenueStore();
 const editingId = ref(null);
 
 const metricOptions = [
-  { value:"revenue", label:"Выручка" },
-  { value:"orders", label:"Заказы" },
-  { value:"avgPerOrder", label:"Средний чек" },
-  { value:"discountSum", label:"Дисконт" },
-  { value:"foodcost", label:"Фудкост" },
+  { value: "revenue", label: "Выручка" },
+  { value: "orders", label: "Заказы" },
+  { value: "avgPerOrder", label: "Средний чек" },
+  { value: "discountSum", label: "Дисконт" },
+  { value: "foodcost", label: "Фудкост" },
 ];
 
 const periodOptions = PERIOD_PRESETS;
-const ALL_ORGANIZATIONS ="__all_organizations__";
+const ALL_ORGANIZATIONS = "__all_organizations__";
 
 const form = reactive({
-  metric:"revenue",
-  period:"current-month",
+  metric: "revenue",
+  period: "current-month",
   organizationId: ALL_ORGANIZATIONS,
-  targetValue:"",
+  targetValue: "",
 });
 
 const plans = computed(() => plansStore.sortedPlans);
@@ -181,10 +150,10 @@ const isEditing = computed(() => Boolean(editingId.value));
 
 function resetForm() {
   editingId.value = null;
-  form.metric ="revenue";
-  form.period ="current-month";
+  form.metric = "revenue";
+  form.period = "current-month";
   form.organizationId = ALL_ORGANIZATIONS;
-  form.targetValue ="";
+  form.targetValue = "";
 }
 
 function getMetricLabel(metric) {
@@ -196,26 +165,26 @@ function getPeriodLabel(period) {
 }
 
 function getFormat(metric) {
-  if (["revenue","avgPerOrder","discountSum"].includes(metric)) {
-    return"currency";
+  if (["revenue", "avgPerOrder", "discountSum"].includes(metric)) {
+    return "currency";
   }
 
-  if (metric ==="foodcost") {
-    return"percent";
+  if (metric === "foodcost") {
+    return "percent";
   }
 
-  return"number";
+  return "number";
 }
 
 function formatValue(plan) {
   const value = Number(plan.targetValue) || 0;
   const format = getFormat(plan.metric);
 
-  if (format ==="currency") {
-    return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(value);
+  if (format === "currency") {
+    return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
   }
 
-  if (format ==="percent") {
+  if (format === "percent") {
     return `${value.toFixed(2)}%`;
   }
 
@@ -227,32 +196,32 @@ function startEdit(plan) {
   form.metric = plan.metric;
   form.period = plan.period;
   form.organizationId = plan.organizationId || ALL_ORGANIZATIONS;
-  form.targetValue = String(plan.targetValue ||"");
+  form.targetValue = String(plan.targetValue || "");
 }
 
 async function handleSubmit() {
-  const normalizedOrganizationId = form.organizationId === ALL_ORGANIZATIONS ?"" : form.organizationId;
+  const normalizedOrganizationId = form.organizationId === ALL_ORGANIZATIONS ? "" : form.organizationId;
   const organization = revenueStore.organizations.find((org) => String(org.id) === String(normalizedOrganizationId));
   const payload = {
     metric: form.metric,
     period: form.period,
     organizationId: normalizedOrganizationId,
-    organizationName: organization?.name ||"Все подразделения",
+    organizationName: organization?.name || "Все подразделения",
     targetValue: Number(form.targetValue),
   };
 
   try {
     if (isEditing.value) {
       await plansStore.updatePlan(editingId.value, payload);
-      toast.success("План обновлен","Изменения сохранены");
+      toast.success("План обновлен", "Изменения сохранены");
     } else {
       await plansStore.createPlan(payload);
-      toast.success("План добавлен","Целевое значение сохранено");
+      toast.success("План добавлен", "Целевое значение сохранено");
     }
 
     resetForm();
   } catch (error) {
-    toast.error("Не удалось сохранить план", error.response?.data?.error || error.message ||"Проверьте данные формы");
+    toast.error("Не удалось сохранить план", error.response?.data?.error || error.message || "Проверьте данные формы");
   }
 }
 
@@ -263,13 +232,13 @@ async function handleDelete(plan) {
 
   try {
     await plansStore.deletePlan(plan.id);
-    toast.success("План удален","Запись убрана из списка");
+    toast.success("План удален", "Запись убрана из списка");
 
     if (editingId.value === plan.id) {
       resetForm();
     }
   } catch (error) {
-    toast.error("Не удалось удалить план", error.response?.data?.error || error.message ||"Повторите попытку");
+    toast.error("Не удалось удалить план", error.response?.data?.error || error.message || "Повторите попытку");
   }
 }
 

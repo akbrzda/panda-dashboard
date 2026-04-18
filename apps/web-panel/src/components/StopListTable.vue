@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+  <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden min-w-0">
     <div v-if="isLoading" class="flex items-center justify-center px-4 py-10 text-sm text-muted-foreground">Загрузка данных...</div>
 
     <div v-else-if="error" class="px-4 py-6 text-sm text-destructive">
@@ -10,41 +10,78 @@
       <p>Нет данных для отображения</p>
     </div>
 
-    <div v-else class="overflow-x-auto">
-      <Table class="min-w-full text-sm">
-        <TableHeader class="bg-muted/40">
-          <TableRow>
-            <TableHead class="text-left font-semibold text-muted-foreground">Дата создания</TableHead>
-            <TableHead class="text-left font-semibold text-muted-foreground">Наименование</TableHead>
-            <TableHead class="text-left font-semibold text-muted-foreground">SKU</TableHead>
-            <TableHead class="text-left font-semibold text-muted-foreground">Филиал</TableHead>
-            <TableHead class="text-left font-semibold text-muted-foreground">Причина</TableHead>
-            <TableHead class="text-right font-semibold text-muted-foreground">В стопе</TableHead>
-            <TableHead class="text-left font-semibold text-muted-foreground">Статус</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <TableRow v-for="(item, index) in items" :key="index" class="border-t border-border/70 hover:bg-muted/20">
-            <TableCell class="text-foreground/80 whitespace-nowrap">{{ formatDate(item) }}</TableCell>
-            <TableCell class="font-medium text-foreground">{{ getProductName(item) }}</TableCell>
-            <TableCell class="text-foreground/80 whitespace-nowrap">{{ item.sku || item.productCode ||"—" }}</TableCell>
-            <TableCell class="text-foreground/80">{{ item.organizationName ||"—" }}</TableCell>
-            <TableCell class="text-foreground/80">{{ item.reason ||"—" }}</TableCell>
-            <TableCell class="text-right text-foreground tabular-nums">{{ formatDuration(item) }}</TableCell>
-            <TableCell class="">
-              <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
-                {{ getStatusText(item) }}
-              </span>
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+    <div v-else>
+      <div class="md:hidden space-y-3 p-3">
+        <div v-for="item in items" :key="item.productId || item.sku || item.itemName" class="rounded-lg border border-border/70 bg-background/70 p-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-foreground">{{ getProductName(item) }}</p>
+              <p class="text-xs text-muted-foreground">{{ item.organizationName || "—" }}</p>
+            </div>
+            <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
+              {{ getStatusText(item) }}
+            </span>
+          </div>
+
+          <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-md bg-muted/40 p-2">
+              <p class="text-muted-foreground">Создано</p>
+              <p class="font-medium text-foreground">{{ formatDate(item) }}</p>
+            </div>
+            <div class="rounded-md bg-muted/40 p-2">
+              <p class="text-muted-foreground">В стопе</p>
+              <p class="font-medium text-foreground">{{ formatDuration(item) }}</p>
+            </div>
+            <div class="rounded-md bg-muted/40 p-2">
+              <p class="text-muted-foreground">SKU</p>
+              <p class="font-medium text-foreground">{{ item.sku || item.productCode || "—" }}</p>
+            </div>
+            <div class="rounded-md bg-muted/40 p-2">
+              <p class="text-muted-foreground">Причина</p>
+              <p class="font-medium text-foreground">{{ item.reason || "—" }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hidden md:block overflow-auto">
+        <div class="min-w-[980px]">
+          <Table class="min-w-full text-sm">
+            <TableHeader class="bg-muted/40">
+              <TableRow>
+                <TableHead class="text-left font-semibold text-muted-foreground">Дата создания</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Наименование</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">SKU</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Филиал</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Причина</TableHead>
+                <TableHead class="text-right font-semibold text-muted-foreground">В стопе</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Статус</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in items" :key="item.productId || item.sku || item.itemName" class="border-t border-border/70 hover:bg-muted/20">
+                <TableCell class="text-foreground/80 whitespace-nowrap">{{ formatDate(item) }}</TableCell>
+                <TableCell class="font-medium text-foreground">{{ getProductName(item) }}</TableCell>
+                <TableCell class="text-foreground/80 whitespace-nowrap">{{ item.sku || item.productCode || "—" }}</TableCell>
+                <TableCell class="text-foreground/80">{{ item.organizationName || "—" }}</TableCell>
+                <TableCell class="text-foreground/80">{{ item.reason || "—" }}</TableCell>
+                <TableCell class="text-right text-foreground tabular-nums">{{ formatDuration(item) }}</TableCell>
+                <TableCell class="">
+                  <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
+                    {{ getStatusText(item) }}
+                  </span>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { formatDateTimeWithSeconds } from"../lib/utils";
+import { formatDateTimeWithSeconds } from "../lib/utils";
 
 defineProps({
   items: {
@@ -61,22 +98,22 @@ defineProps({
   },
 });
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const formatDate = (item) => {
   const dateString = item.dateAdd || item.openedAt;
-  if (!dateString) return"—";
+  if (!dateString) return "—";
   return formatDateTimeWithSeconds(dateString);
 };
 
 const formatDuration = (item) => {
   const hours = Number(item.inStopHours);
-  if (!Number.isFinite(hours) || hours < 0) return"—";
+  if (!Number.isFinite(hours) || hours < 0) return "—";
 
   if (hours >= 24) {
     const days = Number(item.inStopDays);
@@ -101,20 +138,22 @@ const getProductName = (item) => {
     return `ID: ${item.productId.substring(0, 8)}...`;
   }
 
-  return"Товар без названия";
+  return "Товар без названия";
 };
 
 const getStatusClass = (item) => {
-  if (item.balance > 0) {
-    return"bg-emerald-500/15 text-emerald-400";
+  const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
+  if (!isStopped) {
+    return "bg-emerald-500/15 text-emerald-400";
   }
-  return"bg-rose-500/15 text-rose-400";
+  return "bg-rose-500/15 text-rose-400";
 };
 
 const getStatusText = (item) => {
-  if (item.balance > 0) {
-    return `Остаток: ${item.balance}`;
+  const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
+  if (!isStopped) {
+    return "Доступно";
   }
-  return"В стопе";
+  return "В стопе";
 };
 </script>

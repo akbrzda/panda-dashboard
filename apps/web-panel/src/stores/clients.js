@@ -12,7 +12,17 @@ export const useClientsStore = defineStore("clients", () => {
   let controller = null;
   let requestId = 0;
 
-  async function loadClients({ organizationId, dateFrom, dateTo }) {
+  async function loadClients({
+    organizationId,
+    dateFrom,
+    dateTo,
+    terminalGroupId = null,
+    statuses = [],
+    includeProfile = false,
+    profileMode = "top",
+    profileLimit = 20,
+    refresh = false,
+  }) {
     if (!organizationId || !dateFrom || !dateTo) return null;
 
     controller?.abort();
@@ -24,7 +34,18 @@ export const useClientsStore = defineStore("clients", () => {
       isLoadingClients.value = true;
       error.value = null;
 
-      const resp = await clientsApi.getClients({ organizationId, dateFrom, dateTo, signal: controller.signal });
+      const resp = await clientsApi.getClients({
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        includeProfile,
+        profileMode,
+        profileLimit,
+        refresh,
+        signal: controller.signal,
+      });
       if (currentRequestId !== requestId) return null;
 
       clientsData.value = resp.data;

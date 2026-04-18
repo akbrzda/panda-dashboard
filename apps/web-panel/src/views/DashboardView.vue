@@ -96,7 +96,7 @@
         <h3 class="mb-4 text-sm font-semibold text-foreground">Выручка по подразделениям</h3>
         <OrgBarChart :orgs="data?.byOrganization ?? []" :loading="dashboardStore.isLoadingDashboard" />
 
-        <div class="mt-5 overflow-x-auto rounded-lg border border-border/70">
+        <div class="table-shell mt-5 rounded-lg border border-border/70">
           <Table class="w-full text-sm">
             <TableHeader>
               <TableRow class="border-b border-border bg-muted/40">

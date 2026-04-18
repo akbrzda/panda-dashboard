@@ -21,6 +21,7 @@ router.get("/delivery-zones", reportsController.getDeliveryZones.bind(reportsCon
 router.post("/delivery-zones", reportsController.saveDeliveryZones.bind(reportsController));
 router.post("/delivery-zones/upload", reportsController.saveDeliveryZones.bind(reportsController));
 router.post("/promotions", reportsController.getPromotions.bind(reportsController));
+router.post("/menu-abc", reportsController.getMenuAbc.bind(reportsController));
 router.post("/menu-assortment", reportsController.getMenuAssortment.bind(reportsController));
 
 module.exports = router;

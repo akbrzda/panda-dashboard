@@ -11,7 +11,7 @@ export const useStopListStore = defineStore("stopList", {
     stopListItems: [],
     filteredItems: [],
     filterText: "",
-    statusFilter: "stopped",
+    statusFilter: "all",
     isLoading: false,
     error: null,
     controller: null,
@@ -108,6 +108,8 @@ export const useStopListStore = defineStore("stopList", {
       const searchText = this.filterText.toLowerCase();
 
       this.filteredItems = this.stopListItems.filter((item) => {
+        const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
+
         if (searchText) {
           const productName = (item.productName || "").toLowerCase();
           const productFullName = (item.productFullName || "").toLowerCase();
@@ -124,6 +126,14 @@ export const useStopListStore = defineStore("stopList", {
           ) {
             return false;
           }
+        }
+
+        if (this.statusFilter === "stopped" && !isStopped) {
+          return false;
+        }
+
+        if (this.statusFilter === "available" && isStopped) {
+          return false;
         }
 
         return true;

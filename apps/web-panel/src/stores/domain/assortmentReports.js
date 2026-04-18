@@ -6,32 +6,36 @@ import { createRequestRunner } from "./requestRunner";
 export const useAssortmentReportsStore = defineStore("assortmentReports", () => {
   const runner = createRequestRunner();
 
-  const menuAssortmentReport = ref(null);
-  const isLoadingMenuAssortment = runner.getLoadingRef("menuAssortment");
+  const menuAbcReport = ref(null);
+  const isLoadingMenuAbc = runner.getLoadingRef("menuAbc");
 
-  const loadMenuAssortment = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadMenuAbc = async ({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50 }) =>
     await runner.runRequest({
-      key: "menuAssortment",
+      key: "menuAbc",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getMenuAssortment({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit, signal }),
       onSuccess: (data) => {
-        menuAssortmentReport.value = data;
+        menuAbcReport.value = data;
       },
-      errorMessage: "Ошибка загрузки отчета по ассортименту",
+      errorMessage: "Ошибка загрузки ABC-отчета",
     });
+
+  const loadMenuAssortment = async (params) => await loadMenuAbc(params);
 
   const $reset = () => {
     runner.stopAll();
-    menuAssortmentReport.value = null;
+    menuAbcReport.value = null;
     runner.error.value = null;
   };
 
   return {
     error: runner.error,
-    menuAssortmentReport,
-    isLoadingMenuAssortment,
+    menuAbcReport,
+    isLoadingMenuAbc,
+    menuAssortmentReport: menuAbcReport,
+    isLoadingMenuAssortment: isLoadingMenuAbc,
+    loadMenuAbc,
     loadMenuAssortment,
     $reset,
   };
 });
-

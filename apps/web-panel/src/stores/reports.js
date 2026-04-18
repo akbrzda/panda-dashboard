@@ -11,9 +11,7 @@ export const useReportsStore = defineStore("reports", () => {
   const marketingStore = useMarketingReportsStore();
   const assortmentStore = useAssortmentReportsStore();
 
-  const error = computed(
-    () => salesStore.error || deliveryStore.error || marketingStore.error || assortmentStore.error || null,
-  );
+  const error = computed(() => salesStore.error || deliveryStore.error || marketingStore.error || assortmentStore.error || null);
 
   const revenueData = computed(() => salesStore.revenueData);
   const hourlySales = computed(() => salesStore.hourlySales);
@@ -29,7 +27,7 @@ export const useReportsStore = defineStore("reports", () => {
   const marketingSourcesReport = computed(() => marketingStore.marketingSourcesReport);
   const promotionsReport = computed(() => marketingStore.promotionsReport);
 
-  const menuAssortmentReport = computed(() => assortmentStore.menuAssortmentReport);
+  const menuAbcReport = computed(() => assortmentStore.menuAbcReport);
 
   const isLoadingRevenue = computed(() => salesStore.isLoadingRevenue);
   const isLoadingCourier = computed(() => deliveryStore.isLoadingCourierRoutes);
@@ -41,7 +39,7 @@ export const useReportsStore = defineStore("reports", () => {
   const isLoadingDeliveryDelays = computed(() => deliveryStore.isLoadingDeliveryDelays);
   const isLoadingCourierMap = computed(() => deliveryStore.isLoadingCourierMap);
   const isLoadingPromotions = computed(() => marketingStore.isLoadingPromotions);
-  const isLoadingMenuAssortment = computed(() => assortmentStore.isLoadingMenuAssortment);
+  const isLoadingMenuAbc = computed(() => assortmentStore.isLoadingMenuAbc);
   const isLoadingProductionForecast = computed(() => salesStore.isLoadingProductionForecast);
 
   const loadRevenue = async (params) => await salesStore.loadRevenue(params);
@@ -54,7 +52,7 @@ export const useReportsStore = defineStore("reports", () => {
   const loadDeliveryDelays = async (params) => await deliveryStore.loadDeliveryDelays(params);
   const loadCourierMap = async (params) => await deliveryStore.loadCourierMap(params);
   const loadPromotions = async (params) => await marketingStore.loadPromotions(params);
-  const loadMenuAssortment = async (params) => await assortmentStore.loadMenuAssortment(params);
+  const loadMenuAbc = async (params) => await assortmentStore.loadMenuAbc(params);
   const loadProductionForecast = async (params) => await salesStore.loadProductionForecast(params);
 
   const $reset = () => {
@@ -76,7 +74,8 @@ export const useReportsStore = defineStore("reports", () => {
     deliveryDelaysReport,
     courierMapReport,
     promotionsReport,
-    menuAssortmentReport,
+    menuAbcReport,
+    menuAssortmentReport: menuAbcReport,
     productionForecast,
     isLoadingRevenue,
     isLoadingCourier,
@@ -88,7 +87,8 @@ export const useReportsStore = defineStore("reports", () => {
     isLoadingDeliveryDelays,
     isLoadingCourierMap,
     isLoadingPromotions,
-    isLoadingMenuAssortment,
+    isLoadingMenuAbc,
+    isLoadingMenuAssortment: isLoadingMenuAbc,
     isLoadingProductionForecast,
     loadRevenue,
     loadCourierRoutes,
@@ -100,9 +100,9 @@ export const useReportsStore = defineStore("reports", () => {
     loadDeliveryDelays,
     loadCourierMap,
     loadPromotions,
-    loadMenuAssortment,
+    loadMenuAbc,
+    loadMenuAssortment: loadMenuAbc,
     loadProductionForecast,
     $reset,
   };
 });
-

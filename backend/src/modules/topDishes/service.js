@@ -8,6 +8,7 @@ class TopDishesService extends OlapClient {
     this.maxAttemptsTopDishes = Number(process.env.IIKO_TOP_DISHES_MAX_ATTEMPTS || 8);
     this.fetchTimeoutMs = Number(process.env.IIKO_TOP_DISHES_FETCH_TIMEOUT_MS || 3000);
     this.reportCache = new Map();
+    this.datasetCache = new Map();
   }
 
   getCacheKey(storeId, dateFrom, dateTo, limit) {
@@ -26,6 +27,16 @@ class TopDishesService extends OlapClient {
     };
   }
 
+  buildEmptyDataset(warningMessage = "IIKO отвечает слишком долго, показаны неполные данные") {
+    return {
+      dishes: [],
+      totalRevenue: 0,
+      totalQty: 0,
+      degraded: true,
+      warningMessage,
+    };
+  }
+
   parseRows(result) {
     return this.parseResultRows(result, (group, values) => ({
       ...group,
@@ -35,7 +46,7 @@ class TopDishesService extends OlapClient {
     }));
   }
 
-  buildResponseFromRows(rawRows, limit, degraded = false, warningMessage = null) {
+  buildDishesStats(rawRows) {
     const byDish = {};
     let totalRevenue = 0;
     let totalQty = 0;
@@ -65,6 +76,19 @@ class TopDishesService extends OlapClient {
 
     dishes.sort((a, b) => b.revenue - a.revenue);
 
+    return {
+      dishes,
+      totalRevenue,
+      totalQty,
+    };
+  }
+
+  buildResponseFromRows(rawRows, limit, degraded = false, warningMessage = null) {
+    const { dishes, totalRevenue, totalQty } = this.buildDishesStats(rawRows);
+    return this.buildResponseFromDishes(dishes, totalRevenue, totalQty, limit, degraded, warningMessage);
+  }
+
+  buildResponseFromDishes(dishes, totalRevenue, totalQty, limit, degraded = false, warningMessage = null) {
     const top = dishes.slice(0, limit);
     const withQty = dishes.filter((dish) => dish.qty > 0);
     const outsiders = withQty.slice(-Math.min(limit, withQty.length)).reverse();
@@ -80,14 +104,18 @@ class TopDishesService extends OlapClient {
     };
   }
 
-  async getTopDishes({ organizationId, dateFrom, dateTo, limit = 20 }) {
-    const storeId = await this.resolveStoreId(organizationId);
-    const cacheKey = this.getCacheKey(storeId, dateFrom, dateTo, limit);
-    const cachedReport = this.reportCache.get(cacheKey);
+  getDatasetCacheKey(storeId, dateFrom, dateTo) {
+    return `${storeId}:${dateFrom}:${dateTo}`;
+  }
 
-    if (cachedReport && cachedReport.expiresAt > Date.now()) {
-      console.log(`⚡ Top dishes cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
-      return cachedReport.data;
+  async getDishesDataset({ organizationId, dateFrom, dateTo }) {
+    const storeId = await this.resolveStoreId(organizationId);
+    const cacheKey = this.getDatasetCacheKey(storeId, dateFrom, dateTo);
+    const cachedDataset = this.datasetCache.get(cacheKey);
+
+    if (cachedDataset && cachedDataset.expiresAt > Date.now()) {
+      console.log(`⚡ Top dishes dataset cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
+      return cachedDataset.data;
     }
 
     const start = new Date(dateFrom);
@@ -155,19 +183,152 @@ class TopDishesService extends OlapClient {
 
         const rows = this.parseRows(result);
         const filteredResult = this.filterCanceledOrders(rows);
-
-        return this.buildResponseFromRows(filteredResult.rows, limit, false, null);
+        return {
+          ...this.buildDishesStats(filteredResult.rows),
+          degraded: false,
+          warningMessage: null,
+        };
       } catch (error) {
-        console.warn("⚠️ Top dishes отработал в деградированном режиме:", {
+        console.warn("⚠️ Top dishes dataset отработал в деградированном режиме:", {
           storeId,
           dateFrom,
           dateTo,
           message: error?.message,
         });
 
-        return this.buildEmptyResponse("Топ блюд временно недоступен из-за медленного ответа IIKO");
+        return this.buildEmptyDataset("Топ блюд временно недоступен из-за медленного ответа IIKO");
       }
     });
+
+    this.datasetCache.set(cacheKey, {
+      data,
+      expiresAt: Date.now() + this.cacheTtlMs,
+    });
+
+    return data;
+  }
+
+  getAbcGroup(cumulativeShare, thresholds = { a: 0.8, b: 0.95 }) {
+    if (cumulativeShare <= thresholds.a) return "A";
+    if (cumulativeShare <= thresholds.b) return "B";
+    return "C";
+  }
+
+  normalizeAbcGroup(value) {
+    const normalized = String(value || "all")
+      .trim()
+      .toUpperCase();
+    if (["A", "B", "C"].includes(normalized)) return normalized;
+    return "all";
+  }
+
+  normalizePage(value) {
+    const parsed = Number.parseInt(String(value || "").trim(), 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  }
+
+  normalizeLimit(value) {
+    const parsed = Number.parseInt(String(value || "").trim(), 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) return 50;
+    return Math.min(parsed, 200);
+  }
+
+  buildAbcReportFromDishes(dataset, options = {}) {
+    const abcGroup = this.normalizeAbcGroup(options.abcGroup);
+    const page = this.normalizePage(options.page);
+    const limit = this.normalizeLimit(options.limit);
+    const dishes = Array.isArray(dataset?.dishes) ? dataset.dishes : [];
+    const totalRevenue = Number(dataset?.totalRevenue || 0);
+    const summary = {
+      totalRevenue,
+      groupARevenue: 0,
+      groupAShare: 0,
+      countA: 0,
+      countB: 0,
+      countC: 0,
+    };
+
+    let cumulativeRevenue = 0;
+    const items = dishes.map((dish) => {
+      const revenue = Number(dish.revenue || 0);
+      cumulativeRevenue += revenue;
+      const share = totalRevenue > 0 ? revenue / totalRevenue : 0;
+      const cumulativeShare = totalRevenue > 0 ? cumulativeRevenue / totalRevenue : 0;
+      const abcGroup = this.getAbcGroup(cumulativeShare);
+
+      if (abcGroup === "A") {
+        summary.countA += 1;
+        summary.groupARevenue += revenue;
+      } else if (abcGroup === "B") {
+        summary.countB += 1;
+      } else {
+        summary.countC += 1;
+      }
+
+      return {
+        id: dish.name,
+        name: dish.name,
+        category: dish.category || "Без категории",
+        salesCount: Number(dish.qty || 0),
+        revenue,
+        share: Number(share.toFixed(6)),
+        cumulativeShare: Number(cumulativeShare.toFixed(6)),
+        abcGroup,
+      };
+    });
+
+    summary.groupAShare = totalRevenue > 0 ? Number((summary.groupARevenue / totalRevenue).toFixed(6)) : 0;
+
+    const filteredItems = abcGroup === "all" ? items : items.filter((item) => item.abcGroup === abcGroup);
+    const total = items.length;
+    const filteredTotal = filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / limit));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+    const paginatedItems = filteredItems.slice(offset, offset + limit);
+
+    return {
+      summary,
+      items: paginatedItems,
+      pagination: {
+        page: safePage,
+        limit,
+        total,
+        filteredTotal,
+        totalPages,
+      },
+      filters: {
+        abcGroup,
+      },
+      degraded: Boolean(dataset?.degraded),
+      warningMessage: dataset?.warningMessage || null,
+    };
+  }
+
+  async getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50 }) {
+    const dataset = await this.getDishesDataset({ organizationId, dateFrom, dateTo });
+    return this.buildAbcReportFromDishes(dataset, { abcGroup, page, limit });
+  }
+
+  async getTopDishes({ organizationId, dateFrom, dateTo, limit = 20 }) {
+    const storeId = await this.resolveStoreId(organizationId);
+    const cacheKey = this.getCacheKey(storeId, dateFrom, dateTo, limit);
+    const cachedReport = this.reportCache.get(cacheKey);
+
+    if (cachedReport && cachedReport.expiresAt > Date.now()) {
+      console.log(`⚡ Top dishes cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
+      return cachedReport.data;
+    }
+
+    const dataset = await this.getDishesDataset({ organizationId, dateFrom, dateTo });
+    const data = this.buildResponseFromDishes(
+      dataset.dishes || [],
+      Number(dataset.totalRevenue || 0),
+      Number(dataset.totalQty || 0),
+      limit,
+      Boolean(dataset.degraded),
+      dataset.warningMessage || null,
+    );
 
     this.reportCache.set(cacheKey, {
       data,

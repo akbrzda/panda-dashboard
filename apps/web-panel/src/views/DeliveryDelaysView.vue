@@ -3,14 +3,8 @@
     <div class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="text-2xl font-bold text-foreground">Опоздания доставок</h1>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          :disabled="isExportLoading || isPageLoading"
-          @click="handleExport"
-        >
-          {{ isExportLoading ?"Подготовка файла..." :"Выгрузить в Excel" }}
+        <Button type="button" variant="outline" size="sm" :disabled="isExportLoading || isPageLoading" @click="handleExport">
+          {{ isExportLoading ? "Подготовка файла..." : "Выгрузить в Excel" }}
         </Button>
       </div>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
@@ -66,7 +60,7 @@
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="overflow-x-auto">
+          <div class="table-shell">
             <Table class="min-w-full border-collapse text-xs">
               <TableHeader>
                 <TableRow class="bg-muted/30 text-muted-foreground">
@@ -89,7 +83,7 @@
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="overflow-x-auto">
+          <div class="table-shell">
             <Table class="min-w-full border-collapse text-xs">
               <TableHeader>
                 <TableRow class="bg-muted/30 text-muted-foreground">
@@ -113,7 +107,7 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-full border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -126,9 +120,13 @@
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="item in topDelayedOrders" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
+              <TableRow
+                v-for="item in topDelayedOrders"
+                :key="`${item.orderNumber || item.orderId}-${item.date || ''}`"
+                class="border-t border-border/50"
+              >
                 <TableCell class="text-foreground">{{ item.date }}</TableCell>
-                <TableCell class="text-foreground">{{ item.orderNumber ||"Без номера" }}</TableCell>
+                <TableCell class="text-foreground">{{ item.orderNumber || "Без номера" }}</TableCell>
                 <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
                 <TableCell class="text-foreground">{{ formatDuration(item.promisedMinutes) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatDuration(item.actualMinutes) }}</TableCell>
@@ -143,25 +141,25 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from"vue";
-import { AlertCircle, Clock } from"lucide-vue-next";
-import { useReportsStore } from"../stores/reports";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import { reportsApi } from"../api/reports";
-import { toast } from"../lib/sonner";
-import { formatMinutesToHms } from"../lib/utils";
-import PageFilters from"../components/filters/PageFilters.vue";
-import Card from"../components/ui/Card.vue";
-import Button from"../components/ui/Button.vue";
-import MetricCard from"../components/metrics/MetricCard.vue";
+import { computed, onMounted, ref } from "vue";
+import { AlertCircle, Clock } from "lucide-vue-next";
+import { useReportsStore } from "../stores/reports";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import { reportsApi } from "../api/reports";
+import { toast } from "../lib/sonner";
+import { formatMinutesToHms } from "../lib/utils";
+import PageFilters from "../components/filters/PageFilters.vue";
+import Card from "../components/ui/Card.vue";
+import Button from "../components/ui/Button.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -184,8 +182,8 @@ function formatDuration(value) {
 }
 
 function formatHourRange(hour) {
-  const start = String(hour).padStart(2,"0");
-  const end = String((hour + 1) % 24).padStart(2,"0");
+  const start = String(hour).padStart(2, "0");
+  const end = String((hour + 1) % 24).padStart(2, "0");
   return `${start}:00-${end}:00`;
 }
 
@@ -199,7 +197,7 @@ async function handleApply(payload = {}) {
   await reportsStore.loadDeliveryDelays({ organizationId, dateFrom, dateTo });
 }
 
-function extractFilename(headers = {}, fallback ="opozdaniya.xls") {
+function extractFilename(headers = {}, fallback = "opozdaniya.xls") {
   const contentDisposition = headers["content-disposition"] || headers["Content-Disposition"];
   if (!contentDisposition) return fallback;
 
@@ -222,7 +220,7 @@ async function handleExport() {
   const dateTo = filtersStore.dateTo;
 
   if (!organizationId || !dateFrom || !dateTo) {
-    toast.error("Не выбраны фильтры","Укажите организацию и период перед выгрузкой");
+    toast.error("Не выбраны фильтры", "Укажите организацию и период перед выгрузкой");
     return;
   }
 
@@ -230,7 +228,7 @@ async function handleExport() {
   try {
     const response = await reportsApi.exportDeliveryDelays({ organizationId, dateFrom, dateTo });
     const fileName = extractFilename(response.headers, `opozdaniya-${dateFrom}-${dateTo}.xls`);
-    const blob = new Blob([response.data], { type: response.headers["content-type"] ||"application/vnd.ms-excel" });
+    const blob = new Blob([response.data], { type: response.headers["content-type"] || "application/vnd.ms-excel" });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -239,10 +237,10 @@ async function handleExport() {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-    toast.success("Файл готов","Выгрузка опозданий успешно скачана");
+    toast.success("Файл готов", "Выгрузка опозданий успешно скачана");
   } catch (error) {
     console.error("❌ Ошибка выгрузки отчета по опозданиям:", error);
-    toast.error("Ошибка выгрузки","Не удалось сформировать Excel-файл");
+    toast.error("Ошибка выгрузки", "Не удалось сформировать Excel-файл");
   } finally {
     isExportLoading.value = false;
   }

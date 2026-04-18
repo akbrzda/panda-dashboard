@@ -57,7 +57,7 @@
       </Card>
 
       <Card class="border-border/70 bg-card/95 p-0">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-full border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -86,7 +86,7 @@
       </Card>
 
       <Card class="border-border/70 bg-card/95 p-0">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-[1280px] border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -130,24 +130,24 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from"vue";
-import { AlertCircle, BarChart2 } from"lucide-vue-next";
-import { useReportsStore } from"../stores/reports";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import PageFilters from"../components/filters/PageFilters.vue";
-import Card from"../components/ui/Card.vue";
-import Badge from"../components/ui/Badge.vue";
-import Button from"../components/ui/Button.vue";
-import WeekdayAverageChart from"../components/charts/WeekdayAverageChart.vue";
-import ReportInfoBlock from"../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { AlertCircle, BarChart2 } from "lucide-vue-next";
+import { useReportsStore } from "../stores/reports";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import PageFilters from "../components/filters/PageFilters.vue";
+import Card from "../components/ui/Card.vue";
+import Badge from "../components/ui/Badge.vue";
+import Button from "../components/ui/Button.vue";
+import WeekdayAverageChart from "../components/charts/WeekdayAverageChart.vue";
+import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -213,14 +213,14 @@ function formatNumber(value) {
 }
 
 function formatHourRange(hour) {
-  const start = String(hour).padStart(2,"0");
-  const end = String((hour + 1) % 24).padStart(2,"0");
+  const start = String(hour).padStart(2, "0");
+  const end = String((hour + 1) % 24).padStart(2, "0");
   return `${start}:00-${end}:00`;
 }
 
 function formatDate(dateString) {
   const date = new Date(`${dateString}T00:00:00`);
-  return date.toLocaleDateString("ru-RU", { day:"2-digit", month:"2-digit", year:"numeric" });
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 async function handleApply(payload = {}) {

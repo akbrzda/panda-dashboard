@@ -275,16 +275,20 @@ class ReportsController {
     }
   }
 
-  async getMenuAssortment(req, res) {
+  async getMenuAbc(req, res) {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await assortmentDomain.getMenuAssortment({ organizationId, dateFrom, dateTo });
+      const { organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50 } = req.body;
+      const data = await assortmentDomain.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
-      console.error("❌ ReportsController.getMenuAssortment:", error);
-      return res.status(500).json({ error: "Ошибка получения отчета по ассортименту", message: error.message });
+      console.error("❌ ReportsController.getMenuAbc:", error);
+      return res.status(500).json({ error: "Ошибка получения ABC-анализа меню", message: error.message });
     }
+  }
+
+  async getMenuAssortment(req, res) {
+    return await this.getMenuAbc(req, res);
   }
 
   async getProductionForecast(req, res) {

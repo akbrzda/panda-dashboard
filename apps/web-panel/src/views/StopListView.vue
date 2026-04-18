@@ -4,19 +4,17 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="text-2xl font-bold text-foreground">Стоп-лист ({{ itemsCount }})</h1>
         <div class="flex items-center gap-2">
+          <Button class="sm:hidden" variant="outline" size="sm" @click="showFiltersMobile = !showFiltersMobile">
+            {{ showFiltersMobile ? "Скрыть фильтры" : "Фильтры" }}
+          </Button>
           <Badge v-if="isLive" variant="success">LIVE</Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            :disabled="isLoading"
-            @click="store.loadStopLists()"
-          >
+          <Button variant="outline" size="sm" :disabled="isLoading" @click="store.loadStopLists()">
             {{ isLoading ? "Загрузка..." : "Обновить" }}
           </Button>
         </div>
       </div>
 
-      <div class="grid gap-3 sm:grid-cols-2">
+      <div class="grid gap-3 sm:grid-cols-3" :class="showFiltersMobile ? 'grid' : 'hidden sm:grid'">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-medium text-muted-foreground">Подразделение</label>
           <Select v-model="selectedOrganizationId" :disabled="isLoading || store.organizations.length === 0" placeholder="Выберите подразделение">
@@ -27,13 +25,17 @@
         </div>
 
         <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-medium text-muted-foreground">Статус</label>
+          <Select v-model="statusFilter" :disabled="isLoading" placeholder="Все">
+            <SelectItem value="all">Все</SelectItem>
+            <SelectItem value="available">Только доступные</SelectItem>
+            <SelectItem value="stopped">Только стоп-лист</SelectItem>
+          </Select>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
           <label class="text-xs font-medium text-muted-foreground">Поиск</label>
-          <Input
-            v-model="searchText"
-            type="text"
-            placeholder="Название, код или SKU"
-            class="h-9"
-          />
+          <Input v-model="searchText" type="text" placeholder="Название, код или SKU" class="h-9" />
         </div>
       </div>
     </header>
@@ -60,6 +62,7 @@ const itemsCount = computed(() => store.itemsCount);
 const isLoading = computed(() => store.isLoading);
 const error = computed(() => store.error);
 const isLive = ref(false);
+const showFiltersMobile = ref(false);
 
 const selectedOrganizationId = computed({
   get: () => store.currentOrganizationId,
@@ -73,6 +76,11 @@ const selectedOrganizationId = computed({
 const searchText = computed({
   get: () => store.filterText,
   set: (value) => store.setFilterText(value),
+});
+
+const statusFilter = computed({
+  get: () => store.statusFilter,
+  set: (value) => store.setStatusFilter(value),
 });
 
 let eventSource = null;

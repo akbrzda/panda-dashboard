@@ -46,7 +46,7 @@
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="overflow-x-auto">
+          <div class="table-shell">
             <Table class="min-w-full border-collapse text-xs">
               <TableHeader>
                 <TableRow class="bg-muted/30 text-muted-foreground">
@@ -69,7 +69,7 @@
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="overflow-x-auto">
+          <div class="table-shell">
             <Table class="min-w-full border-collapse text-xs">
               <TableHeader>
                 <TableRow class="bg-muted/30 text-muted-foreground">
@@ -96,23 +96,23 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from"vue";
-import { AlertCircle, Truck } from"lucide-vue-next";
-import { useReportsStore } from"../stores/reports";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import PageFilters from"../components/filters/PageFilters.vue";
-import Card from"../components/ui/Card.vue";
-import MetricCard from"../components/metrics/MetricCard.vue";
-import AreaChart from"../components/charts/AreaChart.vue";
-import DonutChart from"../components/charts/DonutChart.vue";
+import { computed, onMounted } from "vue";
+import { AlertCircle, Truck } from "lucide-vue-next";
+import { useReportsStore } from "../stores/reports";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import PageFilters from "../components/filters/PageFilters.vue";
+import Card from "../components/ui/Card.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
+import AreaChart from "../components/charts/AreaChart.vue";
+import DonutChart from "../components/charts/DonutChart.vue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -134,7 +134,7 @@ function formatNumber(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 async function handleApply(payload = {}) {

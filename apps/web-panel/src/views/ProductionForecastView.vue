@@ -66,7 +66,7 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-0">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-[920px] border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
@@ -102,7 +102,7 @@
       </Card>
 
       <Card class="border-border/70 bg-card/95 p-0">
-        <div class="overflow-x-auto">
+        <div class="table-shell">
           <Table class="min-w-[760px] border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
