@@ -27,7 +27,7 @@ function buildRouteStats(rows = [], ctx) {
       if (!currentRoute || sendAt > currentRoute.endAt + routeMergeWindowMs) {
         currentRoute = {
           courierId,
-          courierName: row["Delivery.Courier"] || "РќРµРёР·РІРµСЃС‚РЅС‹Р№ РєСѓСЂСЊРµСЂ",
+          courierName: row["Delivery.Courier"] || "Неизвестный курьер",
           endAt: closeAt,
           orders: new Set(orderId ? [orderId] : []),
         };
@@ -51,7 +51,7 @@ function buildRouteStats(rows = [], ctx) {
   const distribution = [...routeCountBySize.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([size, routeCount]) => ({
-      label: `${size} Р·Р°РєР°Р·(РѕРІ) РІ РјР°СЂС€СЂСѓС‚Рµ`,
+      label: `${size} заказ(ов) в маршруте`,
       ordersInRoute: size,
       count: routeCount,
       routeCount,
@@ -66,7 +66,6 @@ function buildRouteStats(rows = [], ctx) {
     distribution,
   };
 }
-
 
 function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx) {
   const orders = ctx
@@ -93,10 +92,10 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx) {
     if (order.totalMinutes != null) totalValues.push(order.totalMinutes);
 
     const ruleViolations = [];
-    if (order.prepMinutes != null && order.prepMinutes > prepThreshold) ruleViolations.push("РџСЂРёРіРѕС‚РѕРІР»РµРЅРёРµ");
-    if (order.shelfMinutes != null && order.shelfMinutes > shelfThreshold) ruleViolations.push("РџРѕР»РєР°");
-    if (order.routeMinutes != null && order.routeMinutes > routeThreshold) ruleViolations.push("Р’ РїСѓС‚Рё");
-    if (order.totalMinutes != null && order.totalMinutes > totalThreshold) ruleViolations.push("РћР±С‰РµРµ SLA");
+    if (order.prepMinutes != null && order.prepMinutes > prepThreshold) ruleViolations.push("Приготовление");
+    if (order.shelfMinutes != null && order.shelfMinutes > shelfThreshold) ruleViolations.push("Полка");
+    if (order.routeMinutes != null && order.routeMinutes > routeThreshold) ruleViolations.push("В пути");
+    if (order.totalMinutes != null && order.totalMinutes > totalThreshold) ruleViolations.push("Общее SLA");
 
     if (Number.isInteger(order.hour) && order.hour >= 0 && order.hour <= 23) {
       hourly[order.hour].orders += 1;
@@ -287,7 +286,7 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx) 
 
   let totalRevenue = 0;
   for (const order of orders) {
-    const status = order.status || "РЎРѕР·РґР°РЅ";
+    const status = order.status || "Создан";
     const channel = ctx.normalizeChannelName(order.orderType);
     const departmentId = order.departmentId || "unknown";
     const date = order.date || "unknown";
@@ -313,13 +312,13 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx) 
     const daily = dailyMap.get(date);
     daily.orders += 1;
     daily.revenue += revenue;
-    if (status === "Р”РѕСЃС‚Р°РІР»РµРЅ") daily.delivered += 1;
-    if (status === "РћС‚РјРµРЅРµРЅ") daily.canceled += 1;
+    if (status === "Доставлен") daily.delivered += 1;
+    if (status === "Отменен") daily.canceled += 1;
   }
 
   const totalOrders = orders.length;
-  const deliveredOrders = orders.filter((order) => order.status === "Р”РѕСЃС‚Р°РІР»РµРЅ").length;
-  const canceledOrders = orders.filter((order) => order.status === "РћС‚РјРµРЅРµРЅ").length;
+  const deliveredOrders = orders.filter((order) => order.status === "Доставлен").length;
+  const canceledOrders = orders.filter((order) => order.status === "Отменен").length;
 
   const statuses = [...statusMap.values()]
     .map((item) => ({
@@ -541,7 +540,7 @@ function buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Mosc
     .sort((a, b) => Number(b.isActive) - Number(a.isActive) || b.orders - a.orders);
 
   const activeCouriers = couriers.filter((courier) => courier.isActive).length;
-  const activeOrders = timeline.filter((item) => item.status === "Р’ РїСѓС‚Рё").length;
+  const activeOrders = timeline.filter((item) => item.status === "В пути").length;
 
   return {
     summary: {
@@ -556,6 +555,397 @@ function buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Mosc
   };
 }
 
+function normalizeZoneValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveFeatureZoneAliases(feature = {}) {
+  const props = feature?.properties || {};
+  const aliases = new Set();
+  const candidates = [props.id, props.zoneId, props.zone_id, props.externalId, props.code, props.name, props.zone, props.zoneName, props.title];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeZoneValue(candidate);
+    if (normalized) aliases.add(normalized);
+  }
+
+  return aliases;
+}
+
+function resolveFeatureZoneName(feature = {}, index = 0) {
+  const props = feature?.properties || {};
+
+  const directCandidates = [props.zoneName, props.name, props.zone, props.title, props.label, props.description, props.desc, props.fullName];
+
+  for (const candidate of directCandidates) {
+    const value = String(candidate || "").trim();
+    if (value) return value;
+  }
+
+  const lowerCaseMap = Object.entries(props).reduce((acc, [key, value]) => {
+    acc[
+      String(key || "")
+        .trim()
+        .toLowerCase()
+    ] = value;
+    return acc;
+  }, {});
+
+  const keyCandidates = ["zonename", "zone_name", "zone-name", "name_ru", "zone_title", "название", "названиезоны", "зона"];
+
+  for (const key of keyCandidates) {
+    const value = String(lowerCaseMap[key] || "").trim();
+    if (value) return value;
+  }
+
+  return `Зона ${index + 1}`;
+}
+
+function resolveOrderZoneAlias(order = {}) {
+  return normalizeZoneValue(order.deliveryZoneId || order.deliveryZoneName);
+}
+
+function normalizeRing(ring = []) {
+  if (!Array.isArray(ring)) return [];
+  return ring
+    .map((point) => {
+      if (!Array.isArray(point) || point.length < 2) return null;
+      const lng = Number(point[0]);
+      const lat = Number(point[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return [lng, lat];
+    })
+    .filter(Boolean);
+}
+
+function getFeaturePolygons(feature = {}) {
+  const geometry = feature?.geometry;
+  if (!geometry || !Array.isArray(geometry.coordinates)) return [];
+
+  if (geometry.type === "Polygon") {
+    const polygon = geometry.coordinates.map((ring) => normalizeRing(ring)).filter((ring) => ring.length >= 3);
+    return polygon.length > 0 ? [polygon] : [];
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates
+      .map((polygon) => polygon.map((ring) => normalizeRing(ring)).filter((ring) => ring.length >= 3))
+      .filter((polygon) => polygon.length > 0);
+  }
+
+  return [];
+}
+
+function isPointInRing(lng, lat, ring = []) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const crosses = yi > lat !== yj > lat;
+    if (!crosses) continue;
+    const intersectX = ((xj - xi) * (lat - yi)) / (yj - yi || 1e-9) + xi;
+    if (lng < intersectX) inside = !inside;
+  }
+  return inside;
+}
+
+function isPointInPolygonWithHoles(lng, lat, polygon = []) {
+  if (!Array.isArray(polygon) || polygon.length === 0) return false;
+  const outerRing = polygon[0];
+  if (!isPointInRing(lng, lat, outerRing)) return false;
+
+  for (let ringIndex = 1; ringIndex < polygon.length; ringIndex += 1) {
+    if (isPointInRing(lng, lat, polygon[ringIndex])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isPointInFeature(lng, lat, feature = {}) {
+  const polygons = getFeaturePolygons(feature);
+  return polygons.some((polygon) => isPointInPolygonWithHoles(lng, lat, polygon));
+}
+
+function resolveOrderStatusForFilter(order = {}) {
+  return normalizeZoneValue(order.rawStatus || order.status);
+}
+
+function buildDeliveryHeatmapReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  const weekdayLabels = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 7: "Вс" };
+  const statusesFilter = new Set(
+    (Array.isArray(options?.statuses) ? options.statuses : []).map((value) => normalizeZoneValue(value)).filter(Boolean),
+  );
+
+  const baseOrders = Array.isArray(options?.preparedOrders) ? options.preparedOrders : ctx.toOrderEntities(rows, timezone);
+
+  const orders = baseOrders
+    .filter((order) => ctx.isCourierDeliveryByServiceType({ OrderServiceType: order.orderServiceType }))
+    .filter((order) => {
+      if (statusesFilter.size === 0) return true;
+      return statusesFilter.has(resolveOrderStatusForFilter(order));
+    });
+  const totalRevenue = ctx.roundMetric(orders.reduce((sum, order) => sum + Number(order?.revenue || 0), 0));
+
+  const zonesGeoJson = options?.zonesGeoJson && options.zonesGeoJson.type === "FeatureCollection" ? options.zonesGeoJson : null;
+
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    orders: 0,
+    delayed: 0,
+    totalLateMinutes: 0,
+  }));
+
+  const weekdayBuckets = Array.from({ length: 7 }, (_, index) => ({
+    weekdayIndex: index + 1,
+    weekday: weekdayLabels[index + 1],
+    totalOrders: 0,
+    delayed: 0,
+    totalLateMinutes: 0,
+    hours: Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      orders: 0,
+      delayed: 0,
+      totalLateMinutes: 0,
+    })),
+  }));
+
+  let delayedOrders = 0;
+
+  for (const order of orders) {
+    const hour = Number.isInteger(order.hour) && order.hour >= 0 && order.hour <= 23 ? order.hour : null;
+    const weekdayIndex = Number(order.weekdayIndex);
+    if (hour == null || !weekdayIndex || weekdayIndex < 1 || weekdayIndex > 7) continue;
+
+    const expectedDeliveryAt = Number(order.promisedAt || 0);
+    const actualDeliveryAt = Number(order.actualDeliveryAt || 0);
+    const lateMinutes = expectedDeliveryAt > 0 && actualDeliveryAt > 0 ? Math.max(0, (actualDeliveryAt - expectedDeliveryAt) / (1000 * 60)) : 0;
+    const isDelayed = lateMinutes > 0;
+
+    const hourBucket = hourly[hour];
+    hourBucket.orders += 1;
+    if (isDelayed) {
+      hourBucket.delayed += 1;
+      hourBucket.totalLateMinutes += lateMinutes;
+      delayedOrders += 1;
+    }
+
+    const weekdayBucket = weekdayBuckets[weekdayIndex - 1];
+    weekdayBucket.totalOrders += 1;
+    if (isDelayed) {
+      weekdayBucket.delayed += 1;
+      weekdayBucket.totalLateMinutes += lateMinutes;
+    }
+
+    const weekdayHourBucket = weekdayBucket.hours[hour];
+    weekdayHourBucket.orders += 1;
+    if (isDelayed) {
+      weekdayHourBucket.delayed += 1;
+      weekdayHourBucket.totalLateMinutes += lateMinutes;
+    }
+  }
+
+  const normalizeBucket = (bucket) => ({
+    hour: bucket.hour,
+    orders: bucket.orders,
+    delayed: bucket.delayed,
+    delayRate: bucket.orders > 0 ? ctx.roundMetric((bucket.delayed / bucket.orders) * 100) : 0,
+    avgLateMinutes: bucket.delayed > 0 ? ctx.roundMetric(bucket.totalLateMinutes / bucket.delayed) : 0,
+  });
+
+  const normalizedHourly = hourly.map((bucket) => normalizeBucket(bucket));
+  const peakHour = normalizedHourly.reduce((best, item) => (item.orders > best.orders ? item : best), {
+    hour: 0,
+    orders: 0,
+    delayed: 0,
+    delayRate: 0,
+    avgLateMinutes: 0,
+  });
+
+  const weekdayHeatmap = weekdayBuckets.map((weekday) => ({
+    weekdayIndex: weekday.weekdayIndex,
+    weekday: weekday.weekday,
+    totalOrders: weekday.totalOrders,
+    delayed: weekday.delayed,
+    delayRate: weekday.totalOrders > 0 ? ctx.roundMetric((weekday.delayed / weekday.totalOrders) * 100) : 0,
+    avgLateMinutes: weekday.delayed > 0 ? ctx.roundMetric(weekday.totalLateMinutes / weekday.delayed) : 0,
+    hours: weekday.hours.map((bucket) => normalizeBucket(bucket)),
+  }));
+
+  const topRiskHours = weekdayHeatmap
+    .flatMap((weekday) =>
+      weekday.hours.map((hourBucket) => ({
+        weekdayIndex: weekday.weekdayIndex,
+        weekday: weekday.weekday,
+        hour: hourBucket.hour,
+        orders: hourBucket.orders,
+        delayed: hourBucket.delayed,
+        delayRate: hourBucket.delayRate,
+        avgLateMinutes: hourBucket.avgLateMinutes,
+      })),
+    )
+    .filter((item) => item.orders > 0)
+    .sort((left, right) => right.delayRate - left.delayRate || right.orders - left.orders)
+    .slice(0, 20);
+
+  let zones = null;
+  let zoneStats = [];
+  let matchedByCoordinates = 0;
+  let matchedByZoneAlias = 0;
+  let unassignedOrders = 0;
+
+  if (zonesGeoJson?.features?.length) {
+    const zoneOrderStats = new Map();
+    const featureIndexByAlias = new Map();
+    const featuresPrepared = zonesGeoJson.features.map((feature, index) => {
+      const aliases = resolveFeatureZoneAliases(feature);
+      if (aliases.size === 0) {
+        aliases.add(`zone-index-${index}`);
+      }
+
+      for (const alias of aliases) {
+        if (!featureIndexByAlias.has(alias)) {
+          featureIndexByAlias.set(alias, index);
+        }
+      }
+
+      return {
+        index,
+        feature,
+        aliases,
+      };
+    });
+
+    const getZoneStat = (zoneIndex) => {
+      if (!zoneOrderStats.has(zoneIndex)) {
+        zoneOrderStats.set(zoneIndex, {
+          orders: 0,
+          revenue: 0,
+          totalMinutesSum: 0,
+          totalMinutesCount: 0,
+          delayedOrders: 0,
+        });
+      }
+      return zoneOrderStats.get(zoneIndex);
+    };
+
+    for (const order of orders) {
+      let matchedZoneIndex = null;
+      const lat = Number(order?.deliveryPoint?.lat);
+      const lng = Number(order?.deliveryPoint?.lng);
+      const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
+
+      if (hasCoordinates) {
+        const matchedByGeometry = featuresPrepared.find((item) => isPointInFeature(lng, lat, item.feature));
+        if (matchedByGeometry) {
+          matchedZoneIndex = matchedByGeometry.index;
+          matchedByCoordinates += 1;
+        }
+      }
+
+      if (matchedZoneIndex == null) {
+        const alias = resolveOrderZoneAlias(order);
+        if (alias && featureIndexByAlias.has(alias)) {
+          matchedZoneIndex = featureIndexByAlias.get(alias);
+          matchedByZoneAlias += 1;
+        }
+      }
+
+      if (matchedZoneIndex == null) {
+        unassignedOrders += 1;
+        continue;
+      }
+
+      const stat = getZoneStat(matchedZoneIndex);
+      stat.orders += 1;
+      stat.revenue += Number(order.revenue || 0);
+      if (Number.isFinite(Number(order.totalMinutes))) {
+        stat.totalMinutesSum += Number(order.totalMinutes || 0);
+        stat.totalMinutesCount += 1;
+      }
+      if (
+        Number.isFinite(Number(order.promisedAt)) &&
+        Number.isFinite(Number(order.actualDeliveryAt)) &&
+        Number(order.actualDeliveryAt) > Number(order.promisedAt)
+      ) {
+        stat.delayedOrders += 1;
+      }
+    }
+
+    const maxOrders = Math.max(...Array.from(zoneOrderStats.values()).map((item) => Number(item.orders || 0)), 1);
+
+    zones = {
+      type: "FeatureCollection",
+      features: zonesGeoJson.features.map((feature, index) => {
+        const merged = zoneOrderStats.get(index) || null;
+        const zoneName = resolveFeatureZoneName(feature, index);
+
+        const ordersCount = Number(merged?.orders || 0);
+        const revenue = ctx.roundMetric(merged?.revenue || 0);
+        const avgReceiveMinutes = merged?.totalMinutesCount > 0 ? ctx.roundMetric(merged.totalMinutesSum / merged.totalMinutesCount) : 0;
+        const delayed = Number(merged?.delayedOrders || 0);
+        const lateRate = ordersCount > 0 ? ctx.roundMetric((delayed / ordersCount) * 100) : 0;
+        const intensity = maxOrders > 0 ? Math.max(0, Math.min(1, Math.sqrt(ordersCount / maxOrders))) : 0;
+
+        return {
+          ...feature,
+          properties: {
+            ...(feature.properties || {}),
+            zoneName,
+            name: String(feature?.properties?.name || zoneName),
+            heatIntensity: intensity,
+            orders: ordersCount,
+            revenue,
+            avgReceiveMinutes,
+            delayedOrders: delayed,
+            lateRate,
+          },
+        };
+      }),
+    };
+
+    zoneStats = zones.features
+      .map((feature) => ({
+        zoneName: resolveFeatureZoneName(feature),
+        orders: Number(feature?.properties?.orders || 0),
+        revenue: Number(feature?.properties?.revenue || 0),
+        avgReceiveMinutes: Number(feature?.properties?.avgReceiveMinutes || 0),
+        delayedOrders: Number(feature?.properties?.delayedOrders || 0),
+        lateRate: Number(feature?.properties?.lateRate || 0),
+        heatIntensity: Number(feature?.properties?.heatIntensity || 0),
+      }))
+      .sort((left, right) => right.orders - left.orders);
+  }
+
+  return {
+    summary: {
+      totalOrders: orders.length,
+      totalRevenue,
+      delayedOrders,
+      onTimeOrders: Math.max(orders.length - delayedOrders, 0),
+      delayRate: orders.length > 0 ? ctx.roundMetric((delayedOrders / orders.length) * 100) : 0,
+      peakHour,
+      matchedByCoordinates,
+      matchedByZoneAlias,
+      unassignedOrders,
+    },
+    zonesConfigured: Boolean(zonesGeoJson),
+    zonesVersion: Number(options?.zonesVersion || 0),
+    geojson: zones,
+    zones,
+    zoneStats,
+    hourly: normalizedHourly,
+    weekdayHeatmap,
+    topRiskHours,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   buildRouteStats,
   buildSlaReport,
@@ -563,4 +953,5 @@ module.exports = {
   buildDeliverySummaryReport,
   buildDeliveryDelaysReport,
   buildCourierMapReport,
+  buildDeliveryHeatmapReport,
 };

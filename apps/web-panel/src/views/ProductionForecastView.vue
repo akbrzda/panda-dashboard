@@ -1,9 +1,20 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <div class="flex flex-wrap items-center gap-2">
-        <h1 class="text-2xl font-bold text-foreground">Прогноз загрузки производства</h1>
-        <Badge variant="secondary">История + предзаказы</Badge>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 class="text-2xl font-bold text-foreground">Прогноз загрузки производства</h1>
+          <Badge variant="secondary">История + предзаказы</Badge>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-muted-foreground">Дата прогноза</label>
+          <input
+            v-model="forecastDate"
+            type="date"
+            class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+            @change="handleApply()"
+          />
+        </div>
       </div>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
@@ -81,7 +92,7 @@
                     class="inline-flex items-center rounded-full px-2 py-1 text-[11px] font-medium"
                     :class="item.overload ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success-foreground'"
                   >
-                    {{ item.overload ?"Перегруз" :"Норма" }}
+                    {{ item.overload ? "Перегруз" : "Норма" }}
                   </span>
                 </TableCell>
               </TableRow>
@@ -115,7 +126,7 @@
                     class="inline-flex items-center rounded-full px-2 py-1 text-[11px] font-medium"
                     :class="department.isOverloaded ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success-foreground'"
                   >
-                    {{ department.isOverloaded ?"Есть риск" :"Стабильно" }}
+                    {{ department.isOverloaded ? "Есть риск" : "Стабильно" }}
                   </span>
                 </TableCell>
               </TableRow>
@@ -128,23 +139,23 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from"vue";
-import { AlertCircle } from"lucide-vue-next";
-import { useReportsStore } from"@/stores/reports";
-import { useFiltersStore } from"@/stores/filters";
-import { useRevenueStore } from"@/stores/revenue";
-import PageFilters from"@/components/filters/PageFilters.vue";
-import Card from"@/components/ui/Card.vue";
-import MetricCard from"@/components/metrics/MetricCard.vue";
-import Badge from"@/components/ui/Badge.vue";
-import ReportInfoBlock from"@/components/reports/ReportInfoBlock.vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { AlertCircle } from "lucide-vue-next";
+import { useReportsStore } from "@/stores/reports";
+import { useFiltersStore } from "@/stores/filters";
+import { useRevenueStore } from "@/stores/revenue";
+import PageFilters from "@/components/filters/PageFilters.vue";
+import Card from "@/components/ui/Card.vue";
+import MetricCard from "@/components/metrics/MetricCard.vue";
+import Badge from "@/components/ui/Badge.vue";
+import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -153,10 +164,21 @@ const revenueStore = useRevenueStore();
 const report = computed(() => reportsStore.productionForecast);
 const isPageLoading = computed(() => reportsStore.isLoadingProductionForecast);
 const pageError = computed(() => reportsStore.error);
+const forecastDate = ref(filtersStore.dateTo || "");
+
+watch(
+  () => filtersStore.dateTo,
+  (value) => {
+    if (!forecastDate.value) {
+      forecastDate.value = value || "";
+    }
+  },
+  { immediate: true },
+);
 
 const formatNumber = (value) => Number(value || 0).toLocaleString("ru-RU");
 const formatPercent = (value) => `${Number(value || 0).toLocaleString("ru-RU")} %`;
-const formatHour = (hour) => `${String(hour).padStart(2,"0")}:00-${String((hour + 1) % 24).padStart(2,"0")}:00`;
+const formatHour = (hour) => `${String(hour).padStart(2, "0")}:00-${String((hour + 1) % 24).padStart(2, "0")}:00`;
 
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? revenueStore.currentOrganizationId;
@@ -172,17 +194,13 @@ async function handleApply(payload = {}) {
     organizationId,
     dateFrom,
     dateTo,
-    forecastDate: dateTo,
+    forecastDate: forecastDate.value || dateTo,
   });
 }
 
 onMounted(async () => {
   if (!revenueStore.organizations.length) {
     await revenueStore.loadOrganizations();
-  }
-
-  if (!report.value) {
-    await handleApply();
   }
 });
 </script>

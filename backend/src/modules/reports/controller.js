@@ -5,6 +5,25 @@ const assortmentDomain = require("./domains/assortment");
 const { validateCommonParams } = require("./shared/reportQuery");
 
 class ReportsController {
+  parseStringArray(value) {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item || "").trim()).filter(Boolean);
+    }
+
+    if (typeof value === "string") {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    return [];
+  }
+
+  parseStatuses(value) {
+    return this.parseStringArray(value);
+  }
+
   validateCommonParams(res, payload = {}) {
     const validation = validateCommonParams(payload);
     if (!validation.isValid) {
@@ -147,12 +166,100 @@ class ReportsController {
   async getCourierMap(req, res) {
     try {
       if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
-      const data = await deliveryDomain.getCourierMap({ organizationId, dateFrom, dateTo });
+      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.body;
+      const statuses = this.parseStatuses(req.body?.statuses);
+      const sourceKeys = this.parseStringArray(req.body?.sourceKeys);
+      const courierIds = this.parseStringArray(req.body?.courierIds);
+      const data = await deliveryDomain.getCourierMap({
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+      });
       return res.json({ success: true, data, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error("❌ ReportsController.getCourierMap:", error);
       return res.status(500).json({ error: "Ошибка получения данных карты курьеров", message: error.message });
+    }
+  }
+
+  async getDeliveryHeatmap(req, res) {
+    try {
+      if (!this.validateCommonParams(res, req.body)) return;
+      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.body;
+      const statuses = this.parseStatuses(req.body?.statuses);
+      const sourceKeys = this.parseStringArray(req.body?.sourceKeys);
+      const courierIds = this.parseStringArray(req.body?.courierIds);
+      const data = await deliveryDomain.getDeliveryHeatmap({
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+      });
+      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error("❌ ReportsController.getDeliveryHeatmap:", error);
+      return res.status(500).json({ error: "Ошибка получения тепловой карты доставок", message: error.message });
+    }
+  }
+
+  async getDeliveryHeatmapQuery(req, res) {
+    try {
+      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.query;
+      const statuses = this.parseStatuses(req.query?.statuses);
+      const sourceKeys = this.parseStringArray(req.query?.sourceKeys);
+      const courierIds = this.parseStringArray(req.query?.courierIds);
+      if (!this.validateCommonParams(res, { organizationId, dateFrom, dateTo })) return;
+
+      const data = await deliveryDomain.getDeliveryHeatmap({
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+      });
+      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error("❌ ReportsController.getDeliveryHeatmapQuery:", error);
+      return res.status(500).json({ error: "Ошибка получения тепловой карты доставок", message: error.message });
+    }
+  }
+
+  async getDeliveryZones(req, res) {
+    try {
+      const { organizationId, terminalGroupId } = req.query;
+      if (!organizationId) {
+        return res.status(400).json({ error: "Обязательный параметр: organizationId" });
+      }
+
+      const data = await deliveryDomain.getDeliveryZones({ organizationId, terminalGroupId });
+      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error("❌ ReportsController.getDeliveryZones:", error);
+      return res.status(500).json({ error: "Ошибка получения зон доставки", message: error.message });
+    }
+  }
+
+  async saveDeliveryZones(req, res) {
+    try {
+      const { organizationId, terminalGroupId, geoJson } = req.body || {};
+      if (!organizationId || !geoJson) {
+        return res.status(400).json({ error: "Обязательные параметры: organizationId, geoJson" });
+      }
+
+      const data = await deliveryDomain.saveDeliveryZones({ organizationId, terminalGroupId, geoJson });
+      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error("❌ ReportsController.saveDeliveryZones:", error);
+      return res.status(500).json({ error: "Ошибка сохранения зон доставки", message: error.message });
     }
   }
 

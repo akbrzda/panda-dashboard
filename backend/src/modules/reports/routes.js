@@ -15,6 +15,11 @@ router.post("/delivery-summary", reportsController.getDeliverySummary.bind(repor
 router.post("/delivery-delays", reportsController.getDeliveryDelays.bind(reportsController));
 router.post("/delivery-delays/export", reportsController.exportDeliveryDelays.bind(reportsController));
 router.post("/courier-map", reportsController.getCourierMap.bind(reportsController));
+router.get("/delivery-heatmap", reportsController.getDeliveryHeatmapQuery.bind(reportsController));
+router.post("/delivery-heatmap", reportsController.getDeliveryHeatmap.bind(reportsController));
+router.get("/delivery-zones", reportsController.getDeliveryZones.bind(reportsController));
+router.post("/delivery-zones", reportsController.saveDeliveryZones.bind(reportsController));
+router.post("/delivery-zones/upload", reportsController.saveDeliveryZones.bind(reportsController));
 router.post("/promotions", reportsController.getPromotions.bind(reportsController));
 router.post("/menu-assortment", reportsController.getMenuAssortment.bind(reportsController));
 

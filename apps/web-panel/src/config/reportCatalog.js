@@ -111,9 +111,9 @@ export const reportSectionsCatalog = [
       },
       {
         to: "/courier-map",
-        label: "Карта курьеров",
-        title: "Карта курьеров",
-        desc: "Оперативный мониторинг с polling",
+        label: "Тепловая карта",
+        title: "Тепловая карта доставки",
+        desc: "Пиковые часы и риск опозданий по дням недели",
         icon: Map,
       },
     ],
@@ -168,4 +168,3 @@ export const reportSectionsCatalog = [
 export const dashboardQuickLinksCatalog = reportSectionsCatalog.flatMap((section) =>
   section.items.filter((item) => item.showInDashboard !== false && item.to !== "/dashboard"),
 );
-

@@ -15,7 +15,24 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", config.cors.origin);
+  const requestOrigin = req.headers.origin;
+  const configuredOrigin = String(config.cors.origin || "*").trim();
+  const allowedOrigins = configuredOrigin
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  let responseOrigin = "*";
+  if (configuredOrigin === "*") {
+    responseOrigin = config.cors.credentials && requestOrigin ? requestOrigin : "*";
+  } else if (allowedOrigins.includes(requestOrigin)) {
+    responseOrigin = requestOrigin;
+  } else if (allowedOrigins.length > 0) {
+    responseOrigin = allowedOrigins[0];
+  }
+
+  res.header("Access-Control-Allow-Origin", responseOrigin);
+  res.header("Vary", "Origin");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.header("Access-Control-Allow-Credentials", config.cors.credentials);

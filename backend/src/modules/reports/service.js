@@ -1,4 +1,7 @@
 const OlapClient = require("../shared/olapClient");
+const axios = require("axios");
+const fs = require("fs/promises");
+const path = require("path");
 const organizationsService = require("../organizations/service");
 const revenueService = require("../revenue/service");
 const topDishesService = require("../topDishes/service");
@@ -10,6 +13,405 @@ const assortmentReports = require("./services/assortmentReports");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class ReportsService extends OlapClient {
+  constructor() {
+    super();
+    this.operationalRowsCacheTtlMs = Number(process.env.REPORTS_OPERATIONAL_CACHE_TTL_MS || 90000);
+    this.heatmapCacheTtlMs = Number(process.env.REPORTS_HEATMAP_CACHE_TTL_MS || 45000);
+    this.operationalRowsCache = new Map();
+    this.operationalRowsInflight = new Map();
+    this.heatmapResultCache = new Map();
+    this.heatmapInflight = new Map();
+    this.deliveryZonesFilePath = path.resolve(__dirname, "../../../data/deliveryZones.json");
+    this.cloudApiBaseUrl = String(process.env.IIKO_CLOUD_BASE_URL || process.env.IIKO_API_BASE_URL || "")
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/api\/1$/i, "");
+    this.cloudApiLogin = String(process.env.IIKO_CLOUD_API_LOGIN || process.env.IIKO_API_LOGIN || "").trim();
+    this.cloudTokenCache = {
+      value: null,
+      expiresAt: 0,
+    };
+  }
+
+  normalizeTerminalGroupId(value) {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    return normalized || "__all__";
+  }
+
+  buildZoneStorageKey({ organizationId, terminalGroupId }) {
+    return `${String(organizationId)}::${this.normalizeTerminalGroupId(terminalGroupId)}`;
+  }
+
+  clearHeatmapCacheByOrganization(organizationId) {
+    const orgPrefix = `${String(organizationId)}:`;
+    for (const key of this.heatmapResultCache.keys()) {
+      if (key.startsWith(orgPrefix)) {
+        this.heatmapResultCache.delete(key);
+      }
+    }
+  }
+
+  canUseCloudDeliveryApi() {
+    return Boolean(this.cloudApiBaseUrl && this.cloudApiLogin);
+  }
+
+  async getCloudApiToken() {
+    if (!this.canUseCloudDeliveryApi()) return null;
+
+    if (this.cloudTokenCache.value && this.cloudTokenCache.expiresAt > Date.now()) {
+      return this.cloudTokenCache.value;
+    }
+
+    const response = await axios.post(
+      `${this.cloudApiBaseUrl}/api/1/access_token`,
+      {
+        apiLogin: this.cloudApiLogin,
+      },
+      {
+        timeout: this.timeout,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    const token = String(response?.data?.token || "").trim();
+    if (!token) {
+      throw new Error("iiko Cloud не вернул access token");
+    }
+
+    this.cloudTokenCache = {
+      value: token,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+
+    return token;
+  }
+
+  normalizeCloudDeliveryOrders(payload = {}, timezone = "Europe/Moscow") {
+    const organizations = Array.isArray(payload?.ordersByOrganizations) ? payload.ordersByOrganizations : [];
+
+    return organizations.flatMap((organizationBlock, orgIndex) => {
+      const organizationId = String(organizationBlock?.organizationId || "").trim();
+      const orders = Array.isArray(organizationBlock?.orders) ? organizationBlock.orders : [];
+
+      return orders.map((item, orderIndex) => {
+        const sourceOrder = item?.order || item || {};
+        const deliveredAt = this.parsePossibleDateTime(sourceOrder?.whenDelivered || sourceOrder?.deliveredAt || sourceOrder?.actualDeliveryDate);
+        const promisedAt = this.parsePossibleDateTime(sourceOrder?.completeBefore || sourceOrder?.promisedTime || sourceOrder?.expectedDeliveryDate);
+        const createdAt = this.parsePossibleDateTime(sourceOrder?.whenCreated || sourceOrder?.createdAt || sourceOrder?.createdDate);
+        const sentAt = this.parsePossibleDateTime(sourceOrder?.whenSended || sourceOrder?.sentAt);
+        const dateBase = deliveredAt || promisedAt || createdAt;
+        const totalMinutes = createdAt && deliveredAt && deliveredAt > createdAt ? (deliveredAt - createdAt) / (1000 * 60) : null;
+
+        let lat = this.parseNumber(sourceOrder?.deliveryPoint?.coordinates?.latitude);
+        let lng = this.parseNumber(sourceOrder?.deliveryPoint?.coordinates?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          const pointCoordinates = sourceOrder?.deliveryPoint?.coordinates;
+          if (Array.isArray(pointCoordinates) && pointCoordinates.length >= 2) {
+            lng = this.parseNumber(pointCoordinates[0]);
+            lat = this.parseNumber(pointCoordinates[1]);
+          }
+        }
+        const courier = sourceOrder?.courierInfo?.courier || sourceOrder?.courier || {};
+        const orderServiceType = String(sourceOrder?.orderType?.orderServiceType || "DELIVERY_BY_COURIER")
+          .trim()
+          .toUpperCase();
+
+        return {
+          orderId: String(item?.id || sourceOrder?.id || sourceOrder?.number || `cloud-${orgIndex}-${orderIndex}`),
+          orderServiceType: orderServiceType || "DELIVERY_BY_COURIER",
+          orderType: String(sourceOrder?.orderType?.name || "Доставка"),
+          courierId: String(courier?.id || "unknown"),
+          courierName: String(courier?.name || "Неизвестный курьер"),
+          deliveryZoneId: sourceOrder?.deliveryZoneId || null,
+          deliveryZoneName: sourceOrder?.deliveryZone || null,
+          deliveryPoint: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
+          terminalGroupId: sourceOrder?.terminalGroupId ? String(sourceOrder.terminalGroupId) : null,
+          organizationId: organizationId || String(sourceOrder?.organizationId || ""),
+          promisedAt,
+          actualDeliveryAt: deliveredAt,
+          sentAt,
+          totalMinutes,
+          revenue: Number(sourceOrder?.sum || 0),
+          rawStatus: sourceOrder?.status || null,
+          status: sourceOrder?.status || "",
+          sourceKey: sourceOrder?.sourceKey || null,
+          hour: this.getHourInTimezone(dateBase, timezone),
+          weekdayIndex: this.getWeekdayIndexInTimezone(dateBase, timezone),
+          date: this.getDateInTimezone(dateBase, timezone),
+        };
+      });
+    });
+  }
+
+  formatCloudDateTime(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) {
+      throw new Error("Некорректная дата для iiko Cloud API");
+    }
+
+    const pad = (number, size = 2) => String(number).padStart(size, "0");
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(
+      date.getUTCMinutes(),
+    )}:${pad(date.getUTCSeconds())}.${pad(date.getUTCMilliseconds(), 3)}`;
+  }
+
+  normalizeCloudDateBounds(dateFrom, dateTo) {
+    const from = new Date(dateFrom);
+    const to = new Date(dateTo);
+
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) {
+      throw new Error("Некорректные границы периода для iiko Cloud API");
+    }
+
+    const fromIsDateOnly = typeof dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom.trim());
+    const toIsDateOnly = typeof dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateTo.trim());
+
+    const normalizedFrom = fromIsDateOnly ? new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), 0, 0, 0, 0)) : from;
+    const normalizedTo = toIsDateOnly ? new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate(), 23, 59, 59, 999)) : to;
+
+    if (normalizedTo < normalizedFrom) {
+      throw new Error("dateTo не может быть раньше dateFrom");
+    }
+
+    return { from: normalizedFrom, to: normalizedTo };
+  }
+
+  buildCloudDeliveriesBody({ organizationId, from, to, statuses = [], sourceKeys = [], courierIds = [] }) {
+    const body = {
+      organizationIds: [String(organizationId)],
+      deliveryDateFrom: this.formatCloudDateTime(from),
+      deliveryDateTo: this.formatCloudDateTime(to),
+    };
+
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      body.statuses = statuses;
+    }
+    if (Array.isArray(sourceKeys) && sourceKeys.length > 0) {
+      body.sourceKeys = sourceKeys.map((item) => String(item || "").trim()).filter(Boolean);
+    }
+    if (Array.isArray(courierIds) && courierIds.length > 0) {
+      body.courierIds = courierIds.map((item) => String(item || "").trim()).filter(Boolean);
+    }
+
+    return body;
+  }
+
+  isTooManyCloudDataError(error) {
+    const status = Number(error?.response?.status || 0);
+    const errorCode = String(error?.response?.data?.error || "")
+      .trim()
+      .toUpperCase();
+    return status === 422 && errorCode === "TOO_MANY_DATA_REQUESTED";
+  }
+
+  async requestCloudDeliveriesChunk({
+    token,
+    organizationId,
+    from,
+    to,
+    statuses = [],
+    sourceKeys = [],
+    courierIds = [],
+    timezone = "Europe/Moscow",
+  }) {
+    const body = this.buildCloudDeliveriesBody({ organizationId, from, to, statuses, sourceKeys, courierIds });
+    const response = await axios.post(`${this.cloudApiBaseUrl}/api/1/deliveries/by_delivery_date_and_status`, body, {
+      timeout: this.timeout,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    return this.normalizeCloudDeliveryOrders(response?.data, timezone);
+  }
+
+  async requestCloudDeliveriesRange({
+    token,
+    organizationId,
+    from,
+    to,
+    statuses = [],
+    sourceKeys = [],
+    courierIds = [],
+    timezone = "Europe/Moscow",
+  }) {
+    try {
+      return await this.requestCloudDeliveriesChunk({
+        token,
+        organizationId,
+        from,
+        to,
+        statuses,
+        sourceKeys,
+        courierIds,
+        timezone,
+      });
+    } catch (error) {
+      if (!this.isTooManyCloudDataError(error)) {
+        throw error;
+      }
+
+      const spanMs = to.getTime() - from.getTime();
+      if (spanMs <= 60 * 60 * 1000) {
+        throw error;
+      }
+
+      const midpoint = new Date(Math.floor((from.getTime() + to.getTime()) / 2));
+      const leftOrders = await this.requestCloudDeliveriesRange({
+        token,
+        organizationId,
+        from,
+        to: midpoint,
+        statuses,
+        sourceKeys,
+        courierIds,
+        timezone,
+      });
+      const rightStart = new Date(midpoint.getTime() + 1);
+      if (rightStart > to) {
+        return leftOrders;
+      }
+      const rightOrders = await this.requestCloudDeliveriesRange({
+        token,
+        organizationId,
+        from: rightStart,
+        to,
+        statuses,
+        sourceKeys,
+        courierIds,
+        timezone,
+      });
+
+      return [...leftOrders, ...rightOrders];
+    }
+  }
+
+  async getCloudDeliveryOrders({
+    organizationId,
+    dateFrom,
+    dateTo,
+    terminalGroupId = null,
+    statuses = [],
+    sourceKeys = [],
+    courierIds = [],
+    timezone = "Europe/Moscow",
+  }) {
+    if (!this.canUseCloudDeliveryApi()) {
+      throw new Error("Не настроены IIKO_CLOUD_BASE_URL/IIKO_API_BASE_URL или IIKO_CLOUD_API_LOGIN/IIKO_API_LOGIN");
+    }
+
+    const token = await this.getCloudApiToken();
+    const { from, to } = this.normalizeCloudDateBounds(dateFrom, dateTo);
+    const normalizedOrders = await this.requestCloudDeliveriesRange({
+      token,
+      organizationId,
+      from,
+      to,
+      statuses,
+      sourceKeys,
+      courierIds,
+      timezone,
+    });
+    return normalizedOrders.filter((item) => {
+      if (terminalGroupId && String(item?.terminalGroupId || "") !== String(terminalGroupId)) {
+        return false;
+      }
+      if (Array.isArray(courierIds) && courierIds.length > 0) {
+        const allowed = new Set(courierIds.map((id) => String(id)));
+        if (!allowed.has(String(item?.courierId || ""))) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  async readDeliveryZonesStore() {
+    try {
+      const raw = await fs.readFile(this.deliveryZonesFilePath, "utf8");
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return {};
+      }
+      throw error;
+    }
+  }
+
+  async writeDeliveryZonesStore(store) {
+    const content = JSON.stringify(store || {}, null, 2);
+    await fs.writeFile(this.deliveryZonesFilePath, content, "utf8");
+  }
+
+  validateGeoJsonFeatureCollection(geoJson) {
+    if (!geoJson || geoJson.type !== "FeatureCollection" || !Array.isArray(geoJson.features)) {
+      throw new Error("GeoJSON должен быть в формате FeatureCollection");
+    }
+
+    for (const feature of geoJson.features) {
+      const geometryType = feature?.geometry?.type;
+      if (!geometryType) continue;
+      if (geometryType !== "Polygon" && geometryType !== "MultiPolygon") {
+        throw new Error("Поддерживаются только Polygon и MultiPolygon");
+      }
+    }
+  }
+
+  async saveDeliveryZones({ organizationId, terminalGroupId = null, geoJson }) {
+    if (!organizationId) {
+      throw new Error("organizationId обязателен");
+    }
+
+    this.validateGeoJsonFeatureCollection(geoJson);
+    const store = await this.readDeliveryZonesStore();
+    const storageKey = this.buildZoneStorageKey({ organizationId, terminalGroupId });
+    const previousRecord = store[storageKey] || store[String(organizationId)] || null;
+
+    store[storageKey] = {
+      geoJson,
+      updatedAt: new Date().toISOString(),
+      version: Number(previousRecord?.version || 0) + 1,
+    };
+
+    this.clearHeatmapCacheByOrganization(organizationId);
+    await this.writeDeliveryZonesStore(store);
+
+    return {
+      organizationId: String(organizationId),
+      terminalGroupId: this.normalizeTerminalGroupId(terminalGroupId),
+      zonesCount: geoJson.features.length,
+      updatedAt: store[storageKey].updatedAt,
+      version: store[storageKey].version,
+    };
+  }
+
+  async getDeliveryZones({ organizationId, terminalGroupId = null }) {
+    if (!organizationId) {
+      throw new Error("organizationId обязателен");
+    }
+
+    const store = await this.readDeliveryZonesStore();
+    const exactKey = this.buildZoneStorageKey({ organizationId, terminalGroupId });
+    const fallbackKey = this.buildZoneStorageKey({ organizationId, terminalGroupId: null });
+    const record = store[exactKey] || store[fallbackKey] || store[String(organizationId)] || null;
+
+    return {
+      organizationId: String(organizationId),
+      terminalGroupId: this.normalizeTerminalGroupId(terminalGroupId),
+      zonesConfigured: Boolean(record?.geoJson),
+      zonesCount: Array.isArray(record?.geoJson?.features) ? record.geoJson.features.length : 0,
+      updatedAt: record?.updatedAt || null,
+      version: Number(record?.version || 0),
+      geoJson: record?.geoJson || null,
+    };
+  }
+
   roundMetric(value, digits = 2) {
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return 0;
@@ -30,50 +432,75 @@ class ReportsService extends OlapClient {
     return /^\d{4}-\d{2}-\d{2}$/.test(isoPart) ? isoPart : null;
   }
 
+  validateHeatmapPeriod(dateFrom, dateTo, maxDays = 30) {
+    const start = new Date(dateFrom).getTime();
+    const end = new Date(dateTo).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      throw new Error("Некорректный период для тепловой карты");
+    }
+    if (end < start) {
+      throw new Error("dateTo не может быть раньше dateFrom");
+    }
+
+    const diffDays = (end - start) / (24 * 60 * 60 * 1000);
+    if (diffDays > maxDays) {
+      throw new Error(`Слишком большой период. Максимум ${maxDays} дней`);
+    }
+  }
+
   isDeliveryOrder(row = {}) {
     const courierId = String(row["Delivery.Courier.Id"] || "").trim();
     const orderType = String(row.OrderType || "").toLowerCase();
-    return Boolean(courierId) || orderType.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || orderType.includes("delivery") || orderType.includes("courier");
+    return Boolean(courierId) || orderType.includes("достав") || orderType.includes("delivery") || orderType.includes("courier");
   }
 
   extractOrderServiceType(row = {}) {
     return this.pickFirstValue(row, ["OrderServiceType", "Order.ServiceType", "OrderServiceType.Name", "Delivery.OrderServiceType"]);
   }
 
-  isCourierDeliveryByServiceType(row = {}) {
-    const serviceType = String(this.extractOrderServiceType(row) || "")
+  normalizeOrderServiceType(value) {
+    const raw = String(value || "")
       .trim()
       .toUpperCase();
+    if (!raw) return "";
+
+    const compact = raw.replace(/[^A-Z]/g, "");
+    if (compact === "DELIVERYBYCOURIER") return "DELIVERY_BY_COURIER";
+    if (compact === "DELIVERYBYCLIENT") return "DELIVERY_BY_CLIENT";
+    if (compact === "COMMON") return "COMMON";
+    return raw;
+  }
+
+  isCourierDeliveryByServiceType(row = {}) {
+    const serviceType = this.normalizeOrderServiceType(this.extractOrderServiceType(row));
     return serviceType === "DELIVERY_BY_COURIER";
   }
 
   normalizeOrderType(order = {}) {
-    const serviceType = String(order.orderServiceType || order.OrderServiceType || "")
-      .trim()
-      .toUpperCase();
-    if (serviceType === "DELIVERY_BY_COURIER") return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В° Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚Р С•Р С";
-    if (serviceType === "DELIVERY_BY_CLIENT") return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р†Р С•Р В·";
-    if (serviceType === "COMMON") return "Р вЂ™ Р В·Р В°Р В»Р Вµ";
+    const serviceType = this.normalizeOrderServiceType(order.orderServiceType || order.OrderServiceType || "");
+    if (serviceType === "DELIVERY_BY_COURIER") return "Доставка курьером";
+    if (serviceType === "DELIVERY_BY_CLIENT") return "Самовывоз";
+    if (serviceType === "COMMON") return "В зале";
 
     const orderType = String(order.orderType || order.OrderType || "")
       .trim()
       .toLowerCase();
-    if (orderType.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || orderType.includes("delivery") || orderType.includes("courier")) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В° Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚Р С•Р С";
-    if (orderType.includes("РЎРѓР В°Р СР С•Р Р†РЎвЂ№") || orderType.includes("pickup") || orderType.includes("takeaway")) return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р†Р С•Р В·";
-    if (orderType.includes("Р В·Р В°Р В»") || orderType.includes("dine")) return "Р вЂ™ Р В·Р В°Р В»Р Вµ";
-    return String(order.orderType || order.OrderType || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р С•");
+    if (orderType.includes("достав") || orderType.includes("delivery") || orderType.includes("courier")) return "Доставка курьером";
+    if (orderType.includes("самовы") || orderType.includes("pickup") || orderType.includes("takeaway")) return "Самовывоз";
+    if (orderType.includes("зал") || orderType.includes("dine")) return "В зале";
+    return String(order.orderType || order.OrderType || "Неизвестно");
   }
 
   normalizeChannelName(channel) {
     const source = String(channel || "")
       .trim()
       .toLowerCase();
-    if (!source) return "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…РЎвЂ№Р в„– Р С”Р В°Р Р…Р В°Р В»";
-    if (source.includes("РЎРЏР Р…Р Т‘Р ВµР С”РЎРѓ") || source.includes("yandex")) return "Р Р‡Р Р…Р Т‘Р ВµР С”РЎРѓ.Р вЂўР Т‘Р В°";
-    if (source.includes("РЎРѓР В°Р СР С•Р Р†РЎвЂ№Р Р†") || source.includes("takeaway") || source.includes("pickup")) return "Р РЋР В°Р СР С•Р Р†РЎвЂ№Р Р…Р С•РЎРѓ";
-    if (source.includes("Р Т‘Р С•РЎРѓРЎвЂљР В°Р Р†") || source.includes("delivery") || source.includes("courier")) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р С”Р В°";
-    if (source.includes("Р В·Р В°Р В»") || source.includes("dine")) return "Р вЂ”Р В°Р В»";
-    return String(channel || "Р СџРЎР‚Р С•РЎвЂЎР ВµР Вµ");
+    if (!source) return "Неизвестный канал";
+    if (source.includes("яндекс") || source.includes("yandex")) return "Яндекс.Еда";
+    if (source.includes("самовы") || source.includes("takeaway") || source.includes("pickup")) return "Самовынос";
+    if (source.includes("достав") || source.includes("delivery") || source.includes("courier")) return "Доставка";
+    if (source.includes("зал") || source.includes("dine")) return "Зал";
+    return String(channel || "Прочее");
   }
 
   extractOrderNumber(row = {}) {
@@ -88,7 +515,7 @@ class ReportsService extends OlapClient {
   }
 
   formatDisplayOrderNumber(row = {}) {
-    return this.extractOrderNumber(row) || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°";
+    return this.extractOrderNumber(row) || "Без номера";
   }
 
   extractDateOnly(value) {
@@ -169,6 +596,43 @@ class ReportsService extends OlapClient {
   parseNumber(value) {
     const numericValue = Number(value);
     return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  extractCoordinatePairFromRow(row = {}) {
+    const latitude = this.parseNumber(
+      this.pickFirstValue(row, ["Delivery.Address.Latitude", "DeliveryPoint.Latitude", "Delivery.Latitude", "Latitude"]),
+    );
+    const longitude = this.parseNumber(
+      this.pickFirstValue(row, ["Delivery.Address.Longitude", "DeliveryPoint.Longitude", "Delivery.Longitude", "Longitude"]),
+    );
+
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return { lat: latitude, lng: longitude };
+    }
+
+    const combined = this.pickFirstValue(row, ["Delivery.Address.Coordinates", "DeliveryPoint.Coordinates", "Delivery.Coordinates", "Coordinates"]);
+
+    if (Array.isArray(combined) && combined.length >= 2) {
+      const lng = this.parseNumber(combined[0]);
+      const lat = this.parseNumber(combined[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { lat, lng };
+      }
+    }
+
+    if (typeof combined === "string") {
+      const parts = combined
+        .split(",")
+        .map((item) => this.parseNumber(item.trim()))
+        .filter((item) => Number.isFinite(item));
+      if (parts.length >= 2) {
+        const lng = parts[0];
+        const lat = parts[1];
+        return { lat, lng };
+      }
+    }
+
+    return null;
   }
 
   parsePossibleDateTime(value) {
@@ -303,7 +767,7 @@ class ReportsService extends OlapClient {
   }
 
   buildExcelXmlBuffer({ sheetName, headers, rows }) {
-    const safeSheetName = this.escapeXml(String(sheetName || "Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ").slice(0, 31));
+    const safeSheetName = this.escapeXml(String(sheetName || "Отчет").slice(0, 31));
     const headerRow = headers.map((header) => `<Cell><Data ss:Type=\"String\">${this.escapeXml(header)}</Data></Cell>`).join("");
     const bodyRows = rows
       .map((row) => {
@@ -369,16 +833,16 @@ class ReportsService extends OlapClient {
   extractOrderStatus(row = {}, order = null) {
     const cancelCause = String(row["Delivery.CancelCause"] || "").trim();
     const isCanceled = this.isDeletedOrderFlag(row.OrderDeleted) || this.isTrueFlag(row.Storned) || Boolean(cancelCause);
-    if (isCanceled) return "Р С›РЎвЂљР СР ВµР Р…Р ВµР Р…";
+    if (isCanceled) return "Отменен";
 
     const deliveredAt = order?.deliveredAt || this.parseDateTime(row["Delivery.CloseTime"]);
     const sentAt = order?.sentAt || this.parseDateTime(row["Delivery.SendTime"]);
     const cookedAt = order?.cookedAt || this.parseDateTime(row["Delivery.CookingFinishTime"]);
 
-    if (deliveredAt) return "Р вЂќР С•РЎРѓРЎвЂљР В°Р Р†Р В»Р ВµР Р…";
-    if (sentAt) return "Р вЂ™ Р С—РЎС“РЎвЂљР С‘";
-    if (cookedAt) return "Р вЂњР С•РЎвЂљР С•Р Р†";
-    return "Р РЋР С•Р В·Р Т‘Р В°Р Р…";
+    if (deliveredAt) return "Доставлен";
+    if (sentAt) return "В пути";
+    if (cookedAt) return "Готов";
+    return "Создан";
   }
 
   getStablePoint(seed) {
@@ -394,111 +858,198 @@ class ReportsService extends OlapClient {
     return { x, y };
   }
 
-  async getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo }) {
-    const storeId = await this.resolveStoreId(organizationId);
-    const startDate = this.toDateOnly(dateFrom);
-    const endDate = this.toDateOnly(dateTo);
-    const { startIso, endIso } = buildOlapBounds(startDate || toMoscowDateStr(new Date(dateFrom)), endDate || toMoscowDateStr(new Date(dateTo)));
+  getOperationalRowsCacheKey({ organizationId, dateFrom, dateTo }) {
+    const normalizedFrom = this.toDateOnly(dateFrom) || String(dateFrom || "").slice(0, 10);
+    const normalizedTo = this.toDateOnly(dateTo) || String(dateTo || "").slice(0, 10);
+    return `${organizationId}:${normalizedFrom}:${normalizedTo}`;
+  }
 
-    const result = await this.withAuth(storeId, async (client, delay) => {
-      const buildBody = (groupFields) => ({
-        storeIds: [String(storeId)],
-        olapType: "SALES",
-        categoryFields: [],
-        groupFields,
-        stackByDataFields: false,
-        dataFields: ["Sales", "UniqOrderId.OrdersCount", "AverageOrderTime"],
-        calculatedFields: [
-          {
-            name: "Sales",
-            title: "Sales",
-            description: "Net sales",
-            formula: "[DishDiscountSumInt.withoutVAT]",
-            type: "MONEY",
-            canSum: false,
-          },
-          {
-            name: "UniqOrderId.OrdersCount",
-            title: "Orders Count",
-            description: "Number of unique orders",
-            formula: "[UniqOrderId.OrdersCount]",
-            type: "NUMERIC",
-            canSum: true,
-          },
-          {
-            name: "AverageOrderTime",
-            title: "Average Order Time",
-            description: "Average order duration",
-            formula: "[OrderTime.AverageOrderTime]",
-            type: "NUMERIC",
-            canSum: false,
-          },
-        ],
-        filters: [
-          {
-            field: "OpenDate.Typed",
-            filterType: "date_range",
-            dateFrom: startIso,
-            dateTo: endIso,
-            valueMin: null,
-            valueMax: null,
-            valueList: [],
-            includeLeft: true,
-            includeRight: false,
-            inclusiveList: true,
-          },
-        ],
-        includeVoidTransactions: true,
-        includeNonBusinessPaymentTypes: true,
+  getHeatmapResultCacheKey({
+    organizationId,
+    dateFrom,
+    dateTo,
+    terminalGroupId = null,
+    statuses = [],
+    sourceKeys = [],
+    courierIds = [],
+    zoneVersion = 0,
+  }) {
+    const normalizedFrom = this.toDateOnly(dateFrom) || String(dateFrom || "").slice(0, 10);
+    const normalizedTo = this.toDateOnly(dateTo) || String(dateTo || "").slice(0, 10);
+    const normalizedTerminalGroupId = this.normalizeTerminalGroupId(terminalGroupId);
+    const normalizedStatuses = Array.isArray(statuses)
+      ? statuses
+          .map((item) =>
+            String(item || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean)
+          .sort()
+          .join(",")
+      : "";
+    const normalizedSourceKeys = Array.isArray(sourceKeys)
+      ? sourceKeys
+          .map((item) =>
+            String(item || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean)
+          .sort()
+          .join(",")
+      : "";
+    const normalizedCourierIds = Array.isArray(courierIds)
+      ? courierIds
+          .map((item) =>
+            String(item || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean)
+          .sort()
+          .join(",")
+      : "";
+
+    return `${organizationId}:${normalizedTerminalGroupId}:${normalizedFrom}:${normalizedTo}:${normalizedStatuses}:${normalizedSourceKeys}:${normalizedCourierIds}:${Number(zoneVersion || 0)}`;
+  }
+
+  async getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo }) {
+    const cacheKey = this.getOperationalRowsCacheKey({ organizationId, dateFrom, dateTo });
+    const cached = this.operationalRowsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.rows;
+    }
+
+    if (this.operationalRowsInflight.has(cacheKey)) {
+      return await this.operationalRowsInflight.get(cacheKey);
+    }
+
+    const loadPromise = (async () => {
+      const storeId = await this.resolveStoreId(organizationId);
+      const startDate = this.toDateOnly(dateFrom);
+      const endDate = this.toDateOnly(dateTo);
+      const { startIso, endIso } = buildOlapBounds(startDate || toMoscowDateStr(new Date(dateFrom)), endDate || toMoscowDateStr(new Date(dateTo)));
+
+      const result = await this.withAuth(storeId, async (client, delay) => {
+        const buildBody = (groupFields) => ({
+          storeIds: [String(storeId)],
+          olapType: "SALES",
+          categoryFields: [],
+          groupFields,
+          stackByDataFields: false,
+          dataFields: ["Sales", "UniqOrderId.OrdersCount", "AverageOrderTime"],
+          calculatedFields: [
+            {
+              name: "Sales",
+              title: "Sales",
+              description: "Net sales",
+              formula: "[DishDiscountSumInt.withoutVAT]",
+              type: "MONEY",
+              canSum: false,
+            },
+            {
+              name: "UniqOrderId.OrdersCount",
+              title: "Orders Count",
+              description: "Number of unique orders",
+              formula: "[UniqOrderId.OrdersCount]",
+              type: "NUMERIC",
+              canSum: true,
+            },
+            {
+              name: "AverageOrderTime",
+              title: "Average Order Time",
+              description: "Average order duration",
+              formula: "[OrderTime.AverageOrderTime]",
+              type: "NUMERIC",
+              canSum: false,
+            },
+          ],
+          filters: [
+            {
+              field: "OpenDate.Typed",
+              filterType: "date_range",
+              dateFrom: startIso,
+              dateTo: endIso,
+              valueMin: null,
+              valueMax: null,
+              valueList: [],
+              includeLeft: true,
+              includeRight: false,
+              inclusiveList: true,
+            },
+          ],
+          includeVoidTransactions: true,
+          includeNonBusinessPaymentTypes: true,
+        });
+
+        const primaryGroupFields = [
+          "OrderType",
+          "OrderServiceType",
+          "OrderNum",
+          "UniqOrderId.Id",
+          "OrderDeleted",
+          "Storned",
+          "DeletedWithWriteoff",
+          "Delivery.CancelCause",
+          "Delivery.Courier.Id",
+          "Delivery.Courier",
+          "Delivery.SendTime",
+          "Delivery.CloseTime",
+          "Delivery.ExpectedTime",
+          "Delivery.ActualTime",
+          "OpenTime",
+          "Delivery.CookingFinishTime",
+          "Delivery.WayDuration",
+          "Delivery.DeliveryZone",
+          "Delivery.DeliveryZone.Name",
+          "Delivery.DeliveryZone.Id",
+          "Delivery.Zone",
+          "Delivery.Zone.Name",
+          "Delivery.Zone.Id",
+          "OrderTime.OrderLength",
+        ];
+
+        const fallbackGroupFields = primaryGroupFields.filter((fieldName) => fieldName !== "OrderNum" && fieldName !== "OrderServiceType");
+
+        try {
+          return await this.pollOlap(client, delay, buildBody(primaryGroupFields), {
+            maxAttempts: this.maxAttempts,
+            fetchTimeoutMs: this.timeout,
+            logEvery: 10,
+          });
+        } catch (error) {
+          console.warn("⚠ getOperationalRowsForPeriod fallback без OrderNum:", error?.message);
+          return await this.pollOlap(client, delay, buildBody(fallbackGroupFields), {
+            maxAttempts: this.maxAttempts,
+            fetchTimeoutMs: this.timeout,
+            logEvery: 10,
+          });
+        }
       });
 
-      const primaryGroupFields = [
-        "OrderType",
-        "OrderServiceType",
-        "OrderNum",
-        "UniqOrderId.Id",
-        "OrderDeleted",
-        "Storned",
-        "DeletedWithWriteoff",
-        "Delivery.CancelCause",
-        "Delivery.Courier.Id",
-        "Delivery.Courier",
-        "Delivery.SendTime",
-        "Delivery.CloseTime",
-        "Delivery.ExpectedTime",
-        "Delivery.ActualTime",
-        "OpenTime",
-        "Delivery.CookingFinishTime",
-        "Delivery.WayDuration",
-        "OrderTime.OrderLength",
-      ];
+      const rows = this.parseResultRows(result, (group, values) => ({
+        ...group,
+        Sales: parseFloat(values[0]) || 0,
+        "UniqOrderId.OrdersCount": parseInt(values[1]) || 0,
+        AverageOrderTime: parseFloat(values[2]) || 0,
+      }));
 
-      const fallbackGroupFields = primaryGroupFields.filter((fieldName) => fieldName !== "OrderNum" && fieldName !== "OrderServiceType");
+      const filteredRows = this.filterCanceledOrders(rows).rows;
+      this.operationalRowsCache.set(cacheKey, {
+        rows: filteredRows,
+        expiresAt: Date.now() + this.operationalRowsCacheTtlMs,
+      });
 
-      try {
-        return await this.pollOlap(client, delay, buildBody(primaryGroupFields), {
-          maxAttempts: this.maxAttempts,
-          fetchTimeoutMs: this.timeout,
-          logEvery: 10,
-        });
-      } catch (error) {
-        console.warn("РІС™В РїС‘РЏ getOperationalRowsForPeriod fallback Р В±Р ВµР В· OrderNum:", error?.message);
-        return await this.pollOlap(client, delay, buildBody(fallbackGroupFields), {
-          maxAttempts: this.maxAttempts,
-          fetchTimeoutMs: this.timeout,
-          logEvery: 10,
-        });
-      }
-    });
+      return filteredRows;
+    })();
 
-    const rows = this.parseResultRows(result, (group, values) => ({
-      ...group,
-      Sales: parseFloat(values[0]) || 0,
-      "UniqOrderId.OrdersCount": parseInt(values[1]) || 0,
-      AverageOrderTime: parseFloat(values[2]) || 0,
-    }));
-
-    return this.filterCanceledOrders(rows).rows;
+    this.operationalRowsInflight.set(cacheKey, loadPromise);
+    try {
+      return await loadPromise;
+    } finally {
+      this.operationalRowsInflight.delete(cacheKey);
+    }
   }
 
   async getOperationalRowsForDeliveryDelayExport({ organizationId, dateFrom, dateTo }) {
@@ -691,14 +1242,25 @@ class ReportsService extends OlapClient {
         orderMap.set(orderId, {
           orderId,
           orderNumber,
-          displayOrderNumber: orderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°",
-          orderType: row.OrderType || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…Р С•",
+          displayOrderNumber: orderNumber || "Без номера",
+          orderType: row.OrderType || "Неизвестно",
           orderServiceType: this.extractOrderServiceType(row) || null,
           channel: this.normalizeChannelName(row.OrderType),
           departmentId: String(row["Department.Id"] || row["Department.Code"] || "").trim() || "unknown",
           departmentName: this.pickFirstValue(row, ["Department", "Department.Name"]) || null,
           courierId: String(row["Delivery.Courier.Id"] || "").trim() || "unknown",
-          courierName: String(row["Delivery.Courier"] || "").trim() || "Р СњР ВµР С‘Р В·Р Р†Р ВµРЎРѓРЎвЂљР Р…РЎвЂ№Р в„– Р С”РЎС“РЎР‚РЎРЉР ВµРЎР‚",
+          courierName: String(row["Delivery.Courier"] || "").trim() || "Неизвестный курьер",
+          deliveryZoneId: this.pickFirstValue(row, ["Delivery.DeliveryZone.Id", "Delivery.Zone.Id", "DeliveryZone.Id"]) || null,
+          deliveryZoneName:
+            this.pickFirstValue(row, [
+              "Delivery.DeliveryZone",
+              "Delivery.DeliveryZone.Name",
+              "Delivery.Zone",
+              "Delivery.Zone.Name",
+              "DeliveryZone",
+            ]) || null,
+          deliveryPoint: this.extractCoordinatePairFromRow(row),
+          rawStatus: this.pickFirstValue(row, ["Delivery.Status", "OrderStatus", "Status"]) || null,
           cancelCause: String(row["Delivery.CancelCause"] || "").trim(),
           isOrderDeleted: this.isDeletedOrderFlag(row.OrderDeleted),
           isStorned: this.isTrueFlag(row.Storned),
@@ -723,7 +1285,7 @@ class ReportsService extends OlapClient {
       const order = orderMap.get(orderId);
       if (!order.orderNumber) {
         order.orderNumber = this.extractOrderNumber(row);
-        order.displayOrderNumber = order.orderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°";
+        order.displayOrderNumber = order.orderNumber || "Без номера";
       }
       order.revenue += Number(row.Sales) || 0;
       order.cancelCause = order.cancelCause || String(row["Delivery.CancelCause"] || "").trim();
@@ -744,10 +1306,18 @@ class ReportsService extends OlapClient {
       order.actualDeliveryAt =
         order.actualDeliveryAt || this.parsePossibleDateTime(this.pickFirstValue(row, ["Delivery.ActualTime"])) || order.deliveredAt;
       order.orderServiceType = order.orderServiceType || this.extractOrderServiceType(row) || null;
+      order.deliveryZoneId =
+        order.deliveryZoneId || this.pickFirstValue(row, ["Delivery.DeliveryZone.Id", "Delivery.Zone.Id", "DeliveryZone.Id"]) || null;
+      order.deliveryZoneName =
+        order.deliveryZoneName ||
+        this.pickFirstValue(row, ["Delivery.DeliveryZone", "Delivery.DeliveryZone.Name", "Delivery.Zone", "Delivery.Zone.Name", "DeliveryZone"]) ||
+        null;
+      order.deliveryPoint = order.deliveryPoint || this.extractCoordinatePairFromRow(row);
+      order.rawStatus = order.rawStatus || this.pickFirstValue(row, ["Delivery.Status", "OrderStatus", "Status"]) || null;
     });
     return [...orderMap.values()].map((order) => ({
       ...order,
-      status: order.isOrderDeleted || order.isStorned || order.cancelCause ? "Р С›РЎвЂљР СР ВµР Р…Р ВµР Р…" : this.extractOrderStatus({}, order),
+      status: order.isOrderDeleted || order.isStorned || order.cancelCause ? "Отменен" : this.extractOrderStatus({}, order),
     }));
   }
 
@@ -1027,7 +1597,7 @@ class ReportsService extends OlapClient {
 
       delayedOrders.push({
         date: order.date || "",
-        orderNumber: order.displayOrderNumber || "Р вЂР ВµР В· Р Р…Р С•Р СР ВµРЎР‚Р В°",
+        orderNumber: order.displayOrderNumber || "Без номера",
         orderType: order.orderType || "",
         orderTypeNormalized: this.normalizeOrderType(order),
         orderServiceType: order.orderServiceType || "",
@@ -1053,7 +1623,6 @@ class ReportsService extends OlapClient {
     }
 
     delayedOrders.sort((left, right) => Number(right.lateMinutes) - Number(left.lateMinutes));
-
 
     const headers = [
       "Дата",
@@ -1108,7 +1677,7 @@ class ReportsService extends OlapClient {
     ]);
 
     const buffer = this.buildExcelXmlBuffer({
-      sheetName: "Р С›Р С—Р С•Р В·Р Т‘Р В°Р Р…Р С‘РЎРЏ",
+      sheetName: "Опоздания",
       headers,
       rows: tableRows,
     });
@@ -1124,10 +1693,107 @@ class ReportsService extends OlapClient {
     };
   }
 
-  async getCourierMapReport({ organizationId, dateFrom, dateTo }) {
+  async getCourierMapReport({ organizationId, dateFrom, dateTo, terminalGroupId = null, statuses = [], sourceKeys = [], courierIds = [] }) {
+    return await this.getDeliveryHeatmapReport({
+      organizationId,
+      dateFrom,
+      dateTo,
+      terminalGroupId,
+      statuses,
+      sourceKeys,
+      courierIds,
+    });
+  }
+
+  async getDeliveryHeatmapReport({ organizationId, dateFrom, dateTo, terminalGroupId = null, statuses = [], sourceKeys = [], courierIds = [] }) {
+    this.validateHeatmapPeriod(dateFrom, dateTo);
+
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildCourierMapReport(rows, dateTo, timezone), timezone };
+    const zonesPayload = await this.getDeliveryZones({ organizationId, terminalGroupId }).catch(() => ({ geoJson: null, version: 0 }));
+    const cacheKey = this.getHeatmapResultCacheKey({
+      organizationId,
+      dateFrom,
+      dateTo,
+      terminalGroupId,
+      statuses,
+      sourceKeys,
+      courierIds,
+      zoneVersion: zonesPayload.version,
+    });
+
+    const cached = this.heatmapResultCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    if (this.heatmapInflight.has(cacheKey)) {
+      return await this.heatmapInflight.get(cacheKey);
+    }
+
+    const loadPromise = (async () => {
+      try {
+        const cloudOrders = await this.getCloudDeliveryOrders({
+          organizationId,
+          dateFrom,
+          dateTo,
+          terminalGroupId,
+          statuses,
+          sourceKeys,
+          courierIds,
+          timezone,
+        });
+
+        const payload = {
+          ...deliveryReports.buildDeliveryHeatmapReport([], timezone, this, {
+            organizationId,
+            terminalGroupId,
+            statuses,
+            preparedOrders: cloudOrders,
+            zonesGeoJson: zonesPayload.geoJson,
+            zonesVersion: zonesPayload.version,
+          }),
+          timezone,
+          source: "iiko-cloud",
+        };
+        this.heatmapResultCache.set(cacheKey, {
+          data: payload,
+          expiresAt: Date.now() + this.heatmapCacheTtlMs,
+        });
+        return payload;
+      } catch (error) {
+        console.error("❌ Ошибка загрузки delivery heatmap из iiko Cloud:", {
+          message: error?.message,
+          code: error?.code,
+          status: error?.response?.status,
+          detail: error?.response?.data,
+        });
+        const payload = {
+          ...deliveryReports.buildDeliveryHeatmapReport([], timezone, this, {
+            organizationId,
+            terminalGroupId,
+            statuses,
+            zonesGeoJson: zonesPayload.geoJson,
+            zonesVersion: zonesPayload.version,
+          }),
+          timezone,
+          degraded: true,
+          warningMessage: "Не удалось получить данные доставок из iiko Cloud",
+          source: "iiko-cloud",
+        };
+        this.heatmapResultCache.set(cacheKey, {
+          data: payload,
+          expiresAt: Date.now() + this.heatmapCacheTtlMs,
+        });
+        return payload;
+      }
+    })();
+
+    try {
+      this.heatmapInflight.set(cacheKey, loadPromise);
+      return await loadPromise;
+    } finally {
+      this.heatmapInflight.delete(cacheKey);
+    }
   }
 
   async getPromotionsReport({ organizationId, dateFrom, dateTo }) {

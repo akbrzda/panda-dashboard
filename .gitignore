@@ -5,3 +5,4 @@ olap.html
 logs/
 .DS_Store
 dist/
+data/

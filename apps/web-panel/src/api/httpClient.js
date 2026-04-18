@@ -2,21 +2,7 @@ import axios from "axios";
 import { toast } from "@/lib/sonner";
 
 function resolveApiBaseUrl() {
-  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
-  const proxyTarget = String(import.meta.env.VITE_API_PROXY_TARGET || "").replace(/\/+$/, "");
-
-  if (typeof window === "undefined") {
-    return rawBaseUrl;
-  }
-
-  const isRelativeBaseUrl = rawBaseUrl.startsWith("/");
-  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-
-  if (isRelativeBaseUrl && !isLocalHost && proxyTarget) {
-    return `${proxyTarget}${rawBaseUrl}`;
-  }
-
-  return rawBaseUrl;
+  return import.meta.env.VITE_API_BASE_URL || "/api";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();

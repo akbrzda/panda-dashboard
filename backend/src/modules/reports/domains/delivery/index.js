@@ -28,7 +28,18 @@ class DeliveryReportsDomain {
   async getCourierMap(params) {
     return await reportsService.getCourierMapReport(params);
   }
+
+  async getDeliveryHeatmap(params) {
+    return await reportsService.getDeliveryHeatmapReport(params);
+  }
+
+  async getDeliveryZones(params) {
+    return await reportsService.getDeliveryZones(params);
+  }
+
+  async saveDeliveryZones(params) {
+    return await reportsService.saveDeliveryZones(params);
+  }
 }
 
 module.exports = new DeliveryReportsDomain();
-

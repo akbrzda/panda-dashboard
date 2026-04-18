@@ -1,5 +1,7 @@
 import { apiClient } from "./httpClient";
 
+const isNotFound = (error) => Number(error?.response?.status) === 404;
+
 export const reportsApi = {
   async getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }) {
     const response = await apiClient.post(
@@ -151,13 +153,73 @@ export const reportsApi = {
     );
   },
 
-  async getCourierMap({ organizationId, dateFrom, dateTo, signal }) {
+  async getCourierMap({ organizationId, dateFrom, dateTo, terminalGroupId, statuses, sourceKeys, courierIds, signal }) {
     const response = await apiClient.post(
-      "/reports/courier-map",
+      "/reports/delivery-heatmap",
       {
         organizationId,
         dateFrom,
         dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+      },
+      { signal },
+    );
+    return response.data;
+  },
+
+  async getDeliveryHeatmap({ organizationId, dateFrom, dateTo, terminalGroupId, statuses, sourceKeys, courierIds, signal }) {
+    const response = await apiClient.post(
+      "/reports/delivery-heatmap",
+      {
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+      },
+      { signal },
+    );
+    return response.data;
+  },
+
+  async getDeliveryZones({ organizationId, terminalGroupId, signal }) {
+    try {
+      const response = await apiClient.get("/reports/delivery-zones", {
+        params: { organizationId, terminalGroupId },
+        signal,
+      });
+      return response.data;
+    } catch (error) {
+      if (isNotFound(error)) {
+        return {
+          success: true,
+          data: {
+            organizationId,
+            terminalGroupId: terminalGroupId || "__all__",
+            zonesConfigured: false,
+            zonesCount: 0,
+            updatedAt: null,
+            version: 0,
+            geoJson: null,
+          },
+        };
+      }
+      throw error;
+    }
+  },
+
+  async saveDeliveryZones({ organizationId, terminalGroupId, geoJson, signal }) {
+    const response = await apiClient.post(
+      "/reports/delivery-zones/upload",
+      {
+        organizationId,
+        terminalGroupId,
+        geoJson,
       },
       { signal },
     );
