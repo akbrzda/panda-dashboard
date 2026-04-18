@@ -5,13 +5,6 @@
       <h1 class="text-2xl font-bold text-foreground">Клиентская база</h1>
       <PageFilters :loading="clientsStore.isLoadingClients" @apply="handleApply" />
     </div>
-    <ReportInfoBlock
-      title="Отчет «Клиентская база (iiko)»"
-      purpose="Показывает активную клиентскую базу и динамику новых/повторных клиентов по данным iiko."
-      meaning="Отчет формируется по заказам, где удалось определить клиента по телефону, карте или имени в OLAP SALES."
-      calculation="Новые клиенты считаются по первой покупке в выбранном периоде. Повторные — клиенты с 2+ заказами в периоде."
-      responsibility="Используется для CRM-аналитики и оценки качества удержания без зависимости от PremiumBonus."
-    />
 
     <!-- Ошибка -->
     <div v-if="pageError" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -26,10 +19,17 @@
     <!-- Пустое состояние -->
     <div v-else-if="!clientsStore.isLoadingClients && !clientsStore.clientsData" class="flex flex-col items-center justify-center py-16 text-center">
       <Users class="w-12 h-12 text-muted-foreground/40 mb-4" />
-      <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
+      <p class="text-sm text-muted-foreground">Выберите организацию и период</p>
     </div>
 
-    <template v-if="clientsStore.clientsData && clientsStore.clientsData.configured !== false">
+    <div
+      v-else-if="clientsStore.clientsData?.configured === false"
+      class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-300"
+    >
+      Отчёт «Клиенты» не настроен для выбранной организации. Проверьте источник данных и доступность полей клиента в iiko OLAP.
+    </div>
+
+    <template v-else-if="clientsStore.clientsData">
       <div
         v-if="clientsStore.clientsData.warningMessage"
         class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-300"
@@ -37,7 +37,7 @@
         {{ clientsStore.clientsData.warningMessage }}
       </div>
 
-      <div v-if="hasClientMetrics" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div v-if="hasClientMetrics" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Активная база"
           :value="clientsStore.clientsData.summary?.activeBase ?? clientsStore.clientsData.activeBase ?? null"
@@ -68,7 +68,7 @@
         />
       </div>
 
-      <Card v-if="clientGroups.length > 0" class="p-5">
+      <Card v-if="clientGroups.length > 0" class="p-4 md:p-5">
         <h3 class="text-sm font-semibold text-foreground mb-3">Группы клиентов</h3>
         <div class="space-y-2">
           <div v-for="group in clientGroups" :key="group.id" class="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0">
@@ -78,85 +78,82 @@
         </div>
       </Card>
 
-      <Card v-if="weeklyRows.length > 0" class="p-5">
-        <h3 class="text-sm font-semibold text-foreground mb-3">Новые и повторные клиенты по неделям</h3>
+      <Card v-if="weeklyRows.length > 0" class="p-4 md:p-5">
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Неделя</th>
-                <th class="px-3 py-2 text-left font-medium">Клиентов</th>
-                <th class="px-3 py-2 text-left font-medium">Новых</th>
-                <th class="px-3 py-2 text-left font-medium">Повторных</th>
-                <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                <th class="px-3 py-2 text-left font-medium">Выручка</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in weeklyRows" :key="item.weekStart" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ formatWeekLabel(item.weekStart, item.weekEnd) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.totalClients) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.newClients) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.returningClients) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.orders) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.revenue) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Неделя</TableHead>
+                <TableHead class="text-left font-medium">Клиентов</TableHead>
+                <TableHead class="text-left font-medium">Новых</TableHead>
+                <TableHead class="text-left font-medium">Повторных</TableHead>
+                <TableHead class="text-left font-medium">Заказов</TableHead>
+                <TableHead class="text-left font-medium">Выручка</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in weeklyRows" :key="item.weekStart" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ formatWeekLabel(item.weekStart, item.weekEnd) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.totalClients) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.newClients) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.returningClients) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-        <Card v-if="topClients.length > 0" class="p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Топ клиентов по выручке</h3>
+        <Card v-if="topClients.length > 0" class="p-4 md:p-5">
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Клиент</th>
-                  <th class="px-3 py-2 text-left font-medium">Телефон</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                  <th class="px-3 py-2 text-left font-medium">Выручка</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="client in topClients" :key="client.clientKey" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ client.clientName }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ client.phone || "—" }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(client.orders) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatCurrency(client.revenue) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Клиент</TableHead>
+                  <TableHead class="text-left font-medium">Телефон</TableHead>
+                  <TableHead class="text-left font-medium">Заказов</TableHead>
+                  <TableHead class="text-left font-medium">Выручка</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="client in topClients" :key="client.clientKey" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ client.clientName }}</TableCell>
+                  <TableCell class="text-foreground">{{ client.phone ||"—" }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(client.orders) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatCurrency(client.revenue) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
 
-        <Card v-if="newClientsRows.length > 0" class="p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Новые клиенты за период</h3>
+        <Card v-if="newClientsRows.length > 0" class="p-4 md:p-5">
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Дата первой покупки</th>
-                  <th class="px-3 py-2 text-left font-medium">Клиент</th>
-                  <th class="px-3 py-2 text-left font-medium">Телефон</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="client in newClientsRows" :key="client.clientKey" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ client.firstOrderDate }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ client.clientName }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ client.phone || "—" }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(client.orders) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Дата первой покупки</TableHead>
+                  <TableHead class="text-left font-medium">Клиент</TableHead>
+                  <TableHead class="text-left font-medium">Телефон</TableHead>
+                  <TableHead class="text-left font-medium">Заказов</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="client in newClientsRows" :key="client.clientKey" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ client.firstOrderDate }}</TableCell>
+                  <TableCell class="text-foreground">{{ client.clientName }}</TableCell>
+                  <TableCell class="text-foreground">{{ client.phone ||"—" }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(client.orders) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
       </div>
 
-      <Card v-if="hasClientMetrics" class="p-5">
+      <Card v-if="hasClientMetrics" class="p-4 md:p-5">
         <p class="text-xs text-muted-foreground">
           Источник данных: iiko OLAP SALES. Для расчета клиентской базы используются доступные в OLAP идентификаторы клиента (телефон/карта/имя).
           Важно: «новый клиент» считается в рамках выбранного периода, так как полный lifetime без CRM не всегда доступен.
@@ -167,16 +164,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { Users, UserPlus, Repeat, Percent } from "lucide-vue-next";
-import { useAutoRefresh } from "../composables/useAutoRefresh";
-import { useClientsStore } from "../stores/clients";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import Card from "../components/ui/Card.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted } from"vue";
+import { Users } from"lucide-vue-next";
+import { useAutoRefresh } from"../composables/useAutoRefresh";
+import { useClientsStore } from"../stores/clients";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import Card from"../components/ui/Card.vue";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const clientsStore = useClientsStore();
 const filtersStore = useFiltersStore();
@@ -188,16 +191,22 @@ const topClients = computed(() => (clientsStore.clientsData?.topClients || []).s
 const newClientsRows = computed(() => (clientsStore.clientsData?.newClientsList || []).slice(0, 15));
 const hasClientMetrics = computed(() => {
   const data = clientsStore.clientsData;
-  return Number(data?.activeBase || 0) > 0 || Number(data?.newClients || 0) > 0 || clientGroups.value.length > 0 || weeklyRows.value.length > 0;
+  return (
+    Number(data?.summary?.activeBase || data?.activeBase || 0) > 0 ||
+    Number(data?.summary?.newClients || data?.newClients || 0) > 0 ||
+    Number(data?.summary?.repeatClients || 0) > 0 ||
+    clientGroups.value.length > 0 ||
+    weeklyRows.value.length > 0
+  );
 });
-const pageError = computed(() => clientsStore.clientsData?.error || clientsStore.error || "");
+const pageError = computed(() => clientsStore.clientsData?.error || clientsStore.error ||"");
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 function formatWeekLabel(weekStart, weekEnd) {

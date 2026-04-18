@@ -1,19 +1,24 @@
 <template>
-  <div class="stop-list-view">
-    <header class="header">
-      <div class="header-row">
-        <h1>Стоп-лист ({{ itemsCount }})</h1>
-        <div class="header-actions">
-          <span v-if="isLive" class="live-badge">● LIVE</span>
-          <button class="refresh-btn" :disabled="isLoading" @click="store.loadStopLists()">
+  <div class="space-y-6">
+    <header class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold text-foreground">Стоп-лист ({{ itemsCount }})</h1>
+        <div class="flex items-center gap-2">
+          <Badge v-if="isLive" variant="success">LIVE</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="isLoading"
+            @click="store.loadStopLists()"
+          >
             {{ isLoading ? "Загрузка..." : "Обновить" }}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div class="filters-row">
-        <div class="filter-control">
-          <label>Подразделение</label>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-medium text-muted-foreground">Подразделение</label>
           <Select v-model="selectedOrganizationId" :disabled="isLoading || store.organizations.length === 0" placeholder="Выберите подразделение">
             <SelectItem v-for="org in store.organizations" :key="org.id" :value="org.id">
               {{ org.name }}
@@ -21,20 +26,17 @@
           </Select>
         </div>
 
-        <div class="filter-control search-control">
-          <label>Поиск</label>
-          <input v-model="searchText" type="text" placeholder="Название, код или SKU" class="search-input" />
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-medium text-muted-foreground">Поиск</label>
+          <Input
+            v-model="searchText"
+            type="text"
+            placeholder="Название, код или SKU"
+            class="h-9"
+          />
         </div>
       </div>
     </header>
-
-    <ReportInfoBlock
-      title="Отчет «Стоп-лист»"
-      purpose="Показывает позиции, которые недоступны к продаже, и помогает быстро восстанавливать ассортимент."
-      meaning="Отчет отражает дату попадания в стоп, причину, текущий статус и длительность нахождения позиции в стоп-листе."
-      calculation="Длительность считается как разница между временем открытия стопа и текущим моментом или временем закрытия, если позиция уже возвращена."
-      responsibility="Отвечает за операционное управление доступностью меню и скорость реакции кухни/склада."
-    />
 
     <StopListTable :items="filteredItems" :is-loading="isLoading" :error="error" />
   </div>
@@ -47,7 +49,9 @@ import { useStopListStore } from "../stores/stopList";
 import StopListTable from "../components/StopListTable.vue";
 import Select from "../components/ui/Select.vue";
 import SelectItem from "../components/ui/SelectItem.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import Input from "../components/ui/Input.vue";
+import Badge from "../components/ui/Badge.vue";
+import Button from "../components/ui/Button.vue";
 
 const store = useStopListStore();
 
@@ -106,107 +110,6 @@ onUnmounted(() => {
   if (eventSource) {
     eventSource.close();
   }
+  store.stopAll();
 });
 </script>
-
-<style scoped>
-.stop-list-view {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.filters-row {
-  display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(240px, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.filter-control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.filter-control label {
-  font-size: 12px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
-}
-
-.search-input {
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-size: 14px;
-}
-
-.live-badge {
-  font-size: 12px;
-  font-weight: 600;
-  color: #22c55e;
-  letter-spacing: 0.05em;
-}
-
-.refresh-btn {
-  padding: 6px 16px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  background: hsl(var(--accent));
-}
-
-.refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.header {
-  margin-bottom: 20px;
-}
-
-.header h1 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
-}
-
-@media (max-width: 768px) {
-  .stop-list-view {
-    padding: 15px;
-  }
-
-  .header h1 {
-    font-size: 24px;
-  }
-
-  .filters-row {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

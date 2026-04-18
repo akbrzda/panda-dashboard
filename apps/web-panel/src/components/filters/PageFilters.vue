@@ -1,9 +1,9 @@
 <template>
-  <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
+  <div class="flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card/95 p-4">
     <!-- Выбор организации -->
-    <div v-if="showOrganization" class="flex flex-col gap-1.5 min-w-[200px]">
+    <div v-if="showOrganization" class="flex min-w-[240px] flex-1 flex-col gap-1.5">
       <label class="text-xs font-medium text-muted-foreground">Организация</label>
-      <Select v-model="currentOrgId" :disabled="revenueStore.organizations.length === 0 || loading" placeholder="Выберите подразделение">
+      <Select v-model="currentOrgId" :disabled="revenueStore.organizations.length === 0" placeholder="Выберите подразделение">
         <SelectItem v-for="org in revenueStore.organizations" :key="org.id" :value="org.id">
           {{ org.name }}
         </SelectItem>
@@ -11,35 +11,23 @@
     </div>
 
     <!-- Выбор периода -->
-    <div class="flex flex-col gap-1.5">
+    <div class="flex min-w-[220px] flex-1 flex-col gap-1.5">
       <label class="text-xs font-medium text-muted-foreground">Период</label>
-      <PeriodSelector :disabled="loading" />
+      <PeriodSelector />
     </div>
 
     <!-- Индикатор загрузки -->
-    <div v-if="loading" class="flex items-center gap-2 text-xs text-muted-foreground self-end pb-1.5">
-      <RefreshCw class="w-3.5 h-3.5 animate-spin" />
-      <span>Загрузка...</span>
-    </div>
-
-    <!-- Кнопка применить -->
-    <button
-      @click="handleApplyClick"
-      :disabled="isApplyDisabled"
-      class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
-    >
-      {{ loading ? "Загрузка..." : "Применить" }}
-    </button>
-
-    <!-- Период LFL для справки -->
-    <div v-if="showLflHint && filtersStore.lflDateFrom && !loading" class="ml-auto self-end pb-1.5 text-xs text-muted-foreground hidden lg:block">
-      LFL: {{ filtersStore.lflDateFrom }} — {{ filtersStore.lflDateTo }}
+    <div class="ml-auto flex min-h-[36px] min-w-[220px] flex-col items-end justify-end gap-1.5">
+      <div v-if="loading" class="flex items-center gap-2 text-xs text-muted-foreground">
+        <RefreshCw class="h-3.5 w-3.5 animate-spin" />
+        <span>Обновление...</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, watch } from "vue";
+import { computed, onBeforeUnmount, watch } from "vue";
 import { RefreshCw } from "lucide-vue-next";
 import Select from "@/components/ui/Select.vue";
 import SelectItem from "@/components/ui/SelectItem.vue";
@@ -53,6 +41,7 @@ const props = defineProps({
   showOrganization: { type: Boolean, default: true },
   includeLfl: { type: Boolean, default: false },
   showLflHint: { type: Boolean, default: false },
+  autoApply: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["apply"]);
@@ -60,9 +49,15 @@ const emit = defineEmits(["apply"]);
 const revenueStore = useRevenueStore();
 const filtersStore = useFiltersStore();
 
-const isApplyDisabled = computed(() => props.loading || (props.requireOrganization && !revenueStore.currentOrganizationId));
+let applyTimer = null;
 
-function handleApplyClick() {
+const canApply = computed(() => {
+  const organizationId = revenueStore.currentOrganizationId;
+  if (props.requireOrganization && !organizationId) return false;
+  return Boolean(filtersStore.dateFrom && filtersStore.dateTo);
+});
+
+function buildPayload() {
   const payload = {
     organizationId: revenueStore.currentOrganizationId,
     dateFrom: filtersStore.dateFrom,
@@ -74,21 +69,49 @@ function handleApplyClick() {
     payload.lflDateTo = filtersStore.lflDateTo;
   }
 
-  emit("apply", payload);
+  return payload;
 }
 
-// Двухсторонняя привязка организации через вычисляемое свойство
+function emitApply() {
+  if (!canApply.value) return;
+  emit("apply", buildPayload());
+}
+
+function scheduleApply() {
+  if (!props.autoApply) return;
+  if (applyTimer) clearTimeout(applyTimer);
+  applyTimer = setTimeout(() => {
+    emitApply();
+    applyTimer = null;
+  }, 180);
+}
+
+watch(
+  () => [
+    revenueStore.currentOrganizationId,
+    filtersStore.dateFrom,
+    filtersStore.dateTo,
+    props.includeLfl ? filtersStore.lflDateFrom : null,
+    props.includeLfl ? filtersStore.lflDateTo : null,
+  ],
+  () => {
+    scheduleApply();
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  if (applyTimer) {
+    clearTimeout(applyTimer);
+    applyTimer = null;
+  }
+});
+
 const currentOrgId = computed({
   get: () => revenueStore.currentOrganizationId,
   set: (val) => {
     revenueStore.currentOrganizationId = val;
+    filtersStore.setOrganization(val);
   },
-});
-
-// Авто-применение убрано — теперь пользователь нажимает кнопку "Применить"
-watch([() => filtersStore.dateFrom, () => filtersStore.dateTo], ([dateFrom, dateTo]) => {
-  if (!dateFrom || !dateTo) return;
-  revenueStore.startDate = dateFrom;
-  revenueStore.endDate = dateTo;
 });
 </script>

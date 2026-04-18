@@ -10,19 +10,12 @@
       </div>
       <DashboardFilters ref="filtersRef" :loading="dashboardStore.isLoadingDashboard" @apply="handleApply" />
     </div>
-    <ReportInfoBlock
-      title="Страница «Дашборд»"
-      purpose="Дает сводную картину бизнеса и помогает быстро увидеть отклонения по ключевым показателям."
-      meaning="Показывает выручку, заказы, средний чек, скидки, структуру каналов и срез по подразделениям."
-      calculation="Карточки формируются из агрегированных данных за период. Дополнительно отображаются краткие срезы по меню и переходы в детальные отчеты."
-      responsibility="Отвечает за оперативный управленческий контроль и приоритизацию дальнейшего анализа."
-    />
 
     <!-- Ошибка -->
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="w-5 h-5 shrink-0" />
       <span>{{ error }}</span>
-      <button @click="reload" class="ml-auto text-xs underline hover:no-underline">Повторить</button>
+      <Button type="button" variant="outline" size="sm" class="ml-auto" @click="reload">Повторить</Button>
     </div>
 
     <!-- Пустое состояние -->
@@ -103,29 +96,29 @@
         <OrgBarChart :orgs="data?.byOrganization ?? []" :loading="dashboardStore.isLoadingDashboard" />
 
         <div class="mt-5 overflow-x-auto rounded-lg border border-border/70">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border bg-muted/40">
-                <th class="px-4 py-3 text-left font-medium text-muted-foreground">Подразделение</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Выручка</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground">Заказы</th>
-                <th class="px-4 py-3 text-right font-medium text-muted-foreground hidden md:table-cell">Ср. чек</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="dashboardStore.isLoadingDashboard" v-for="i in 4" :key="i" class="border-b border-border/40 last:border-0">
-                <td colspan="4" class="px-4 py-3">
+          <Table class="w-full text-sm">
+            <TableHeader>
+              <TableRow class="border-b border-border bg-muted/40">
+                <TableHead class="text-left font-medium text-muted-foreground">Подразделение</TableHead>
+                <TableHead class="text-right font-medium text-muted-foreground">Выручка</TableHead>
+                <TableHead class="text-right font-medium text-muted-foreground">Заказы</TableHead>
+                <TableHead class="text-right font-medium text-muted-foreground hidden md:table-cell">Ср. чек</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-if="dashboardStore.isLoadingDashboard" v-for="i in 4" :key="i" class="border-b border-border/40 last:border-0">
+                <TableCell colspan="4" class="">
                   <div class="h-6 rounded bg-muted animate-pulse" />
-                </td>
-              </tr>
-              <tr v-else v-for="org in data?.byOrganization ?? []" :key="org.id" class="border-b border-border/40 last:border-0">
-                <td class="px-4 py-3 text-foreground">{{ org.name }}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{{ formatCurrency(org.revenue) }}</td>
-                <td class="px-4 py-3 text-right tabular-nums">{{ formatNumber(org.orders) }}</td>
-                <td class="px-4 py-3 text-right tabular-nums hidden md:table-cell">{{ formatCurrency(org.avgCheck) }}</td>
-              </tr>
-            </tbody>
-          </table>
+                </TableCell>
+              </TableRow>
+              <TableRow v-else v-for="org in data?.byOrganization ?? []" :key="org.id" class="border-b border-border/40 last:border-0">
+                <TableCell class="text-foreground">{{ org.name }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatCurrency(org.revenue) }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatNumber(org.orders) }}</TableCell>
+                <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(org.avgCheck) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
 
@@ -154,24 +147,31 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted } from"vue";
 import {
   AlertCircle,
   BarChart2,
   ArrowRight,
-} from "lucide-vue-next";
-import MetricCard from "@/components/metrics/MetricCard.vue";
-import DashboardFilters from "@/components/filters/DashboardFilters.vue";
-import Card from "@/components/ui/Card.vue";
-import DonutChart from "@/components/charts/DonutChart.vue";
-import OrgBarChart from "@/components/charts/OrgBarChart.vue";
-import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
-import { useAutoRefresh } from "@/composables/useAutoRefresh";
-import { useRevenueStore } from "@/stores/revenue";
-import { useDashboardStore } from "@/stores/dashboard";
-import { useFiltersStore } from "@/stores/filters";
-import { usePlansStore } from "@/stores/plans";
-import { dashboardQuickLinksCatalog } from "@/config/reportCatalog";
+} from"lucide-vue-next";
+import MetricCard from"@/components/metrics/MetricCard.vue";
+import DashboardFilters from"@/components/filters/DashboardFilters.vue";
+import Card from"@/components/ui/Card.vue";
+import DonutChart from"@/components/charts/DonutChart.vue";
+import OrgBarChart from"@/components/charts/OrgBarChart.vue";
+import Button from"@/components/ui/Button.vue";
+import { useAutoRefresh } from"@/composables/useAutoRefresh";
+import { useRevenueStore } from"@/stores/revenue";
+import { useDashboardStore } from"@/stores/dashboard";
+import { useFiltersStore } from"@/stores/filters";
+import { usePlansStore } from"@/stores/plans";
+import { dashboardQuickLinksCatalog } from"@/config/reportCatalog";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const revenueStore = useRevenueStore();
 const dashboardStore = useDashboardStore();
@@ -189,7 +189,7 @@ const currentPlanOrganizationId = computed(() => {
     return data.value.byOrganization[0].id;
   }
 
-  return "";
+  return"";
 });
 
 const sections = dashboardQuickLinksCatalog;
@@ -199,7 +199,7 @@ async function handleApply({ date, organizationIds }) {
   try {
     await dashboardStore.loadDashboard({ organizationIds, date });
   } catch (e) {
-    error.value = e.message || "Ошибка загрузки дашборда";
+    error.value = e.message ||"Ошибка загрузки дашборда";
   }
 }
 
@@ -212,18 +212,18 @@ function getPlan(metric, currentValue) {
 }
 
 function formatDate(str) {
-  if (!str) return "";
+  if (!str) return"";
   const [y, m, d] = str.split("-");
   return `${d}.${m}.${y}`;
 }
 
 function formatCurrency(val) {
-  if (val == null) return "—";
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
+  if (val == null) return"—";
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(val);
 }
 
 function formatNumber(val) {
-  if (val == null) return "—";
+  if (val == null) return"—";
   return new Intl.NumberFormat("ru-RU").format(val);
 }
 

@@ -44,10 +44,25 @@ export const useTopDishesStore = defineStore("topDishes", () => {
     }
   }
 
+  function stopAll() {
+    controller?.abort();
+    controller = null;
+    requestId += 1;
+    isLoadingTopDishes.value = false;
+  }
+
+  function reset() {
+    stopAll();
+    topDishes.value = null;
+    error.value = null;
+  }
+
   return {
     topDishes,
     isLoadingTopDishes,
     error,
     loadTopDishes,
+    stopAll,
+    reset,
   };
 });

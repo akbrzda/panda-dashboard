@@ -5,14 +5,6 @@
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
 
-    <ReportInfoBlock
-      title="О отчете акций и промокодов"
-      purpose="Отчет показывает влияние скидочных механик на выручку и долю скидки."
-      meaning="Позволяет оценить, какие акции дают эффект, а какие размывают маржу."
-      calculation="Считаются net sales, сумма скидок и доля скидки по типам промо; отмененные/удаленные заказы исключены."
-      responsibility="Используется коммерческим блоком для настройки промо-политики."
-    />
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -54,30 +46,29 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Таблица акций и промокодов</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Тип</th>
-                <th class="px-3 py-2 text-left font-medium">Название</th>
-                <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                <th class="px-3 py-2 text-left font-medium">Скидка</th>
-                <th class="px-3 py-2 text-left font-medium">Net sales</th>
-                <th class="px-3 py-2 text-left font-medium">Доля скидки, %</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in report?.promotions || []" :key="`${item.promoType}-${item.promoName}`" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ item.promoType }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.promoName }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.orders) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.discountSum) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.netSales) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.discountRate) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Тип</TableHead>
+                <TableHead class="text-left font-medium">Название</TableHead>
+                <TableHead class="text-left font-medium">Заказов</TableHead>
+                <TableHead class="text-left font-medium">Скидка</TableHead>
+                <TableHead class="text-left font-medium">Net sales</TableHead>
+                <TableHead class="text-left font-medium">Доля скидки, %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in report?.promotions || []" :key="`${item.promoType}-${item.promoName}`" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ item.promoType }}</TableCell>
+                <TableCell class="text-foreground">{{ item.promoName }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.discountSum) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.netSales) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.discountRate) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -85,16 +76,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { AlertCircle } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import AreaChart from "../components/charts/AreaChart.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted } from"vue";
+import { AlertCircle } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import AreaChart from"../components/charts/AreaChart.vue";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -118,7 +115,7 @@ function formatNumber(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 async function handleApply(payload = {}) {

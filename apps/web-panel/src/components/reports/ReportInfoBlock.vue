@@ -1,19 +1,19 @@
 <template>
-  <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-    <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
-    <p class="mt-2 text-sm text-muted-foreground">{{ purpose }}</p>
-    <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-      <div class="rounded-lg border border-border/60 bg-background/60 p-3">
-        <p class="text-xs font-semibold text-foreground">Что показывает</p>
-        <p class="mt-1 text-xs text-muted-foreground">{{ meaning }}</p>
+  <Card :class="dense ? 'border-border/70 bg-card p-4 md:p-5' : 'border-border/70 bg-card p-5 md:p-6'">
+    <h2 class="text-base font-semibold text-foreground">{{ title }}</h2>
+    <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{{ purpose }}</p>
+    <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div class="rounded-md border border-border/60 bg-muted/25 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-foreground/80">Что показывает</p>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{{ meaning }}</p>
       </div>
-      <div class="rounded-lg border border-border/60 bg-background/60 p-3">
-        <p class="text-xs font-semibold text-foreground">Как считается</p>
-        <p class="mt-1 text-xs text-muted-foreground">{{ calculation }}</p>
+      <div class="rounded-md border border-border/60 bg-muted/25 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-foreground/80">Как считается</p>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{{ calculation }}</p>
       </div>
-      <div class="rounded-lg border border-border/60 bg-background/60 p-3">
-        <p class="text-xs font-semibold text-foreground">За что отвечает</p>
-        <p class="mt-1 text-xs text-muted-foreground">{{ responsibility }}</p>
+      <div class="rounded-md border border-border/60 bg-muted/25 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-foreground/80">За что отвечает</p>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{{ responsibility }}</p>
       </div>
     </div>
   </Card>
@@ -28,5 +28,6 @@ defineProps({
   meaning: { type: String, required: true },
   calculation: { type: String, required: true },
   responsibility: { type: String, required: true },
+  dense: { type: Boolean, default: true },
 });
 </script>

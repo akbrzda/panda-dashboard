@@ -44,10 +44,25 @@ export const useFoodcostStore = defineStore("foodcost", () => {
     }
   }
 
+  function stopAll() {
+    controller?.abort();
+    controller = null;
+    requestId += 1;
+    isLoadingFoodcost.value = false;
+  }
+
+  function reset() {
+    stopAll();
+    foodcostData.value = null;
+    error.value = null;
+  }
+
   return {
     foodcostData,
     isLoadingFoodcost,
     error,
     loadFoodcost,
+    stopAll,
+    reset,
   };
 });

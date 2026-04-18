@@ -5,14 +5,6 @@
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
 
-    <ReportInfoBlock
-      title="О отчете ассортимента"
-      purpose="Отчет объединяет продажи ассортимента и текущий стоп-лист по позициям."
-      meaning="Показывает категории, доступность и позиции, которые дольше всего находятся в стопе."
-      calculation="Продажи берутся из топа блюд, стоп-лист из iiko Transport; дополнительно считается длительность нахождения в стопе."
-      responsibility="Используется менеджером меню и закупок для контроля доступности ассортимента."
-    />
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -32,90 +24,87 @@
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Категории ассортимента</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Категория</th>
-                  <th class="px-3 py-2 text-left font-medium">Позиций</th>
-                  <th class="px-3 py-2 text-left font-medium">Порций</th>
-                  <th class="px-3 py-2 text-left font-medium">Выручка</th>
-                  <th class="px-3 py-2 text-left font-medium">Недоступно</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in report?.categories || []" :key="item.category" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ item.category }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.items) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.soldQty) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.revenue) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.unavailable) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Категория</TableHead>
+                  <TableHead class="text-left font-medium">Позиций</TableHead>
+                  <TableHead class="text-left font-medium">Порций</TableHead>
+                  <TableHead class="text-left font-medium">Выручка</TableHead>
+                  <TableHead class="text-left font-medium">Недоступно</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in report?.categories || []" :key="item.category" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ item.category }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.items) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.soldQty) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.unavailable) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Стоп-лист по позициям</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Позиция</th>
-                  <th class="px-3 py-2 text-left font-medium">Причина</th>
-                  <th class="px-3 py-2 text-left font-medium">Остаток</th>
-                  <th class="px-3 py-2 text-left font-medium">В стопе, ч</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in stopListTop" :key="item.name" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ item.name }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ item.reason || "—" }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.balance) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.inStopHours) }}</td>
-                </tr>
-                <tr v-if="stopListTop.length === 0" class="border-t border-border/50">
-                  <td colspan="4" class="px-3 py-4 text-center text-muted-foreground">Нет позиций в стоп-листе</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Позиция</TableHead>
+                  <TableHead class="text-left font-medium">Причина</TableHead>
+                  <TableHead class="text-left font-medium">Остаток</TableHead>
+                  <TableHead class="text-left font-medium">В стопе, ч</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in stopListTop" :key="item.name" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ item.name }}</TableCell>
+                  <TableCell class="text-foreground">{{ item.reason ||"—" }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.balance) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.inStopHours) }}</TableCell>
+                </TableRow>
+                <TableRow v-if="stopListTop.length === 0" class="border-t border-border/50">
+                  <TableCell colspan="4" class="text-center text-muted-foreground">Нет позиций в стоп-листе</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Ассортимент (продажи + доступность)</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Позиция</th>
-                <th class="px-3 py-2 text-left font-medium">Категория</th>
-                <th class="px-3 py-2 text-left font-medium">Порций</th>
-                <th class="px-3 py-2 text-left font-medium">Выручка</th>
-                <th class="px-3 py-2 text-left font-medium">Ср. цена</th>
-                <th class="px-3 py-2 text-left font-medium">Доступность</th>
-                <th class="px-3 py-2 text-left font-medium">В стопе, ч</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in itemsTop" :key="item.name" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ item.name }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.category }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.soldQty) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.revenue) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.avgPrice) }}</td>
-                <td class="px-3 py-2">
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Позиция</TableHead>
+                <TableHead class="text-left font-medium">Категория</TableHead>
+                <TableHead class="text-left font-medium">Порций</TableHead>
+                <TableHead class="text-left font-medium">Выручка</TableHead>
+                <TableHead class="text-left font-medium">Ср. цена</TableHead>
+                <TableHead class="text-left font-medium">Доступность</TableHead>
+                <TableHead class="text-left font-medium">В стопе, ч</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in itemsTop" :key="item.name" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ item.name }}</TableCell>
+                <TableCell class="text-foreground">{{ item.category }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.soldQty) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.avgPrice) }}</TableCell>
+                <TableCell class="">
                   <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="item.available ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'">
-                    {{ item.available ? "В наличии" : "В стоп-листе" }}
+                    {{ item.available ?"В наличии" :"В стоп-листе" }}
                   </span>
-                </td>
-                <td class="px-3 py-2 text-foreground">{{ item.available ? "—" : formatNumber(item.inStopHours) }}</td>
-              </tr>
-            </tbody>
-          </table>
+                </TableCell>
+                <TableCell class="text-foreground">{{ item.available ?"—" : formatNumber(item.inStopHours) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -123,15 +112,21 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { AlertCircle } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted } from"vue";
+import { AlertCircle } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -145,14 +140,14 @@ const itemsTop = computed(() => (report.value?.items || []).slice(0, 100));
 const stopListTop = computed(() => (report.value?.stopListDigest || []).slice(0, 50));
 
 function formatNumber(value) {
-  if (value == null || value === "") return "—";
+  if (value == null || value ==="") return"—";
   const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return "—";
+  if (!Number.isFinite(numericValue)) return"—";
   return numericValue.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 async function handleApply(payload = {}) {

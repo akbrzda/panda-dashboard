@@ -10,16 +10,6 @@
       </div>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
-
-    <ReportInfoBlock
-      title="О карте курьеров"
-      purpose="Оперативный экран для контроля активных курьеров и заказов в доставке."
-      meaning="Показывает активность курьеров и текущую нагрузку в режиме регулярного обновления."
-      calculation="Данные обновляются polling-ом каждые 30 секунд; исключены отмененные и удаленные заказы."
-      responsibility="Используется диспетчером и старшим смены для оперативного управления доставкой."
-    />
-    <p v-if="report?.timezone" class="text-xs text-muted-foreground">Часовой пояс отчета: {{ report.timezone }}</p>
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -83,33 +73,32 @@
       </Card>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Список курьеров</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Курьер</th>
-                <th class="px-3 py-2 text-left font-medium">Активность</th>
-                <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                <th class="px-3 py-2 text-left font-medium">Выручка</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="courier in report?.couriers || []" :key="courier.courierId" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ courier.courierName }}</td>
-                <td class="px-3 py-2">
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Курьер</TableHead>
+                <TableHead class="text-left font-medium">Активность</TableHead>
+                <TableHead class="text-left font-medium">Заказов</TableHead>
+                <TableHead class="text-left font-medium">Выручка</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="courier in report?.couriers || []" :key="courier.courierId" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ courier.courierName }}</TableCell>
+                <TableCell class="">
                   <span
                     class="rounded-full px-2 py-1 text-xs font-semibold"
                     :class="courier.isActive ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'"
                   >
-                    {{ courier.isActive ? "Активен" : "Неактивен" }}
+                    {{ courier.isActive ?"Активен" :"Неактивен" }}
                   </span>
-                </td>
-                <td class="px-3 py-2 text-foreground">{{ courier.orders }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(courier.revenue) }}</td>
-              </tr>
-            </tbody>
-          </table>
+                </TableCell>
+                <TableCell class="text-foreground">{{ courier.orders }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(courier.revenue) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -117,16 +106,22 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from "vue";
-import { AlertCircle } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
-import { formatTimeHms } from "../lib/utils";
+import { computed, onBeforeUnmount, onMounted } from"vue";
+import { AlertCircle } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import { formatTimeHms } from"../lib/utils";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -139,11 +134,11 @@ const isPageLoading = computed(() => reportsStore.isLoadingCourierMap);
 const pageError = computed(() => reportsStore.error);
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return"—";
   return formatTimeHms(value);
 }
 

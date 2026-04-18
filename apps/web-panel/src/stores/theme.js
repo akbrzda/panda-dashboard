@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 export const useThemeStore = defineStore("theme", () => {
-  const themeMode = ref(localStorage.getItem("themeMode") || "system");
+  const themeMode = ref(localStorage.getItem("themeMode") || "light");
   const systemPrefersDark = ref(false);
   let mediaQuery = null;
 

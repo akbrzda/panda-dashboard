@@ -1,7 +1,7 @@
 import { apiClient } from "./httpClient";
 
 export const stopListsApi = {
-  async getStopLists(organizationId, timezone) {
+  async getStopLists(organizationId, timezone, signal) {
     const resolvedTimezone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     const response = await apiClient.get("/stop-lists", {
@@ -9,6 +9,7 @@ export const stopListsApi = {
         organizationId,
         timezone: resolvedTimezone,
       },
+      signal,
     });
 
     return response.data;

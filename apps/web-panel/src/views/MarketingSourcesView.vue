@@ -5,14 +5,6 @@
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
 
-    <ReportInfoBlock
-      title="О отчете источников"
-      purpose="Отчет показывает, какие каналы приводят заказы и выручку."
-      meaning="Помогает сравнивать вклад каналов и принимать решения по маркетинговому бюджету."
-      calculation="Данные агрегируются по источникам и дням; отмененные/удаленные заказы исключены."
-      responsibility="Используется маркетингом и операционным менеджментом для управления каналами."
-    />
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -54,33 +46,32 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Источники: заказы, выручка и доли</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Источник</th>
-                <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                <th class="px-3 py-2 text-left font-medium">Выручка</th>
-                <th class="px-3 py-2 text-left font-medium">Средний чек</th>
-                <th class="px-3 py-2 text-left font-medium">Доля заказов, %</th>
-                <th class="px-3 py-2 text-left font-medium">Доля выручки, %</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in report?.sources || []" :key="item.source" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ item.source }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.orders) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.revenue) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatCurrency(item.avgCheck) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.ordersShare) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatNumber(item.revenueShare) }}</td>
-              </tr>
-              <tr v-if="(report?.sources || []).length === 0" class="border-t border-border/50">
-                <td colspan="6" class="px-3 py-4 text-center text-muted-foreground">Нет данных по источникам за выбранный период</td>
-              </tr>
-            </tbody>
-          </table>
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Источник</TableHead>
+                <TableHead class="text-left font-medium">Заказов</TableHead>
+                <TableHead class="text-left font-medium">Выручка</TableHead>
+                <TableHead class="text-left font-medium">Средний чек</TableHead>
+                <TableHead class="text-left font-medium">Доля заказов, %</TableHead>
+                <TableHead class="text-left font-medium">Доля выручки, %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in report?.sources || []" :key="item.source" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ item.source }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatCurrency(item.avgCheck) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.ordersShare) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatNumber(item.revenueShare) }}</TableCell>
+              </TableRow>
+              <TableRow v-if="(report?.sources || []).length === 0" class="border-t border-border/50">
+                <TableCell colspan="6" class="text-center text-muted-foreground">Нет данных по источникам за выбранный период</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -88,17 +79,23 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { AlertCircle, Megaphone } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import AreaChart from "../components/charts/AreaChart.vue";
-import DonutChart from "../components/charts/DonutChart.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted } from"vue";
+import { AlertCircle, Megaphone } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import AreaChart from"../components/charts/AreaChart.vue";
+import DonutChart from"../components/charts/DonutChart.vue";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -113,7 +110,7 @@ function formatNumber(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 async function handleApply(payload = {}) {

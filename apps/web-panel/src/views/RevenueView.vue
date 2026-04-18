@@ -6,14 +6,6 @@
       <PageFilters :loading="isPageLoading" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
     </div>
 
-    <ReportInfoBlock
-      title="О отчете выручки"
-      purpose="Базовый финансовый отчет по выручке, заказам, среднему чеку и каналам продаж."
-      meaning="Показывает, сколько заработано, где формируется выручка и как меняется динамика по дням."
-      calculation="Строится на OLAP SALES с исключением отмененных/удаленных заказов; LFL рассчитывается только для этого сценария."
-      responsibility="Используется как основной коммерческий отчет для контроля выполнения планов."
-    />
-
     <!-- Ошибка -->
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="w-5 h-5 shrink-0" />
@@ -27,11 +19,6 @@
     </div>
 
     <template v-if="store.hasData || isPageLoading">
-      <!-- Период -->
-      <p v-if="store.formattedPeriod && !isPageLoading" class="text-xs text-muted-foreground">
-        Период: <span class="font-medium text-foreground">{{ store.formattedPeriod }}</span>
-      </p>
-
       <section>
         <h2 class="text-lg font-semibold text-foreground mb-4">Финансовые показатели</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
@@ -147,7 +134,6 @@ import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
 
 const store = useRevenueStore();
 const reportsStore = useReportsStore();

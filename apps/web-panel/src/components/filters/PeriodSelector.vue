@@ -1,14 +1,15 @@
 <template>
   <div class="relative" ref="wrapperRef">
-    <button
+    <Button
       type="button"
       @click="isOpen = !isOpen"
-      class="flex min-w-[220px] items-center gap-2 h-9 px-3 rounded-md border border-input bg-background text-sm hover:bg-accent hover:text-accent-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      variant="outline"
+      class="h-9 min-w-[220px] justify-start px-3"
     >
       <CalendarDays class="w-4 h-4 text-muted-foreground shrink-0" />
       <span class="max-w-[180px] truncate">{{ currentLabel }}</span>
       <ChevronDown class="w-3 h-3 text-muted-foreground shrink-0 ml-1" />
-    </button>
+    </Button>
 
     <!-- Выпадающий список -->
     <Transition name="dropdown">
@@ -18,18 +19,18 @@
       >
         <!-- Пресеты -->
         <div class="py-1">
-          <button
+          <Button
             v-for="p in PRESETS"
             :key="p.value"
+            type="button"
             @click="selectPreset(p.value)"
-            :class="[
-              'w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors',
-              filtersStore.preset === p.value ? 'text-primary font-medium' : '',
-            ]"
+            variant="ghost"
+            class="h-auto w-full justify-start rounded-none px-3 py-2 text-sm"
+            :class="filtersStore.preset === p.value ? 'font-medium text-primary' : ''"
           >
             {{ p.label }}
             <span v-if="p.value === 'today'" class="ml-1 text-xs text-muted-foreground">★</span>
-          </button>
+          </Button>
         </div>
 
         <!-- Кастомный диапазон -->
@@ -40,13 +41,7 @@
             <span class="text-muted-foreground text-xs">—</span>
             <DatePicker v-model="customTo" placeholder="Конец" />
           </div>
-          <button
-            @click="applyCustom"
-            :disabled="!customFrom || !customTo"
-            class="w-full h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            Применить
-          </button>
+          <p class="text-[11px] text-muted-foreground">Диапазон применится автоматически после выбора обеих дат.</p>
         </div>
       </div>
     </Transition>
@@ -54,11 +49,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { CalendarDays, ChevronDown } from "lucide-vue-next";
 import { useFiltersStore } from "@/stores/filters";
 import { PERIOD_PRESETS, getPeriodLabel, formatDateISO } from "@/composables/usePeriod";
 import DatePicker from "@/components/ui/DatePicker.vue";
+import Button from "@/components/ui/Button.vue";
 
 const PRESETS = PERIOD_PRESETS.filter((p) => p.value !== "custom");
 
@@ -81,6 +77,15 @@ function applyCustom() {
   filtersStore.setCustomRange(customFrom.value, customTo.value);
   isOpen.value = false;
 }
+
+watch(
+  () => [customFrom.value, customTo.value],
+  () => {
+    if (!isOpen.value) return;
+    if (!customFrom.value || !customTo.value) return;
+    applyCustom();
+  },
+);
 
 function handleOutsideClick(e) {
   if (wrapperRef.value && !wrapperRef.value.contains(e.target)) {

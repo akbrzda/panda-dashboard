@@ -1,14 +1,16 @@
 <template>
   <div class="relative" ref="wrapperRef">
     <!-- Кнопка-триггер -->
-    <button
+    <Button
+      type="button"
       @click="isOpen = !isOpen"
-      class="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background text-sm hover:bg-accent hover:text-accent-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      variant="outline"
+      class="h-9 justify-start px-3"
     >
       <Building2 class="w-4 h-4 text-muted-foreground shrink-0" />
       <span class="max-w-[160px] truncate">{{ triggerLabel }}</span>
       <ChevronDown class="w-3 h-3 text-muted-foreground shrink-0 ml-1" />
-    </button>
+    </Button>
 
     <!-- Выпадающий список -->
     <Transition name="dropdown">
@@ -47,12 +49,13 @@
 
         <!-- Кнопка применить -->
         <div class="border-t border-border p-2">
-          <button
+          <Button
+            type="button"
             @click="apply"
-            class="w-full h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+            class="h-8 w-full text-xs"
           >
             Применить
-          </button>
+          </Button>
         </div>
       </div>
     </Transition>
@@ -63,6 +66,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { Building2, ChevronDown } from "lucide-vue-next";
 import { useFiltersStore } from "@/stores/filters";
+import Button from "@/components/ui/Button.vue";
 
 const props = defineProps({
   organizations: { type: Array, default: () => [] },

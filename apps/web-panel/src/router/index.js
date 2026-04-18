@@ -1,4 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { useReportsStore } from "@/stores/reports";
+import { useClientsStore } from "@/stores/clients";
+import { useTopDishesStore } from "@/stores/topDishes";
+import { useFoodcostStore } from "@/stores/foodcost";
+import { useDashboardStore } from "@/stores/dashboard";
+import { useStopListStore } from "@/stores/stopList";
 import DashboardView from "../views/DashboardView.vue";
 import StopListView from "../views/StopListView.vue";
 import RevenueView from "../views/RevenueView.vue";
@@ -112,6 +118,19 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+});
+
+router.beforeEach((to, from, next) => {
+  if (to.path !== from.path) {
+    useReportsStore().$reset();
+    useClientsStore().stopAll();
+    useTopDishesStore().stopAll();
+    useFoodcostStore().stopAll();
+    useDashboardStore().stopAll();
+    useStopListStore().stopAll();
+  }
+
+  next();
 });
 
 export default router;

@@ -44,10 +44,25 @@ export const useClientsStore = defineStore("clients", () => {
     }
   }
 
+  function stopAll() {
+    controller?.abort();
+    controller = null;
+    requestId += 1;
+    isLoadingClients.value = false;
+  }
+
+  function reset() {
+    stopAll();
+    clientsData.value = null;
+    error.value = null;
+  }
+
   return {
     clientsData,
     isLoadingClients,
     error,
     loadClients,
+    stopAll,
+    reset,
   };
 });

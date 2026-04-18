@@ -4,367 +4,91 @@
 
 @layer base {
   :root {
-    /* Светлая тема */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-
+    --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 210 40% 94%;
-    --secondary-foreground: 222 47% 11%;
-
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 16% 47%;
-
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
-
-    --radius: 0.5rem;
-
-    /* Цвета для графиков */
-    --chart-1: 217 91% 60%;
-    --chart-2: 142 71% 45%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 0 84% 60%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.75rem;
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--background));
+    font-family: "Montserrat", sans-serif;
+    line-height: 1.6;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    /* Тёмная тема */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 97%;
-
-    --card: 217 33% 17%;
-    --card-foreground: 210 40% 97%;
-
-    --popover: 217 33% 17%;
-    --popover-foreground: 210 40% 97%;
-
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 217 33% 22%;
-    --secondary-foreground: 210 40% 97%;
-
-    --muted: 217 33% 22%;
-    --muted-foreground: 215 20% 65%;
-
-    --accent: 217 33% 22%;
-    --accent-foreground: 210 40% 97%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-
-    --border: 217 33% 25%;
-    --input: 217 33% 25%;
-    --ring: 217 91% 60%;
-
-    /* Цвета для графиков (тёмная тема) */
-    --chart-1: 217 91% 65%;
-    --chart-2: 142 71% 50%;
-    --chart-3: 38 92% 55%;
-    --chart-4: 280 65% 65%;
-    --chart-5: 0 84% 65%;
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
 
+  html,
+  body,
+  #app {
+    min-height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    line-height: 1.5;
   }
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: #f5f5f5;
-  color: #333;
-  line-height: 1.5;
-}
-
-#app {
-  min-height: 100vh;
-}
-
-.container {
-  display: flex;
-  min-height: 100vh;
-}
-
-/* Боковая панель */
-.sidebar {
-  width: 280px;
-  background-color: #fff;
-  border-right: 1px solid #e0e0e0;
-  padding: 20px;
-  flex-shrink: 0;
-}
-
-.filter-section {
-  margin-bottom: 24px;
-}
-
-.filter-section label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.select-field,
-.text-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  font-size: 14px;
-  background-color: #fafafa;
-  transition: all 0.2s;
-}
-
-.select-field:hover,
-.text-input:hover {
-  border-color: #999;
-  background-color: #fff;
-}
-
-.select-field:focus,
-.text-input:focus {
-  outline: none;
-  border-color: #4a90e2;
-  background-color: #fff;
-  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
-}
-
-/* Основное содержимое */
-.main-content {
-  flex: 1;
-  padding: 30px;
-  overflow-x: auto;
-}
-
-.header {
-  margin-bottom: 24px;
-}
-
-.header h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #333;
-}
-
-/* Индикаторы состояния */
-.loading {
-  text-align: center;
-  padding: 60px 20px;
-  color: #666;
-  font-size: 16px;
-}
-
-.error-message {
-  background-color: #fee;
-  border: 1px solid #fcc;
-  border-radius: 6px;
-  padding: 16px;
-  color: #c33;
-  margin-bottom: 20px;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: #999;
-  font-size: 16px;
-}
-
-.table-container {
-  min-height: 200px;
-}
-
-/* Таблица */
-.data-table {
-  width: 100%;
-  background-color: #fff;
-  border-radius: 8px;
-  border-collapse: separate;
-  border-spacing: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-}
-
-.data-table thead {
-  background-color: #fafafa;
-}
-
-.data-table thead th {
-  padding: 14px 16px;
-  text-align: left;
-  font-size: 13px;
-  font-weight: 600;
-  color: #666;
-  border-bottom: 1px solid #e0e0e0;
-  white-space: nowrap;
-}
-
-.data-table tbody tr {
-  border-bottom: 1px solid #f0f0f0;
-  transition: background-color 0.15s;
-}
-
-.data-table tbody tr:hover {
-  background-color: #f9f9f9;
-}
-
-.data-table tbody tr:last-child {
-  border-bottom: none;
-}
-
-.data-table tbody td {
-  padding: 16px;
-  font-size: 14px;
-  color: #333;
-  vertical-align: middle;
-}
-
-.item-date {
-  font-size: 13px;
-  color: #666;
-}
-
-.product-name {
-  font-weight: 500;
-  color: #333;
-}
-
-.product-sku {
-  font-family: "Monaco", "Courier New", monospace;
-  color: #666;
-  font-size: 13px;
-}
-
-.reason {
-  color: #555;
-  font-size: 13px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Статусы */
-.status-badge {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.status-delivered {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-}
-
-.status-stopped {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-.status-low-stock {
-  background-color: #fff3e0;
-  color: #e65100;
-}
-
-.status-pending {
-  background-color: #fff3e0;
-  color: #e65100;
-}
-
-.status-cancelled {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-/* Адаптивность */
-@media (max-width: 1024px) {
-  .container {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid #e0e0e0;
-  }
-
-  .main-content {
-    padding: 20px;
-  }
-}
-
-@media (max-width: 768px) {
-  .data-table {
-    font-size: 12px;
-  }
-
-  .data-table thead th,
-  .data-table tbody td {
-    padding: 10px;
-  }
-
-  .header h1 {
-    font-size: 20px;
-  }
-}
-
-/* Скроллбар */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #999;
 }

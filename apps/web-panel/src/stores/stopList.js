@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { organizationsApi } from "../api/organizations";
 import { stopListsApi } from "../api/stopLists";
 
+const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
+
 export const useStopListStore = defineStore("stopList", {
   state: () => ({
     organizations: [],
@@ -12,6 +14,8 @@ export const useStopListStore = defineStore("stopList", {
     statusFilter: "stopped",
     isLoading: false,
     error: null,
+    controller: null,
+    requestId: 0,
   }),
 
   getters: {
@@ -50,6 +54,11 @@ export const useStopListStore = defineStore("stopList", {
         return;
       }
 
+      this.controller?.abort();
+      this.controller = new AbortController();
+      this.requestId += 1;
+      const currentRequestId = this.requestId;
+
       try {
         this.isLoading = true;
         this.error = null;
@@ -57,7 +66,8 @@ export const useStopListStore = defineStore("stopList", {
         const currentOrganization = this.organizations.find((organization) => String(organization.id) === String(this.currentOrganizationId));
         const timezone = currentOrganization?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-        const response = await stopListsApi.getStopLists(this.currentOrganizationId, timezone);
+        const response = await stopListsApi.getStopLists(this.currentOrganizationId, timezone, this.controller.signal);
+        if (currentRequestId !== this.requestId) return;
         const normalizedItems = response.normalizedItems || [];
 
         normalizedItems.sort((a, b) => {
@@ -69,9 +79,13 @@ export const useStopListStore = defineStore("stopList", {
         this.stopListItems = normalizedItems;
         this.applyFilters();
       } catch (error) {
+        if (isAbortError(error)) return;
         this.error = error.message || "Ошибка загрузки стоп-листа";
       } finally {
-        this.isLoading = false;
+        if (currentRequestId === this.requestId) {
+          this.isLoading = false;
+          this.controller = null;
+        }
       }
     },
 
@@ -114,6 +128,13 @@ export const useStopListStore = defineStore("stopList", {
 
         return true;
       });
+    },
+
+    stopAll() {
+      this.controller?.abort();
+      this.controller = null;
+      this.requestId += 1;
+      this.isLoading = false;
     },
   },
 });

@@ -1,5 +1,5 @@
 <template>
-  <Card :class="cn('flex h-full flex-col gap-2.5 border border-border/70 bg-card/95 p-4 shadow-sm', $props.class)">
+  <Card :class="cn('flex h-full flex-col gap-2 border border-border/70 bg-card/95 p-3.5 shadow-sm md:p-4', $props.class)">
     <!-- Состояние загрузки -->
     <template v-if="loading">
       <div class="flex items-center gap-2">
@@ -31,7 +31,7 @@
       </div>
 
       <!-- Значение -->
-      <div class="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+      <div class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
         {{ formattedValue }}
       </div>
 

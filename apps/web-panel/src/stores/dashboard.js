@@ -44,10 +44,25 @@ export const useDashboardStore = defineStore("dashboard", () => {
     }
   }
 
+  function stopAll() {
+    controller?.abort();
+    controller = null;
+    requestId += 1;
+    isLoadingDashboard.value = false;
+  }
+
+  function reset() {
+    stopAll();
+    dashboardData.value = null;
+    error.value = null;
+  }
+
   return {
     dashboardData,
     isLoadingDashboard,
     error,
     loadDashboard,
+    stopAll,
+    reset,
   };
 });

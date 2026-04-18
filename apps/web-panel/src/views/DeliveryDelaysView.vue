@@ -3,27 +3,18 @@
     <div class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="text-2xl font-bold text-foreground">Опоздания доставок</h1>
-        <button
+        <Button
           type="button"
-          class="inline-flex items-center rounded-md border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          variant="outline"
+          size="sm"
           :disabled="isExportLoading || isPageLoading"
           @click="handleExport"
         >
-          {{ isExportLoading ? "Подготовка файла..." : "Выгрузить в Excel" }}
-        </button>
+          {{ isExportLoading ?"Подготовка файла..." :"Выгрузить в Excel" }}
+        </Button>
       </div>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
-
-    <ReportInfoBlock
-      title="О отчете опозданий"
-      purpose="Отчет показывает опоздания только по курьерской доставке (orderServiceType == DELIVERY_BY_COURIER)."
-      meaning="Самовывоз и заказы в зал не учитываются."
-      calculation="Опоздание считается строго по формуле: Δ(Delivery.ExpectedTime, Delivery.ActualTime). Если фактическое время позже расчетного, заказ считается опоздавшим."
-      responsibility="Используется для контроля SLA доставки и анализа причин опозданий по курьерам и времени суток."
-    />
-    <p v-if="report?.timezone" class="text-xs text-muted-foreground">Часовой пояс отчета: {{ report.timezone }}</p>
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -75,79 +66,76 @@
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Опоздания по часам</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Час</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                  <th class="px-3 py-2 text-left font-medium">Опозданий</th>
-                  <th class="px-3 py-2 text-left font-medium">Доля, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in report?.hourly || []" :key="item.hour" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ formatHourRange(item.hour) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.total) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.delayed) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.delayRate) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Час</TableHead>
+                  <TableHead class="text-left font-medium">Заказов</TableHead>
+                  <TableHead class="text-left font-medium">Опозданий</TableHead>
+                  <TableHead class="text-left font-medium">Доля, %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in report?.hourly || []" :key="item.hour" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ formatHourRange(item.hour) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.total) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.delayed) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.delayRate) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Курьеры с риском</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Курьер</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                  <th class="px-3 py-2 text-left font-medium">Опозданий</th>
-                  <th class="px-3 py-2 text-left font-medium">Доля, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in topCouriers" :key="item.courierId" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ item.courierName }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.total) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.delayed) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.delayRate) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Курьер</TableHead>
+                  <TableHead class="text-left font-medium">Заказов</TableHead>
+                  <TableHead class="text-left font-medium">Опозданий</TableHead>
+                  <TableHead class="text-left font-medium">Доля, %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in topCouriers" :key="item.courierId" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.total) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.delayed) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.delayRate) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Топ заказов с опозданием</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Дата</th>
-                <th class="px-3 py-2 text-left font-medium">Заказ</th>
-                <th class="px-3 py-2 text-left font-medium">Курьер</th>
-                <th class="px-3 py-2 text-left font-medium">Обещано</th>
-                <th class="px-3 py-2 text-left font-medium">Факт</th>
-                <th class="px-3 py-2 text-left font-medium">Опоздание</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in topDelayedOrders" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ item.date }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.orderNumber || "Без номера" }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.courierName }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(item.promisedMinutes) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(item.actualMinutes) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(item.lateMinutes) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Дата</TableHead>
+                <TableHead class="text-left font-medium">Заказ</TableHead>
+                <TableHead class="text-left font-medium">Курьер</TableHead>
+                <TableHead class="text-left font-medium">Обещано</TableHead>
+                <TableHead class="text-left font-medium">Факт</TableHead>
+                <TableHead class="text-left font-medium">Опоздание</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in topDelayedOrders" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ item.date }}</TableCell>
+                <TableCell class="text-foreground">{{ item.orderNumber ||"Без номера" }}</TableCell>
+                <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(item.promisedMinutes) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(item.actualMinutes) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(item.lateMinutes) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -155,18 +143,25 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
-import { AlertCircle, Clock } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import { reportsApi } from "../api/reports";
-import { toast } from "../lib/sonner";
-import { formatMinutesToHms } from "../lib/utils";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
+import { computed, onMounted, ref } from"vue";
+import { AlertCircle, Clock } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import { reportsApi } from"../api/reports";
+import { toast } from"../lib/sonner";
+import { formatMinutesToHms } from"../lib/utils";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import Button from"../components/ui/Button.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -189,8 +184,8 @@ function formatDuration(value) {
 }
 
 function formatHourRange(hour) {
-  const start = String(hour).padStart(2, "0");
-  const end = String((hour + 1) % 24).padStart(2, "0");
+  const start = String(hour).padStart(2,"0");
+  const end = String((hour + 1) % 24).padStart(2,"0");
   return `${start}:00-${end}:00`;
 }
 
@@ -204,7 +199,7 @@ async function handleApply(payload = {}) {
   await reportsStore.loadDeliveryDelays({ organizationId, dateFrom, dateTo });
 }
 
-function extractFilename(headers = {}, fallback = "opozdaniya.xls") {
+function extractFilename(headers = {}, fallback ="opozdaniya.xls") {
   const contentDisposition = headers["content-disposition"] || headers["Content-Disposition"];
   if (!contentDisposition) return fallback;
 
@@ -227,7 +222,7 @@ async function handleExport() {
   const dateTo = filtersStore.dateTo;
 
   if (!organizationId || !dateFrom || !dateTo) {
-    toast.error("Не выбраны фильтры", "Укажите организацию и период перед выгрузкой");
+    toast.error("Не выбраны фильтры","Укажите организацию и период перед выгрузкой");
     return;
   }
 
@@ -235,7 +230,7 @@ async function handleExport() {
   try {
     const response = await reportsApi.exportDeliveryDelays({ organizationId, dateFrom, dateTo });
     const fileName = extractFilename(response.headers, `opozdaniya-${dateFrom}-${dateTo}.xls`);
-    const blob = new Blob([response.data], { type: response.headers["content-type"] || "application/vnd.ms-excel" });
+    const blob = new Blob([response.data], { type: response.headers["content-type"] ||"application/vnd.ms-excel" });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -244,10 +239,10 @@ async function handleExport() {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-    toast.success("Файл готов", "Выгрузка опозданий успешно скачана");
+    toast.success("Файл готов","Выгрузка опозданий успешно скачана");
   } catch (error) {
     console.error("❌ Ошибка выгрузки отчета по опозданиям:", error);
-    toast.error("Ошибка выгрузки", "Не удалось сформировать Excel-файл");
+    toast.error("Ошибка выгрузки","Не удалось сформировать Excel-файл");
   } finally {
     isExportLoading.value = false;
   }

@@ -4,16 +4,6 @@
       <h1 class="text-2xl font-bold text-foreground">SLA доставки по этапам</h1>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
-
-    <ReportInfoBlock
-      title="О отчете SLA"
-      purpose="Отчет контролирует скорость прохождения заказа по этапам доставки и фиксирует нарушения нормативов."
-      meaning="Показывает, где возникает узкое место: приготовление, ожидание на полке, путь или общий цикл."
-      calculation="Время этапов строится по временным меткам заказа; отмененные/удаленные заказы исключены из расчета."
-      responsibility="Используется для контроля операционной дисциплины кухни и курьерской логистики."
-    />
-    <p v-if="report?.timezone" class="text-xs text-muted-foreground">Часовой пояс отчета: {{ report.timezone }}</p>
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -49,33 +39,32 @@
       </section>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Этапы SLA и пороговые значения</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-sm">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Этап</th>
-                <th class="px-3 py-2 text-left font-medium">Среднее, мин</th>
-                <th class="px-3 py-2 text-left font-medium">Порог, мин</th>
-                <th class="px-3 py-2 text-left font-medium">Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="stage in stageRows" :key="stage.key" class="border-t border-border/50">
-                <td class="px-3 py-2 font-medium text-foreground">{{ stage.title }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(stage.avg) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(stage.threshold) }}</td>
-                <td class="px-3 py-2">
+          <Table class="min-w-full border-collapse text-sm">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Этап</TableHead>
+                <TableHead class="text-left font-medium">Среднее, мин</TableHead>
+                <TableHead class="text-left font-medium">Порог, мин</TableHead>
+                <TableHead class="text-left font-medium">Статус</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="stage in stageRows" :key="stage.key" class="border-t border-border/50">
+                <TableCell class="font-medium text-foreground">{{ stage.title }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(stage.avg) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(stage.threshold) }}</TableCell>
+                <TableCell class="">
                   <span
                     class="rounded-full px-2 py-1 text-xs font-semibold"
                     :class="stage.avg <= stage.threshold ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'"
                   >
-                    {{ stage.avg <= stage.threshold ? "В норме" : "Выше порога" }}
+                    {{ stage.avg <= stage.threshold ?"В норме" :"Выше порога" }}
                   </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
 
@@ -93,56 +82,54 @@
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Нарушения по часам</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Час</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказов</th>
-                  <th class="px-3 py-2 text-left font-medium">Нарушений</th>
-                  <th class="px-3 py-2 text-left font-medium">Доля, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in report?.hourly || []" :key="item.hour" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ formatHourRange(item.hour) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.orders) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.violations) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(item.violationRate) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Час</TableHead>
+                  <TableHead class="text-left font-medium">Заказов</TableHead>
+                  <TableHead class="text-left font-medium">Нарушений</TableHead>
+                  <TableHead class="text-left font-medium">Доля, %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in report?.hourly || []" :key="item.hour" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ formatHourRange(item.hour) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.violations) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(item.violationRate) }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Топ нарушений</h3>
         <div class="overflow-x-auto">
-          <table class="min-w-full border-collapse text-xs">
-            <thead>
-              <tr class="bg-muted/30 text-muted-foreground">
-                <th class="px-3 py-2 text-left font-medium">Дата</th>
-                <th class="px-3 py-2 text-left font-medium">Заказ</th>
-                <th class="px-3 py-2 text-left font-medium">Курьер</th>
-                <th class="px-3 py-2 text-left font-medium">Итого, мин</th>
-                <th class="px-3 py-2 text-left font-medium">Нарушения</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in topViolations" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
-                <td class="px-3 py-2 text-foreground">{{ item.date || "—" }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.orderNumber || "Без номера" }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.courierName }}</td>
-                <td class="px-3 py-2 text-foreground">{{ formatDuration(item.totalMinutes) }}</td>
-                <td class="px-3 py-2 text-foreground">{{ item.violations.join(", ") }}</td>
-              </tr>
-              <tr v-if="topViolations.length === 0" class="border-t border-border/50">
-                <td colspan="5" class="px-3 py-4 text-center text-muted-foreground">Нарушений за выбранный период нет</td>
-              </tr>
-            </tbody>
-          </table>
+          <Table class="min-w-full border-collapse text-xs">
+            <TableHeader>
+              <TableRow class="bg-muted/30 text-muted-foreground">
+                <TableHead class="text-left font-medium">Дата</TableHead>
+                <TableHead class="text-left font-medium">Заказ</TableHead>
+                <TableHead class="text-left font-medium">Курьер</TableHead>
+                <TableHead class="text-left font-medium">Итого, мин</TableHead>
+                <TableHead class="text-left font-medium">Нарушения</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="item in topViolations" :key="`${item.orderNumber || item.orderId}-${item.date || ''}`" class="border-t border-border/50">
+                <TableCell class="text-foreground">{{ item.date ||"—" }}</TableCell>
+                <TableCell class="text-foreground">{{ item.orderNumber ||"Без номера" }}</TableCell>
+                <TableCell class="text-foreground">{{ item.courierName }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDuration(item.totalMinutes) }}</TableCell>
+                <TableCell class="text-foreground">{{ item.violations.join(",") }}</TableCell>
+              </TableRow>
+              <TableRow v-if="topViolations.length === 0" class="border-t border-border/50">
+                <TableCell colspan="5" class="text-center text-muted-foreground">Нарушений за выбранный период нет</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
       </Card>
     </template>
@@ -150,16 +137,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { AlertCircle, Truck } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
-import { formatMinutesToHms } from "../lib/utils";
+import { computed, onMounted } from"vue";
+import { AlertCircle, Truck } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import { formatMinutesToHms } from"../lib/utils";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -172,20 +165,20 @@ const pageError = computed(() => reportsStore.error);
 const stageRows = computed(() => {
   const stageKpi = report.value?.stageKpi || {};
   return [
-    { key: "prep", title: "Приготовление", avg: Number(stageKpi.prep?.avg || 0), threshold: Number(stageKpi.prep?.threshold || 0) },
-    { key: "shelf", title: "Полка", avg: Number(stageKpi.shelf?.avg || 0), threshold: Number(stageKpi.shelf?.threshold || 0) },
-    { key: "route", title: "В пути", avg: Number(stageKpi.route?.avg || 0), threshold: Number(stageKpi.route?.threshold || 0) },
-    { key: "total", title: "Общее SLA", avg: Number(stageKpi.total?.avg || 0), threshold: Number(stageKpi.total?.threshold || 0) },
+    { key:"prep", title:"Приготовление", avg: Number(stageKpi.prep?.avg || 0), threshold: Number(stageKpi.prep?.threshold || 0) },
+    { key:"shelf", title:"Полка", avg: Number(stageKpi.shelf?.avg || 0), threshold: Number(stageKpi.shelf?.threshold || 0) },
+    { key:"route", title:"В пути", avg: Number(stageKpi.route?.avg || 0), threshold: Number(stageKpi.route?.threshold || 0) },
+    { key:"total", title:"Общее SLA", avg: Number(stageKpi.total?.avg || 0), threshold: Number(stageKpi.total?.threshold || 0) },
   ];
 });
 
 const funnelRows = computed(() => {
   const funnel = report.value?.funnel || {};
   return [
-    { key: "created", title: "Создано", value: Number(funnel.created || 0) },
-    { key: "cooked", title: "Приготовлено", value: Number(funnel.cooked || 0) },
-    { key: "dispatched", title: "Отправлено", value: Number(funnel.dispatched || 0) },
-    { key: "delivered", title: "Доставлено", value: Number(funnel.delivered || 0) },
+    { key:"created", title:"Создано", value: Number(funnel.created || 0) },
+    { key:"cooked", title:"Приготовлено", value: Number(funnel.cooked || 0) },
+    { key:"dispatched", title:"Отправлено", value: Number(funnel.dispatched || 0) },
+    { key:"delivered", title:"Доставлено", value: Number(funnel.delivered || 0) },
   ];
 });
 
@@ -200,8 +193,8 @@ function formatDuration(value) {
 }
 
 function formatHourRange(hour) {
-  const start = String(hour).padStart(2, "0");
-  const end = String((hour + 1) % 24).padStart(2, "0");
+  const start = String(hour).padStart(2,"0");
+  const end = String((hour + 1) % 24).padStart(2,"0");
   return `${start}:00-${end}:00`;
 }
 

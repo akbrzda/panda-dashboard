@@ -4,13 +4,6 @@
       <h1 class="text-2xl font-bold text-foreground">Фудкост</h1>
       <PageFilters :loading="foodcostStore.isLoadingFoodcost" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
     </div>
-    <ReportInfoBlock
-      title="Отчет «Фудкост»"
-      purpose="Контролирует долю себестоимости в выручке и помогает вовремя замечать риск падения маржинальности."
-      meaning="Показывает общий фудкост, разрез по категориям, вклад выручки и себестоимости по каждой категории."
-      calculation="Фудкост считается как Себестоимость / Выручка × 100. По категориям используется тот же принцип с агрегацией за выбранный период."
-      responsibility="Отвечает за контроль закупок, рецептур, списаний и ценовой политики меню."
-    />
 
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="w-5 h-5 shrink-0" />
@@ -27,7 +20,7 @@
 
     <div v-if="!foodcostStore.isLoadingFoodcost && !data && !error" class="flex flex-col items-center justify-center py-16 text-center">
       <Percent class="w-12 h-12 text-muted-foreground/40 mb-4" />
-      <p class="text-sm text-muted-foreground">Выберите период и нажмите «Применить»</p>
+      <p class="text-sm text-muted-foreground">Выберите организацию и период</p>
     </div>
 
     <template v-if="data || foodcostStore.isLoadingFoodcost">
@@ -79,41 +72,47 @@
 
         <div v-else-if="!data?.categories?.length" class="p-6 text-sm text-muted-foreground text-center">Нет данных</div>
 
-        <table v-else class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-border bg-muted/50">
-              <th class="text-left px-4 py-3 font-medium text-muted-foreground">Категория</th>
-              <th class="text-right px-4 py-3 font-medium text-muted-foreground">Фудкост</th>
-              <th class="text-right px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">Себестоимость</th>
-              <th class="text-right px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">Выручка</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in data.categories" :key="item.name" class="border-b border-border/50 last:border-0">
-              <td class="px-4 py-3 text-foreground">{{ item.name }}</td>
-              <td class="px-4 py-3 text-right font-medium" :class="getPercentClass(item.percent)">{{ formatPercent(item.percent) }}</td>
-              <td class="px-4 py-3 text-right hidden md:table-cell">{{ formatCurrency(item.cost) }}</td>
-              <td class="px-4 py-3 text-right hidden md:table-cell">{{ formatCurrency(item.revenue) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <Table v-else class="w-full text-sm">
+          <TableHeader>
+            <TableRow class="border-b border-border bg-muted/50">
+              <TableHead class="text-left font-medium text-muted-foreground">Категория</TableHead>
+              <TableHead class="text-right font-medium text-muted-foreground">Фудкост</TableHead>
+              <TableHead class="text-right font-medium text-muted-foreground hidden md:table-cell">Себестоимость</TableHead>
+              <TableHead class="text-right font-medium text-muted-foreground hidden md:table-cell">Выручка</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="item in data.categories" :key="item.name" class="border-b border-border/50 last:border-0">
+              <TableCell class="text-foreground">{{ item.name }}</TableCell>
+              <TableCell class="text-right font-medium" :class="getPercentClass(item.percent)">{{ formatPercent(item.percent) }}</TableCell>
+              <TableCell class="text-right hidden md:table-cell">{{ formatCurrency(item.cost) }}</TableCell>
+              <TableCell class="text-right hidden md:table-cell">{{ formatCurrency(item.revenue) }}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
       </Card>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
-import { AlertCircle, Percent } from "lucide-vue-next";
-import PageFilters from "@/components/filters/PageFilters.vue";
-import MetricCard from "@/components/metrics/MetricCard.vue";
-import Card from "@/components/ui/Card.vue";
-import { useAutoRefresh } from "@/composables/useAutoRefresh";
-import { useRevenueStore } from "@/stores/revenue";
-import { useFoodcostStore } from "@/stores/foodcost";
-import { useFiltersStore } from "@/stores/filters";
-import { usePlansStore } from "@/stores/plans";
-import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
+import { computed, onMounted, ref } from"vue";
+import { AlertCircle, Percent } from"lucide-vue-next";
+import PageFilters from"@/components/filters/PageFilters.vue";
+import MetricCard from"@/components/metrics/MetricCard.vue";
+import Card from"@/components/ui/Card.vue";
+import { useAutoRefresh } from"@/composables/useAutoRefresh";
+import { useRevenueStore } from"@/stores/revenue";
+import { useFoodcostStore } from"@/stores/foodcost";
+import { useFiltersStore } from"@/stores/filters";
+import { usePlansStore } from"@/stores/plans";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const revenueStore = useRevenueStore();
 const foodcostStore = useFoodcostStore();
@@ -125,56 +124,56 @@ const data = computed(() => foodcostStore.foodcostData);
 
 const statusLabel = computed(() => {
   switch (data.value?.status) {
-    case "critical":
-      return "Критично";
-    case "warning":
-      return "Требует внимания";
-    case "unavailable":
-      return "Нет данных";
+    case"critical":
+      return"Критично";
+    case"warning":
+      return"Требует внимания";
+    case"unavailable":
+      return"Нет данных";
     default:
-      return "Норма";
+      return"Норма";
   }
 });
 
 const statusClass = computed(() => {
   switch (data.value?.status) {
-    case "critical":
-      return "bg-destructive/10 text-destructive";
-    case "warning":
-      return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-    case "unavailable":
-      return "bg-muted text-muted-foreground";
+    case"critical":
+      return"bg-destructive/10 text-destructive";
+    case"warning":
+      return"bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
+    case"unavailable":
+      return"bg-muted text-muted-foreground";
     default:
-      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+      return"bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
   }
 });
 
 const barClass = computed(() => {
   switch (data.value?.status) {
-    case "critical":
-      return "bg-destructive";
-    case "warning":
-      return "bg-yellow-500";
-    case "unavailable":
-      return "bg-muted-foreground/40";
+    case"critical":
+      return"bg-destructive";
+    case"warning":
+      return"bg-yellow-500";
+    case"unavailable":
+      return"bg-muted-foreground/40";
     default:
-      return "bg-emerald-500";
+      return"bg-emerald-500";
   }
 });
 
 function getPercentClass(value) {
-  if (value > 35) return "text-destructive";
-  if (value >= 30) return "text-yellow-700 dark:text-yellow-400";
-  return "text-emerald-700 dark:text-emerald-400";
+  if (value > 35) return"text-destructive";
+  if (value >= 30) return"text-yellow-700 dark:text-yellow-400";
+  return"text-emerald-700 dark:text-emerald-400";
 }
 
 function formatCurrency(val) {
-  if (val == null) return "—";
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
+  if (val == null) return"—";
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(val);
 }
 
 function formatPercent(val) {
-  if (val == null) return "—";
+  if (val == null) return"—";
   return `${Number(val).toFixed(2)}%`;
 }
 
@@ -193,7 +192,7 @@ async function handleApply(payload = {}) {
   try {
     await foodcostStore.loadFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
   } catch (e) {
-    error.value = e.message || "Ошибка загрузки фудкоста";
+    error.value = e.message ||"Ошибка загрузки фудкоста";
   }
 }
 

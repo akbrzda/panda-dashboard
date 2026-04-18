@@ -1,10 +1,10 @@
 <template>
-  <div class="min-h-screen bg-background text-foreground flex">
+  <div class="flex min-h-screen bg-background text-foreground">
     <Sidebar />
 
-    <div class="flex-1 flex min-w-0 flex-col">
+    <div class="flex min-w-0 flex-1 flex-col">
       <AppHeader />
-      <main class="flex-1 overflow-auto p-4 md:p-6">
+      <main class="flex-1 p-4 md:p-6">
         <router-view />
       </main>
     </div>

@@ -4,16 +4,6 @@
       <h1 class="text-2xl font-bold text-foreground">KPI курьеров</h1>
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
-
-    <ReportInfoBlock
-      title="О отчете KPI курьеров"
-      purpose="Отчет показывает эффективность работы курьеров по скорости, объему доставок и стабильности SLA."
-      meaning="Позволяет сравнивать курьеров между собой и видеть нагрузку по маршрутам."
-      calculation="Маршруты группируются по фактическим выездам, распределение строится по реальному числу заказов в маршруте."
-      responsibility="Используется руководителем доставки для балансировки смен и контроля качества."
-    />
-    <p v-if="report?.timezone" class="text-xs text-muted-foreground">Часовой пояс отчета: {{ report.timezone }}</p>
-
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
@@ -59,33 +49,32 @@
 
       <div class="grid grid-cols-1 gap-4 2xl:grid-cols-[1.35fr_1fr]">
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Рейтинг курьеров</h3>
           <div class="overflow-x-auto">
-            <table class="min-w-full border-collapse text-xs">
-              <thead>
-                <tr class="bg-muted/30 text-muted-foreground">
-                  <th class="px-3 py-2 text-left font-medium">Курьер</th>
-                  <th class="px-3 py-2 text-left font-medium">Заказы</th>
-                  <th class="px-3 py-2 text-left font-medium">Выручка</th>
-                  <th class="px-3 py-2 text-left font-medium">Ср. в пути</th>
-                  <th class="px-3 py-2 text-left font-medium">Ср. цикл</th>
-                  <th class="px-3 py-2 text-left font-medium">Р’ SLA, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="courier in topCouriers" :key="courier.courierId" class="border-t border-border/50">
-                  <td class="px-3 py-2 text-foreground">{{ courier.courierName }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(courier.orders) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatCurrency(courier.revenue) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatDuration(courier.avgRouteMinutes) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatDuration(courier.avgTotalMinutes) }}</td>
-                  <td class="px-3 py-2 text-foreground">{{ formatNumber(courier.onTimeRate) }}</td>
-                </tr>
-                <tr v-if="topCouriers.length === 0" class="border-t border-border/50">
-                  <td colspan="6" class="px-3 py-4 text-center text-muted-foreground">Нет данных по курьерам за выбранный период</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table class="min-w-full border-collapse text-xs">
+              <TableHeader>
+                <TableRow class="bg-muted/30 text-muted-foreground">
+                  <TableHead class="text-left font-medium">Курьер</TableHead>
+                  <TableHead class="text-left font-medium">Заказы</TableHead>
+                  <TableHead class="text-left font-medium">Выручка</TableHead>
+                  <TableHead class="text-left font-medium">Ср. в пути</TableHead>
+                  <TableHead class="text-left font-medium">Ср. цикл</TableHead>
+                  <TableHead class="text-left font-medium">Р’ SLA, %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="courier in topCouriers" :key="courier.courierId" class="border-t border-border/50">
+                  <TableCell class="text-foreground">{{ courier.courierName }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(courier.orders) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatCurrency(courier.revenue) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatDuration(courier.avgRouteMinutes) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatDuration(courier.avgTotalMinutes) }}</TableCell>
+                  <TableCell class="text-foreground">{{ formatNumber(courier.onTimeRate) }}</TableCell>
+                </TableRow>
+                <TableRow v-if="topCouriers.length === 0" class="border-t border-border/50">
+                  <TableCell colspan="6" class="text-center text-muted-foreground">Нет данных по курьерам за выбранный период</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </Card>
 
@@ -113,16 +102,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { AlertCircle, Users } from "lucide-vue-next";
-import { useReportsStore } from "../stores/reports";
-import { useFiltersStore } from "../stores/filters";
-import { useRevenueStore } from "../stores/revenue";
-import PageFilters from "../components/filters/PageFilters.vue";
-import Card from "../components/ui/Card.vue";
-import MetricCard from "../components/metrics/MetricCard.vue";
-import ReportInfoBlock from "../components/reports/ReportInfoBlock.vue";
-import { formatMinutesToHms } from "../lib/utils";
+import { computed, onMounted } from"vue";
+import { AlertCircle, Users } from"lucide-vue-next";
+import { useReportsStore } from"../stores/reports";
+import { useFiltersStore } from"../stores/filters";
+import { useRevenueStore } from"../stores/revenue";
+import PageFilters from"../components/filters/PageFilters.vue";
+import Card from"../components/ui/Card.vue";
+import MetricCard from"../components/metrics/MetricCard.vue";
+import { formatMinutesToHms } from"../lib/utils";
+
+import Table from"@/components/ui/Table.vue";
+import TableBody from"@/components/ui/TableBody.vue";
+import TableCell from"@/components/ui/TableCell.vue";
+import TableHead from"@/components/ui/TableHead.vue";
+import TableHeader from"@/components/ui/TableHeader.vue";
+import TableRow from"@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -140,7 +135,7 @@ function formatNumber(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
 function formatDuration(value) {
