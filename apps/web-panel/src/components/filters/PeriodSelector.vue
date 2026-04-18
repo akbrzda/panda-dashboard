@@ -4,11 +4,13 @@
       type="button"
       @click="isOpen = !isOpen"
       variant="outline"
-      class="h-9 min-w-[220px] justify-start px-3"
+      class="h-9 w-full justify-between px-3 text-left"
     >
-      <CalendarDays class="w-4 h-4 text-muted-foreground shrink-0" />
-      <span class="max-w-[180px] truncate">{{ currentLabel }}</span>
-      <ChevronDown class="w-3 h-3 text-muted-foreground shrink-0 ml-1" />
+      <span class="flex min-w-0 items-center gap-2">
+        <CalendarDays class="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span class="truncate">{{ currentLabel }}</span>
+      </span>
+      <ChevronDown class="ml-2 h-3 w-3 shrink-0 text-muted-foreground" />
     </Button>
 
     <!-- Выпадающий список -->

@@ -3,15 +3,15 @@ import { computed } from "vue";
 import { useSalesReportsStore } from "./domain/salesReports";
 import { useDeliveryReportsStore } from "./domain/deliveryReports";
 import { useMarketingReportsStore } from "./domain/marketingReports";
-import { useAssortmentReportsStore } from "./domain/assortmentReports";
+import { useProductAbcReportsStore } from "./domain/productAbcReports";
 
 export const useReportsStore = defineStore("reports", () => {
   const salesStore = useSalesReportsStore();
   const deliveryStore = useDeliveryReportsStore();
   const marketingStore = useMarketingReportsStore();
-  const assortmentStore = useAssortmentReportsStore();
+  const productAbcStore = useProductAbcReportsStore();
 
-  const error = computed(() => salesStore.error || deliveryStore.error || marketingStore.error || assortmentStore.error || null);
+  const error = computed(() => salesStore.error || deliveryStore.error || marketingStore.error || productAbcStore.error || null);
 
   const revenueData = computed(() => salesStore.revenueData);
   const hourlySales = computed(() => salesStore.hourlySales);
@@ -27,7 +27,7 @@ export const useReportsStore = defineStore("reports", () => {
   const marketingSourcesReport = computed(() => marketingStore.marketingSourcesReport);
   const promotionsReport = computed(() => marketingStore.promotionsReport);
 
-  const menuAbcReport = computed(() => assortmentStore.menuAbcReport);
+  const menuAbcReport = computed(() => productAbcStore.productAbcReport);
 
   const isLoadingRevenue = computed(() => salesStore.isLoadingRevenue);
   const isLoadingCourier = computed(() => deliveryStore.isLoadingCourierRoutes);
@@ -39,7 +39,7 @@ export const useReportsStore = defineStore("reports", () => {
   const isLoadingDeliveryDelays = computed(() => deliveryStore.isLoadingDeliveryDelays);
   const isLoadingCourierMap = computed(() => deliveryStore.isLoadingCourierMap);
   const isLoadingPromotions = computed(() => marketingStore.isLoadingPromotions);
-  const isLoadingMenuAbc = computed(() => assortmentStore.isLoadingMenuAbc);
+  const isLoadingMenuAbc = computed(() => productAbcStore.isLoadingProductAbc);
   const isLoadingProductionForecast = computed(() => salesStore.isLoadingProductionForecast);
 
   const loadRevenue = async (params) => await salesStore.loadRevenue(params);
@@ -52,14 +52,14 @@ export const useReportsStore = defineStore("reports", () => {
   const loadDeliveryDelays = async (params) => await deliveryStore.loadDeliveryDelays(params);
   const loadCourierMap = async (params) => await deliveryStore.loadCourierMap(params);
   const loadPromotions = async (params) => await marketingStore.loadPromotions(params);
-  const loadMenuAbc = async (params) => await assortmentStore.loadMenuAbc(params);
+  const loadMenuAbc = async (params) => await productAbcStore.loadProductAbc(params);
   const loadProductionForecast = async (params) => await salesStore.loadProductionForecast(params);
 
   const $reset = () => {
     salesStore.$reset();
     deliveryStore.$reset();
     marketingStore.$reset();
-    assortmentStore.$reset();
+    productAbcStore.$reset();
   };
 
   return {

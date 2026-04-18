@@ -2,7 +2,14 @@ const salesDomain = require("./domains/sales");
 const deliveryDomain = require("./domains/delivery");
 const marketingDomain = require("./domains/marketing");
 const assortmentDomain = require("./domains/assortment");
-const { validateCommonParams } = require("./shared/reportQuery");
+const {
+  validateCommonParams,
+  validateMenuAbcParams,
+  validateDeliveryZonesGetParams,
+  validateDeliveryZonesSaveParams,
+  validateProductionForecastParams,
+} = require("./shared/reportQuery");
+const { successResponse, errorResponse } = require("../shared/apiResponse");
 
 class ReportsController {
   parseStringArray(value) {
@@ -24,134 +31,183 @@ class ReportsController {
     return this.parseStringArray(value);
   }
 
-  validateCommonParams(res, payload = {}) {
-    const validation = validateCommonParams(payload);
-    if (!validation.isValid) {
-      res.status(400).json({ error: validation.message });
-      return false;
-    }
-    return true;
+  sendValidationError(res, validation, report) {
+    return res.status(400).json(
+      errorResponse({
+        code: validation.code || "VALIDATION_ERROR",
+        message: validation.message,
+        meta: {
+          report,
+        },
+      }),
+    );
+  }
+
+  sendInternalError(res, report, fallbackMessage, error) {
+    return res.status(500).json(
+      errorResponse({
+        code: "INTERNAL_ERROR",
+        message: fallbackMessage,
+        details: error?.message || null,
+        meta: {
+          report,
+        },
+      }),
+    );
+  }
+
+  sendSuccess(res, report, data) {
+    return res.json(
+      successResponse(data, {
+        report,
+      }),
+    );
   }
 
   async getRevenue(req, res) {
+    const report = "revenue";
     try {
-      const { organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const { lflDateFrom, lflDateTo } = req.body || {};
       const data = await salesDomain.getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getRevenue:", error);
-      return res.status(500).json({ error: "Ошибка получения данных о выручке", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения данных о выручке", error);
     }
   }
 
   async getOperational(req, res) {
+    const report = "operational";
     try {
-      const { organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const { lflDateFrom, lflDateTo } = req.body || {};
       const data = await salesDomain.getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getOperational:", error);
-      return res.status(500).json({ error: "Ошибка получения операционных метрик", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения операционных метрик", error);
     }
   }
 
   async getCourierRoutes(req, res) {
+    const report = "courier-routes";
     try {
-      const { organizationId, dateFrom, dateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await deliveryDomain.getCourierRoutes({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getCourierRoutes:", error);
-      return res.status(500).json({ error: "Ошибка получения маршрутов курьеров", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения маршрутов курьеров", error);
     }
   }
 
   async getHourlySales(req, res) {
+    const report = "hourly-sales";
     try {
-      const { organizationId, dateFrom, dateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await salesDomain.getHourlySales({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getHourlySales:", error);
-      return res.status(500).json({ error: "Ошибка получения почасовых продаж", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения почасовых продаж", error);
     }
   }
 
   async getSla(req, res) {
+    const report = "sla";
     try {
-      const { organizationId, dateFrom, dateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await deliveryDomain.getSla({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getSla:", error);
-      return res.status(500).json({ error: "Ошибка получения SLA-метрик", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения SLA-метрик", error);
     }
   }
 
   async getCourierKpi(req, res) {
+    const report = "courier-kpi";
     try {
-      const { organizationId, dateFrom, dateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await deliveryDomain.getCourierKpi({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getCourierKpi:", error);
-      return res.status(500).json({ error: "Ошибка получения KPI курьеров", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения KPI курьеров", error);
     }
   }
 
   async getMarketingSources(req, res) {
+    const report = "marketing-sources";
     try {
-      const { organizationId, dateFrom, dateTo } = req.body;
-      if (!this.validateCommonParams(res, req.body)) return;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await marketingDomain.getMarketingSources({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getMarketingSources:", error);
-      return res.status(500).json({ error: "Ошибка получения маркетинговых источников", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения маркетинговых источников", error);
     }
   }
 
   async getDeliverySummary(req, res) {
+    const report = "delivery-summary";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await deliveryDomain.getDeliverySummary({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliverySummary:", error);
-      return res.status(500).json({ error: "Ошибка получения сводки доставки", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения сводки доставки", error);
     }
   }
 
   async getDeliveryDelays(req, res) {
+    const report = "delivery-delays";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await deliveryDomain.getDeliveryDelays({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryDelays:", error);
-      return res.status(500).json({ error: "Ошибка получения отчета по опозданиям", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения отчета по опозданиям", error);
     }
   }
 
   async exportDeliveryDelays(req, res) {
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
+      const report = "delivery-delays-export";
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const { buffer, filename } = await deliveryDomain.exportDeliveryDelays({ organizationId, dateFrom, dateTo });
 
       res.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
@@ -159,14 +215,18 @@ class ReportsController {
       return res.send(buffer);
     } catch (error) {
       console.error("❌ ReportsController.exportDeliveryDelays:", error);
-      return res.status(500).json({ error: "Ошибка выгрузки отчета по опозданиям", message: error.message });
+      return this.sendInternalError(res, "delivery-delays-export", "Ошибка выгрузки отчета по опозданиям", error);
     }
   }
 
   async getCourierMap(req, res) {
+    const report = "courier-map";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.body;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const terminalGroupId = req.body?.terminalGroupId;
       const statuses = this.parseStatuses(req.body?.statuses);
       const sourceKeys = this.parseStringArray(req.body?.sourceKeys);
       const courierIds = this.parseStringArray(req.body?.courierIds);
@@ -179,17 +239,21 @@ class ReportsController {
         sourceKeys,
         courierIds,
       });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getCourierMap:", error);
-      return res.status(500).json({ error: "Ошибка получения данных карты курьеров", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения данных карты курьеров", error);
     }
   }
 
   async getDeliveryHeatmap(req, res) {
+    const report = "delivery-heatmap";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.body;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const terminalGroupId = req.body?.terminalGroupId;
       const statuses = this.parseStatuses(req.body?.statuses);
       const sourceKeys = this.parseStringArray(req.body?.sourceKeys);
       const courierIds = this.parseStringArray(req.body?.courierIds);
@@ -202,20 +266,24 @@ class ReportsController {
         sourceKeys,
         courierIds,
       });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryHeatmap:", error);
-      return res.status(500).json({ error: "Ошибка получения тепловой карты доставок", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения тепловой карты доставок", error);
     }
   }
 
   async getDeliveryHeatmapQuery(req, res) {
+    const report = "delivery-heatmap";
     try {
-      const { organizationId, dateFrom, dateTo, terminalGroupId } = req.query;
+      const validation = validateCommonParams(req.query);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const terminalGroupId = req.query?.terminalGroupId;
       const statuses = this.parseStatuses(req.query?.statuses);
       const sourceKeys = this.parseStringArray(req.query?.sourceKeys);
       const courierIds = this.parseStringArray(req.query?.courierIds);
-      if (!this.validateCommonParams(res, { organizationId, dateFrom, dateTo })) return;
 
       const data = await deliveryDomain.getDeliveryHeatmap({
         organizationId,
@@ -226,80 +294,89 @@ class ReportsController {
         sourceKeys,
         courierIds,
       });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryHeatmapQuery:", error);
-      return res.status(500).json({ error: "Ошибка получения тепловой карты доставок", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения тепловой карты доставок", error);
     }
   }
 
   async getDeliveryZones(req, res) {
+    const report = "delivery-zones";
     try {
-      const { organizationId, terminalGroupId } = req.query;
-      if (!organizationId) {
-        return res.status(400).json({ error: "Обязательный параметр: organizationId" });
-      }
+      const validation = validateDeliveryZonesGetParams(req.query || {});
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, terminalGroupId } = validation.normalized;
       const data = await deliveryDomain.getDeliveryZones({ organizationId, terminalGroupId });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryZones:", error);
-      return res.status(500).json({ error: "Ошибка получения зон доставки", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения зон доставки", error);
     }
   }
 
   async saveDeliveryZones(req, res) {
+    const report = "delivery-zones-save";
     try {
-      const { organizationId, terminalGroupId, geoJson } = req.body || {};
-      if (!organizationId || !geoJson) {
-        return res.status(400).json({ error: "Обязательные параметры: organizationId, geoJson" });
-      }
+      const validation = validateDeliveryZonesSaveParams(req.body || {});
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
+      const { organizationId, terminalGroupId, geoJson } = validation.normalized;
       const data = await deliveryDomain.saveDeliveryZones({ organizationId, terminalGroupId, geoJson });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.saveDeliveryZones:", error);
-      return res.status(500).json({ error: "Ошибка сохранения зон доставки", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка сохранения зон доставки", error);
     }
   }
 
   async getPromotions(req, res) {
+    const report = "promotions";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo } = req.body;
+      const validation = validateCommonParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
       const data = await marketingDomain.getPromotions({ organizationId, dateFrom, dateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getPromotions:", error);
-      return res.status(500).json({ error: "Ошибка получения отчета по акциям и промокодам", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения отчета по акциям и промокодам", error);
+    }
+  }
+
+  async getProductAbc(req, res) {
+    const report = "product-abc";
+    try {
+      const validation = validateMenuAbcParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo, abcGroup, page, limit } = validation.normalized;
+      const data = await assortmentDomain.getProductAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
+      return this.sendSuccess(res, report, data);
+    } catch (error) {
+      console.error("❌ ReportsController.getProductAbc:", error);
+      return this.sendInternalError(res, report, "Ошибка получения продуктового ABC-анализа", error);
     }
   }
 
   async getMenuAbc(req, res) {
-    try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50 } = req.body;
-      const data = await assortmentDomain.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
-    } catch (error) {
-      console.error("❌ ReportsController.getMenuAbc:", error);
-      return res.status(500).json({ error: "Ошибка получения ABC-анализа меню", message: error.message });
-    }
-  }
-
-  async getMenuAssortment(req, res) {
-    return await this.getMenuAbc(req, res);
+    return await this.getProductAbc(req, res);
   }
 
   async getProductionForecast(req, res) {
+    const report = "production-forecast";
     try {
-      if (!this.validateCommonParams(res, req.body)) return;
-      const { organizationId, dateFrom, dateTo, forecastDate } = req.body;
+      const validation = validateProductionForecastParams(req.body);
+      if (!validation.isValid) return this.sendValidationError(res, validation, report);
+
+      const { organizationId, dateFrom, dateTo, forecastDate } = validation.normalized;
       const data = await salesDomain.getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getProductionForecast:", error);
-      return res.status(500).json({ error: "Ошибка получения прогноза загрузки производства", message: error.message });
+      return this.sendInternalError(res, report, "Ошибка получения прогноза загрузки производства", error);
     }
   }
 }

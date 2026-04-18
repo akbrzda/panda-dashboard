@@ -4,12 +4,12 @@
       <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
     </div>
     <div v-else-if="!hasData" class="flex items-center justify-center h-72 text-sm text-muted-foreground">Нет данных</div>
-    <div v-else class="grid h-full items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <div class="mx-auto h-52 w-52 self-center">
+    <div v-else class="space-y-4">
+      <div class="mx-auto h-52 w-52">
         <Pie :key="themeVersion" :data="chartData" :options="chartOptions" class="h-full w-full" />
       </div>
 
-      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+      <div class="grid gap-2 sm:grid-cols-2">
         <div
           v-for="item in channelItems"
           :key="item.name"

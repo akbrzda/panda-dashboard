@@ -1,6 +1,19 @@
 const axios = require("axios");
 const config = require("../../config");
 
+const DEFAULT_TOKEN_TTL_MS = 9 * 60 * 1000;
+const DEFAULT_RAW_STOP_LIST_TTL_MS = 45 * 1000;
+const DEFAULT_NOMENCLATURE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_MENU_V2_TTL_MS = 10 * 60 * 1000;
+
+const sharedCache = {
+  token: null,
+  tokenExpiresAt: 0,
+  rawStopLists: new Map(),
+  nomenclature: new Map(),
+  menuV2: new Map(),
+};
+
 class IikoApiError extends Error {
   constructor(message, status = 500, details = null) {
     super(message);
@@ -47,8 +60,418 @@ class IikoService {
     return new IikoApiError(message, status, error.response?.data || null);
   }
 
-  async fetchAccessToken() {
+  _isCacheValid(expiresAt) {
+    return Number(expiresAt) > Date.now();
+  }
+
+  _buildRawStopListCacheKey(organizationIds = []) {
+    return organizationIds
+      .map((id) => String(id).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .join(",");
+  }
+
+  _buildNomenclatureCacheKey(organizationIds = []) {
+    return this._buildRawStopListCacheKey(organizationIds);
+  }
+
+  _buildMenuV2CacheKey(organizationIds = [], externalMenuId = "") {
+    return `${this._buildRawStopListCacheKey(organizationIds)}::${String(externalMenuId || "").trim()}`;
+  }
+
+  _parseDateToIso(value) {
+    if (!value) return null;
+    const source = String(value).trim();
+    if (!source) return null;
+
+    const normalizedSource = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(source) ? `${source.replace(" ", "T")}Z` : source;
+    const date = new Date(normalizedSource);
+
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+  }
+
+  _resolveTokenTtlMs(responseData) {
+    const candidates = [
+      responseData?.expiresIn,
+      responseData?.expires_in,
+      responseData?.tokenTtl,
+      responseData?.ttl,
+      responseData?.tokenExpiresIn,
+    ];
+
+    for (const value of candidates) {
+      const seconds = Number(value);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return Math.max(60, seconds - 30) * 1000;
+      }
+    }
+
+    return DEFAULT_TOKEN_TTL_MS;
+  }
+
+  _resolveEntityType(item = {}) {
+    const explicitType = String(item.entityType || item.itemType || item.type || item.stopListItemType || "")
+      .trim()
+      .toLowerCase();
+
+    if (["product", "modifier", "group"].includes(explicitType)) {
+      return explicitType;
+    }
+
+    if (item.modifierId || item.productModifierId || item.modifierGroupId || item.modifier?.id) {
+      return "modifier";
+    }
+
+    if (item.productGroupId || item.groupId || item.menuGroupId || item.categoryId) {
+      return "group";
+    }
+
+    return "product";
+  }
+
+  _resolveEntity(item = {}) {
+    const entityType = this._resolveEntityType(item);
+    const product = item.product || {};
+    const modifier = item.modifier || {};
+    const group = item.group || item.productGroup || {};
+
+    if (entityType === "modifier") {
+      const entityId = item.modifierId || item.productModifierId || modifier.id || item.id || "";
+      const entityName = item.modifierName || modifier.name || item.name || item.itemName || "";
+      return {
+        entityType,
+        entityId: String(entityId || ""),
+        entityName: String(entityName || ""),
+      };
+    }
+
+    if (entityType === "group") {
+      const entityId = item.productGroupId || item.groupId || item.menuGroupId || group.id || item.id || "";
+      const entityName = item.groupName || item.productGroupName || group.name || item.name || item.itemName || "";
+      return {
+        entityType,
+        entityId: String(entityId || ""),
+        entityName: String(entityName || ""),
+      };
+    }
+
+    const entityId = item.productId || product.id || item.id || "";
+    const entityName = item.productFullName || item.productName || product.fullName || product.name || item.itemName || item.name || "";
+
+    return {
+      entityType: "product",
+      entityId: String(entityId || ""),
+      entityName: String(entityName || ""),
+    };
+  }
+
+  _hasEntityMarkers(item = {}) {
+    if (!item || typeof item !== "object") return false;
+    return Boolean(
+      item.productId ||
+        item.modifierId ||
+        item.productModifierId ||
+        item.productGroupId ||
+        item.groupId ||
+        item.menuGroupId ||
+        item.entityId,
+    );
+  }
+
+  _collectNormalizedItemFromNode(node = {}, context = {}, orgMap = new Map()) {
+    const organizationId = String(node.organizationId || node.orgId || context.organizationId || "");
+    const organizationName =
+      String(node.organizationName || node.organization?.name || context.organizationName || orgMap.get(organizationId) || "");
+    const terminalGroupId = String(node.terminalGroupId || node.terminalGroup?.id || context.terminalGroupId || "");
+    const terminalGroupName = String(node.terminalGroupName || node.terminalGroup?.name || node.departmentName || context.terminalGroupName || "");
+    const entity = this._resolveEntity(node);
+    const startedAt = this._parseDateToIso(node.openedAt || node.dateAdd || node.date || node.startDate || node.createdAt || null);
+    const endedAt = this._parseDateToIso(node.closedAt || node.endDate || null);
+    const status = String(node.status || node.state || "").trim() || null;
+    const isInStop = endedAt ? false : node.isInStop === false ? false : node.isInStopList === false ? false : true;
+    const normalizedEntityName =
+      String(entity.entityName || node.entityName || node.productName || node.itemName || node.name || "").trim() || "Без названия";
+    const safeEntityId = String(entity.entityId || node.entityId || node.productId || node.id || "").trim();
+
+    // Не пропускаем в итог контейнеры без сущности.
+    if (!safeEntityId && !this._hasEntityMarkers(node)) {
+      return null;
+    }
+
+    return {
+      id: `${organizationId || "unknown-org"}:${terminalGroupId || "unknown-tg"}:${entity.entityType}:${safeEntityId || "unknown-entity"}`,
+      organizationId,
+      organizationName,
+      terminalGroupId,
+      terminalGroupName,
+      entityId: safeEntityId,
+      entityName: normalizedEntityName,
+      entityType: entity.entityType,
+      balance: Number(node.balance || 0),
+      reason: String(node.reason || node.comment || context.reason || ""),
+      isInStop,
+      startedAt,
+      endedAt,
+      status,
+      raw: {
+        groupId: String(context.groupId || ""),
+        itemId: String(node.id || ""),
+        sku: String(node.sku || node.productCode || ""),
+        productCode: String(node.productCode || ""),
+      },
+    };
+  }
+
+  _collectNomenclatureEntityMaps(payload = {}) {
+    const productMap = new Map();
+    const modifierMap = new Map();
+    const groupMap = new Map();
+    const visited = new Set();
+
+    const rememberEntity = (map, id, name) => {
+      const normalizedId = String(id || "").trim();
+      const normalizedName = String(name || "").trim();
+      if (!normalizedId || !normalizedName) return;
+      if (!map.has(normalizedId)) {
+        map.set(normalizedId, normalizedName);
+      }
+    };
+
+    const walk = (value) => {
+      if (!value || typeof value !== "object") return;
+      if (visited.has(value)) return;
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          walk(item);
+        }
+        return;
+      }
+
+      const id = value.id || value.productId || value.modifierId || value.groupId;
+      const name = value.name || value.productName || value.fullName || value.title;
+      const marker = String(value.type || value.itemType || value.entityType || value.classifier || "").toLowerCase();
+
+      if (value.productCategoryId || marker.includes("product") || "fatAmount" in value || "sizePrices" in value || "price" in value) {
+        rememberEntity(productMap, id, name);
+      }
+
+      if (value.minAmount != null || value.maxAmount != null || marker.includes("modifier") || "defaultAmount" in value) {
+        rememberEntity(modifierMap, id, name);
+      }
+
+      if (Array.isArray(value.childModifiers) || Array.isArray(value.groups) || marker.includes("group")) {
+        rememberEntity(groupMap, id, name);
+      }
+
+      // Универсальные поля некоторых версий payload.
+      if ("products" in value && Array.isArray(value.products)) {
+        for (const product of value.products) {
+          rememberEntity(productMap, product?.id, product?.name || product?.fullName);
+        }
+      }
+
+      if ("modifiers" in value && Array.isArray(value.modifiers)) {
+        for (const modifier of value.modifiers) {
+          rememberEntity(modifierMap, modifier?.id, modifier?.name);
+        }
+      }
+
+      if ("groups" in value && Array.isArray(value.groups)) {
+        for (const group of value.groups) {
+          rememberEntity(groupMap, group?.id, group?.name);
+        }
+      }
+
+      for (const key of Object.keys(value)) {
+        walk(value[key]);
+      }
+    };
+
+    walk(payload);
+
+    return {
+      products: productMap,
+      modifiers: modifierMap,
+      groups: groupMap,
+    };
+  }
+
+  async fetchMenuV2Index(token, organizationIds = [], options = {}) {
+    if (!token) {
+      throw new IikoApiError("Не передан токен IIKO", 500);
+    }
+
+    const { forceRefresh = false, menuV2TtlMs = DEFAULT_MENU_V2_TTL_MS } = options;
+    const normalizedOrganizationIds = (organizationIds || []).map((id) => String(id)).filter(Boolean);
+    const externalMenuId = String(config.iiko.externalMenuId || "").trim();
+    const cacheKey = this._buildMenuV2CacheKey(normalizedOrganizationIds, externalMenuId);
+
+    if (!forceRefresh && cacheKey) {
+      const cached = sharedCache.menuV2.get(cacheKey);
+      if (cached && this._isCacheValid(cached.expiresAt)) {
+        return cached.value;
+      }
+    }
+
+    const requestQueue = [];
+
+    if (externalMenuId) {
+      if (normalizedOrganizationIds.length > 0) {
+        requestQueue.push({
+          url: "/api/2/menu/by_id",
+          body: { externalMenuId, organizationIds: normalizedOrganizationIds },
+        });
+        requestQueue.push({
+          url: "/api/2/menu/by_id",
+          body: { externalMenuId, organizationId: normalizedOrganizationIds[0] },
+        });
+      } else {
+        requestQueue.push({
+          url: "/api/2/menu/by_id",
+          body: { externalMenuId },
+        });
+      }
+    }
+
+    if (normalizedOrganizationIds.length > 0) {
+      requestQueue.push({
+        url: "/api/2/menu",
+        body: { organizationIds: normalizedOrganizationIds },
+      });
+      requestQueue.push({
+        url: "/api/2/menu",
+        body: { organizationId: normalizedOrganizationIds[0] },
+      });
+    }
+
+    let menuIndex = null;
+    for (const request of requestQueue) {
+      try {
+        const response = await this.client.post(request.url, request.body, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const maps = this._collectNomenclatureEntityMaps(response.data || {});
+        menuIndex = {
+          products: maps.products,
+          modifiers: maps.modifiers,
+          groups: maps.groups,
+        };
+        if ((menuIndex.products.size || 0) + (menuIndex.modifiers.size || 0) + (menuIndex.groups.size || 0) > 0) {
+          break;
+        }
+      } catch (_) {
+        // пробуем следующий вариант запроса
+      }
+    }
+
+    if (!menuIndex) {
+      menuIndex = {
+        products: new Map(),
+        modifiers: new Map(),
+        groups: new Map(),
+      };
+    }
+
+    // Fallback для окружений, где menu v2 недоступен.
+    if ((menuIndex.products.size || 0) + (menuIndex.modifiers.size || 0) + (menuIndex.groups.size || 0) === 0) {
+      const nomenclatureIndex = await this.fetchNomenclatureIndex(token, normalizedOrganizationIds, {
+        forceRefresh,
+      });
+      menuIndex = nomenclatureIndex;
+    }
+
+    if (cacheKey) {
+      sharedCache.menuV2.set(cacheKey, {
+        value: menuIndex,
+        expiresAt: Date.now() + menuV2TtlMs,
+      });
+    }
+
+    return menuIndex;
+  }
+
+  async fetchNomenclatureIndex(token, organizationIds = [], options = {}) {
+    if (!token) {
+      throw new IikoApiError("Не передан токен IIKO", 500);
+    }
+
+    const { forceRefresh = false, nomenclatureTtlMs = DEFAULT_NOMENCLATURE_TTL_MS } = options;
+    const normalizedOrganizationIds = (organizationIds || []).map((id) => String(id)).filter(Boolean);
+    const cacheKey = this._buildNomenclatureCacheKey(normalizedOrganizationIds);
+
+    if (!forceRefresh && cacheKey) {
+      const cached = sharedCache.nomenclature.get(cacheKey);
+      if (cached && this._isCacheValid(cached.expiresAt)) {
+        return cached.value;
+      }
+    }
+
+    const requestVariants = [];
+    if (normalizedOrganizationIds.length > 0) {
+      requestVariants.push({ organizationIds: normalizedOrganizationIds });
+      for (const organizationId of normalizedOrganizationIds) {
+        requestVariants.push({ organizationId });
+      }
+    }
+
+    let lastError = null;
+    for (const body of requestVariants) {
+      try {
+        const response = await this.client.post("/nomenclature", body, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const maps = this._collectNomenclatureEntityMaps(response.data || {});
+        const value = {
+          products: maps.products,
+          modifiers: maps.modifiers,
+          groups: maps.groups,
+        };
+
+        if (cacheKey) {
+          sharedCache.nomenclature.set(cacheKey, {
+            value,
+            expiresAt: Date.now() + nomenclatureTtlMs,
+          });
+        }
+
+        return value;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError) {
+      // Названия в stop-list опциональны, поэтому не валим весь endpoint из-за /nomenclature.
+      return {
+        products: new Map(),
+        modifiers: new Map(),
+        groups: new Map(),
+      };
+    }
+
+    return {
+      products: new Map(),
+      modifiers: new Map(),
+      groups: new Map(),
+    };
+  }
+
+  async fetchAccessToken(options = {}) {
     this._ensureApiLogin();
+    const { forceRefresh = false } = options;
+
+    if (!forceRefresh && sharedCache.token && this._isCacheValid(sharedCache.tokenExpiresAt)) {
+      return sharedCache.token;
+    }
 
     try {
       const response = await this.client.post("/access_token", {
@@ -60,6 +483,10 @@ class IikoService {
       if (!token || typeof token !== "string") {
         throw new IikoApiError("IIKO не вернул токен доступа", 502, response.data);
       }
+
+      const ttlMs = this._resolveTokenTtlMs(response.data);
+      sharedCache.token = token;
+      sharedCache.tokenExpiresAt = Date.now() + ttlMs;
 
       return token;
     } catch (error) {
@@ -93,11 +520,12 @@ class IikoService {
     }
   }
 
-  async fetchStopListsWithProducts(token, organizationIds = [], organizations = []) {
+  async fetchStopListsWithProducts(token, organizationIds = [], organizations = [], options = {}) {
     if (!token) {
       throw new IikoApiError("Не передан токен IIKO", 500);
     }
 
+    const { forceRefresh = false, rawCacheTtlMs = DEFAULT_RAW_STOP_LIST_TTL_MS } = options;
     const normalizedOrganizationIds = (organizationIds || []).map((id) => String(id)).filter(Boolean);
 
     if (normalizedOrganizationIds.length === 0) {
@@ -106,6 +534,20 @@ class IikoService {
         normalizedItems: [],
         rawStopListsResponse: null,
       };
+    }
+
+    const cacheKey = this._buildRawStopListCacheKey(normalizedOrganizationIds);
+
+    if (!forceRefresh && cacheKey) {
+      const cachedEntry = sharedCache.rawStopLists.get(cacheKey);
+      if (cachedEntry && this._isCacheValid(cachedEntry.expiresAt)) {
+        const cachedRaw = cachedEntry.rawStopListsResponse || {};
+        return {
+          stopLists: cachedRaw.terminalGroupStopLists || cachedRaw.stopLists || [],
+          normalizedItems: this.normalizeStopListItems(cachedRaw, organizations, normalizedOrganizationIds),
+          rawStopListsResponse: cachedRaw,
+        };
+      }
     }
 
     try {
@@ -125,6 +567,13 @@ class IikoService {
       const stopLists = rawStopListsResponse.terminalGroupStopLists || rawStopListsResponse.stopLists || [];
       const normalizedItems = this.normalizeStopListItems(rawStopListsResponse, organizations, normalizedOrganizationIds);
 
+      if (cacheKey) {
+        sharedCache.rawStopLists.set(cacheKey, {
+          rawStopListsResponse,
+          expiresAt: Date.now() + rawCacheTtlMs,
+        });
+      }
+
       return {
         stopLists,
         normalizedItems,
@@ -139,33 +588,45 @@ class IikoService {
     const orgMap = new Map((organizations || []).map((org) => [String(org.id), org.name]));
     const groups = rawResponse?.terminalGroupStopLists || rawResponse?.stopLists || [];
     const flatItems = [];
+    const fallbackOrganizationId = String(organizationIds[0] || "");
+
+    const traverse = (node = {}, inheritedContext = {}) => {
+      if (!node || typeof node !== "object") return;
+
+      const context = {
+        organizationId: String(node.organizationId || node.orgId || inheritedContext.organizationId || fallbackOrganizationId || ""),
+        organizationName: String(
+          node.organizationName ||
+            node.organization?.name ||
+            inheritedContext.organizationName ||
+            orgMap.get(String(node.organizationId || node.orgId || inheritedContext.organizationId || fallbackOrganizationId || "")) ||
+            "",
+        ),
+        terminalGroupId: String(node.terminalGroupId || node.terminalGroup?.id || node.departmentId || inheritedContext.terminalGroupId || ""),
+        terminalGroupName: String(
+          node.terminalGroupName || node.terminalGroup?.name || node.departmentName || node.name || inheritedContext.terminalGroupName || "",
+        ),
+        reason: String(node.reason || node.comment || inheritedContext.reason || ""),
+        groupId: String(node.id || inheritedContext.groupId || ""),
+      };
+
+      const children = Array.isArray(node.items) ? node.items.filter((item) => item && typeof item === "object") : [];
+      const canBeItem = this._hasEntityMarkers(node) || !children.length;
+
+      if (canBeItem) {
+        const normalized = this._collectNormalizedItemFromNode(node, context, orgMap);
+        if (normalized) {
+          flatItems.push(normalized);
+        }
+      }
+
+      for (const child of children) {
+        traverse(child, context);
+      }
+    };
 
     for (const group of groups) {
-      const groupOrganizationId = String(group.organizationId || group.orgId || organizationIds[0] || "");
-      const organizationName = orgMap.get(groupOrganizationId) || group.organizationName || "";
-      const items = Array.isArray(group.items) ? group.items : [];
-
-      for (const item of items) {
-        const product = item.product || {};
-
-        flatItems.push({
-          organizationId: groupOrganizationId || String(item.organizationId || ""),
-          organizationName,
-          terminalGroupId: String(group.terminalGroupId || item.terminalGroupId || ""),
-          productId: String(item.productId || product.id || item.id || ""),
-          productName: item.productName || product.name || item.name || item.itemName || "",
-          productFullName: item.productFullName || product.fullName || item.fullName || item.productName || product.name || item.name || "",
-          itemName: item.itemName || item.name || product.name || "",
-          sku: item.sku || item.productCode || product.code || "",
-          productCode: item.productCode || product.code || "",
-          balance: Number(item.balance || 0),
-          reason: item.reason || item.comment || group.reason || "",
-          dateAdd: item.dateAdd || item.date || group.dateAdd || null,
-          openedAt: item.openedAt || item.dateAdd || item.date || null,
-          closedAt: item.closedAt || null,
-          isInStopList: !item.closedAt,
-        });
-      }
+      traverse(group, {});
     }
 
     return flatItems;

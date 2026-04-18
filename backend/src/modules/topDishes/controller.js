@@ -1,4 +1,6 @@
 const topDishesService = require("./service");
+const { successResponse, errorResponse } = require("../shared/apiResponse");
+const { validatePeriodParams, validatePositiveInteger } = require("../shared/requestValidation");
 
 class TopDishesController {
   isTemporaryNetworkError(error) {
@@ -10,20 +12,48 @@ class TopDishesController {
 
   async getTopDishes(req, res) {
     try {
-      const { organizationId, dateFrom, dateTo, limit } = req.body;
-
-      if (!dateFrom || !dateTo) {
-        return res.status(400).json({ error: "Обязательные параметры: dateFrom, dateTo" });
+      const validation = validatePeriodParams(req.body || {}, {
+        organizationField: "organizationId",
+        fromField: "dateFrom",
+        toField: "dateTo",
+      });
+      if (!validation.isValid) {
+        return res.status(400).json(
+          errorResponse({
+            code: validation.code || "VALIDATION_ERROR",
+            message: validation.message,
+            meta: { module: "top-dishes" },
+          }),
+        );
       }
 
-      const data = await topDishesService.getTopDishes({ organizationId, dateFrom, dateTo, limit: limit ? Number(limit) : 20 });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      const limitValidation = validatePositiveInteger(req.body?.limit || 20, "limit", { min: 1, max: 200 });
+      if (!limitValidation.isValid) {
+        return res.status(400).json(
+          errorResponse({
+            code: limitValidation.code || "VALIDATION_ERROR",
+            message: limitValidation.message,
+            meta: { module: "top-dishes" },
+          }),
+        );
+      }
+
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const data = await topDishesService.getTopDishes({ organizationId, dateFrom, dateTo, limit: limitValidation.value });
+      return res.json(successResponse(data, { module: "top-dishes" }));
     } catch (error) {
       const status = this.isTemporaryNetworkError(error) ? 503 : 500;
       const message = status === 503 ? "IIKO временно недоступен, попробуйте повторить запрос" : "Ошибка получения топ блюд";
 
       console.error("❌ TopDishesController.getTopDishes:", error);
-      return res.status(status).json({ error: message, message: error.message });
+      return res.status(status).json(
+        errorResponse({
+          code: status === 503 ? "UPSTREAM_ERROR" : "INTERNAL_ERROR",
+          message,
+          details: error.message,
+          meta: { module: "top-dishes" },
+        }),
+      );
     }
   }
 }

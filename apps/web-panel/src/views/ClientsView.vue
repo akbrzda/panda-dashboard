@@ -1,7 +1,20 @@
 <template>
   <div class="space-y-6">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Клиентская аналитика</h1>
+      <ReportPageHeader
+        title="Клиентская аналитика"
+        description="Метрики клиентской базы, сегменты и профиль повторных заказов по выбранному периоду."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="clientsStore.isLoadingClients"
+        @refresh="handleRefresh"
+      />
       <PageFilters :loading="clientsStore.isLoadingClients" @apply="handleApply" />
 
       <Card class="p-4 md:p-5">
@@ -150,9 +163,43 @@
               <Badge v-if="selectedStatuses.length > 0" variant="outline">Статусов: {{ selectedStatuses.length }}</Badge>
             </div>
           </div>
-          <div class="table-shell">
+          <div class="space-y-2 md:hidden">
+            <div v-for="client in visibleClients" :key="`${client.clientKey}-mobile`" class="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div class="mb-2 flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold text-foreground">{{ client.phone || client.clientKey }}</p>
+                  <p class="text-[11px] text-muted-foreground">
+                    {{ [client.profile?.name, client.profile?.surname].filter(Boolean).join(" ") || "Профиль не обогащен" }}
+                  </p>
+                </div>
+                <Badge :variant="getSegmentBadgeVariant(client.segment)">{{ getSegmentLabel(client.segment) }}</Badge>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Заказов</p>
+                  <p class="font-medium text-foreground">{{ formatNumber(client.ordersCount) }}</p>
+                </div>
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Выручка</p>
+                  <p class="font-medium text-foreground">{{ formatCurrency(client.revenue) }}</p>
+                </div>
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Средний чек</p>
+                  <p class="font-medium text-foreground">{{ formatCurrency(client.avgCheck) }}</p>
+                </div>
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Частота</p>
+                  <p class="font-medium text-foreground">{{ formatDecimal(client.orderFrequency) }}</p>
+                </div>
+              </div>
+              <p class="mt-2 text-xs text-muted-foreground">
+                Последний заказ: {{ formatDateTime(client.lastOrderAt) }} ({{ formatSleepingLabel(client.daysSinceLastOrder) }})
+              </p>
+            </div>
+          </div>
+          <div class="table-shell hidden md:block">
             <Table class="min-w-full border-collapse text-xs">
-              <TableHeader>
+              <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
                 <TableRow class="bg-muted/30 text-muted-foreground">
                   <TableHead class="text-left font-medium">Телефон</TableHead>
                   <TableHead class="text-left font-medium">Заказов</TableHead>
@@ -198,9 +245,11 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { Users } from "lucide-vue-next";
 import { useAutoRefresh } from "../composables/useAutoRefresh";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Badge from "../components/ui/Badge.vue";
 import Button from "../components/ui/Button.vue";
@@ -217,6 +266,8 @@ import TableCell from "@/components/ui/TableCell.vue";
 import TableHead from "@/components/ui/TableHead.vue";
 import TableHeader from "@/components/ui/TableHeader.vue";
 import TableRow from "@/components/ui/TableRow.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
+import { pickQueryValue } from "@/composables/filterQuery";
 
 const DEFAULT_STATUS_OPTIONS = [
   { status: "Delivered", count: 0 },
@@ -228,17 +279,22 @@ const DEFAULT_STATUS_OPTIONS = [
 const clientsStore = useClientsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
+const router = useRouter();
 
 const selectedStatuses = ref([]);
 const includeProfile = ref(false);
 const profileMode = ref("top");
 const profileLimitInput = ref("20");
 const terminalGroupValue = ref("__all__");
+const lastLoadedAt = ref(null);
+const isSyncingQuery = ref(false);
 
 let applyTimer = null;
 
 const report = computed(() => clientsStore.clientsData);
 const pageError = computed(() => clientsStore.error || "");
+const readiness = computed(() => getFeatureReadiness(route.path));
 const terminalGroupOptions = computed(() => report.value?.meta?.availableTerminalGroups || []);
 const statusOptions = computed(() => {
   const dynamicOptions = report.value?.meta?.availableStatuses || [];
@@ -251,6 +307,13 @@ const statusOptions = computed(() => {
   return [...optionMap.values()];
 });
 const visibleClients = computed(() => (report.value?.clients || []).slice(0, 200));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
 function getProfileLimit() {
   const parsed = Number.parseInt(String(profileLimitInput.value || "").trim(), 10);
@@ -318,7 +381,7 @@ async function applyCurrentFilters(extra = {}) {
 
   if (!organizationId || !dateFrom || !dateTo) return;
 
-  await clientsStore.loadClients({
+  const result = await clientsStore.loadClients({
     organizationId,
     dateFrom,
     dateTo,
@@ -329,6 +392,10 @@ async function applyCurrentFilters(extra = {}) {
     profileLimit: getProfileLimit(),
     refresh: Boolean(extra.refresh),
   });
+
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
 }
 
 async function handleApply(payload = {}) {
@@ -359,6 +426,78 @@ async function handleRefresh() {
   await applyCurrentFilters({ refresh: true });
 }
 
+function parseStatuses(value) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function applyQueryState(query) {
+  const terminalGroup = pickQueryValue(query, ["tg", "terminalGroupId"]);
+  const statuses = pickQueryValue(query, ["statuses", "status"]);
+  const includeProfiles = pickQueryValue(query, ["profiles", "includeProfile"]);
+  const mode = pickQueryValue(query, ["profileMode"]);
+  const limit = pickQueryValue(query, ["profileLimit"]);
+
+  terminalGroupValue.value = terminalGroup || "__all__";
+  selectedStatuses.value = parseStatuses(statuses);
+  includeProfile.value = includeProfiles === "1";
+  profileMode.value = mode === "all" ? "all" : "top";
+  profileLimitInput.value = limit || "20";
+}
+
+function buildCanonicalQuery() {
+  const nextQuery = { ...route.query };
+
+  delete nextQuery.terminalGroupId;
+  delete nextQuery.status;
+  delete nextQuery.includeProfile;
+
+  if (terminalGroupValue.value !== "__all__") {
+    nextQuery.tg = terminalGroupValue.value;
+  } else {
+    delete nextQuery.tg;
+  }
+
+  if (selectedStatuses.value.length) {
+    nextQuery.statuses = selectedStatuses.value.join(",");
+  } else {
+    delete nextQuery.statuses;
+  }
+
+  if (includeProfile.value) {
+    nextQuery.profiles = "1";
+    nextQuery.profileMode = profileMode.value;
+    if (profileMode.value === "top") {
+      nextQuery.profileLimit = String(getProfileLimit());
+    } else {
+      delete nextQuery.profileLimit;
+    }
+  } else {
+    delete nextQuery.profiles;
+    delete nextQuery.profileMode;
+    delete nextQuery.profileLimit;
+  }
+
+  return nextQuery;
+}
+
+async function syncQueryState() {
+  const nextQuery = buildCanonicalQuery();
+  if (JSON.stringify(route.query) === JSON.stringify(nextQuery)) {
+    return;
+  }
+
+  isSyncingQuery.value = true;
+  try {
+    await router.replace({ query: nextQuery });
+  } finally {
+    isSyncingQuery.value = false;
+  }
+}
+
 function scheduleApply() {
   if (applyTimer) {
     clearTimeout(applyTimer);
@@ -371,7 +510,13 @@ function scheduleApply() {
 }
 
 watch(
-  () => [terminalGroupValue.value, profileMode.value, includeProfile.value, profileMode.value === "top" ? profileLimitInput.value : "all"],
+  () => [
+    terminalGroupValue.value,
+    selectedStatuses.value.join(","),
+    profileMode.value,
+    includeProfile.value,
+    profileMode.value === "top" ? profileLimitInput.value : "all",
+  ],
   (_, __, onCleanup) => {
     if (!filtersStore.dateFrom || !filtersStore.dateTo || !revenueStore.currentOrganizationId) {
       return;
@@ -388,6 +533,22 @@ watch(
   },
 );
 
+watch(
+  () => [terminalGroupValue.value, selectedStatuses.value.join(","), includeProfile.value, profileMode.value, profileLimitInput.value],
+  () => {
+    syncQueryState();
+  },
+);
+
+watch(
+  () => route.query,
+  (query) => {
+    if (isSyncingQuery.value) return;
+    applyQueryState(query);
+  },
+  { deep: true },
+);
+
 useAutoRefresh(() => {
   if (report.value && revenueStore.currentOrganizationId && filtersStore.dateFrom && filtersStore.dateTo) {
     applyCurrentFilters();
@@ -402,6 +563,8 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  applyQueryState(route.query);
+
   if (!revenueStore.organizations.length) {
     await revenueStore.loadOrganizations();
   }

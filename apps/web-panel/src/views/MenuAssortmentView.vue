@@ -2,7 +2,7 @@
   <div class="min-w-0 space-y-5">
     <div class="space-y-4">
       <div class="flex items-center justify-between gap-3">
-        <h1 class="text-2xl font-bold text-foreground">ABC-анализ меню</h1>
+        <h1 class="text-2xl font-bold text-foreground">Продуктовый ABC-анализ</h1>
         <Button class="md:hidden" size="sm" variant="outline" @click="showFiltersMobile = !showFiltersMobile">
           {{ showFiltersMobile ? "Скрыть фильтры" : "Фильтры" }}
         </Button>
@@ -84,12 +84,12 @@
               <p class="font-medium text-foreground">{{ formatCurrency(item.revenue) }}</p>
             </div>
             <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">Доля</p>
-              <p class="font-medium text-foreground">{{ formatShare(item.share) }}</p>
+              <p class="text-muted-foreground">Доля выручки</p>
+              <p class="font-medium text-foreground">{{ formatShare(item.revenueShare) }}</p>
             </div>
             <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">Накоплено</p>
-              <p class="font-medium text-foreground">{{ formatShare(item.cumulativeShare) }}</p>
+              <p class="text-muted-foreground">Доля накоп.</p>
+              <p class="font-medium text-foreground">{{ formatShare(item.revenueShareUpToThisProduct) }}</p>
             </div>
           </div>
         </Card>
@@ -109,8 +109,8 @@
                   <TableHead class="text-left font-medium">Категория</TableHead>
                   <TableHead class="text-right font-medium">Продаж</TableHead>
                   <TableHead class="text-right font-medium">Выручка</TableHead>
-                  <TableHead class="text-right font-medium">Доля</TableHead>
-                  <TableHead class="text-right font-medium">Накопительная доля</TableHead>
+                  <TableHead class="text-right font-medium">Доля выручки</TableHead>
+                  <TableHead class="text-right font-medium">Доля накоп.</TableHead>
                   <TableHead class="text-left font-medium">Группа</TableHead>
                 </TableRow>
               </TableHeader>
@@ -120,8 +120,8 @@
                   <TableCell class="text-foreground">{{ item.category || "Без категории" }}</TableCell>
                   <TableCell class="text-right text-foreground">{{ formatNumber(item.salesCount) }}</TableCell>
                   <TableCell class="text-right text-foreground">{{ formatCurrency(item.revenue) }}</TableCell>
-                  <TableCell class="text-right text-foreground">{{ formatShare(item.share) }}</TableCell>
-                  <TableCell class="text-right text-foreground">{{ formatShare(item.cumulativeShare) }}</TableCell>
+                  <TableCell class="text-right text-foreground">{{ formatShare(item.revenueShare) }}</TableCell>
+                  <TableCell class="text-right text-foreground">{{ formatShare(item.revenueShareUpToThisProduct) }}</TableCell>
                   <TableCell>
                     <Badge :variant="item.abcGroup === 'A' ? 'destructive' : item.abcGroup === 'B' ? 'secondary' : 'outline'">
                       {{ item.abcGroup }}

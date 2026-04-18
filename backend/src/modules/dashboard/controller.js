@@ -1,4 +1,6 @@
 const dashboardService = require("./service");
+const { successResponse, errorResponse } = require("../shared/apiResponse");
+const { parseDateInput } = require("../shared/requestValidation");
 
 class DashboardController {
   async getDashboard(req, res) {
@@ -6,14 +8,37 @@ class DashboardController {
       const { date, organizationIds } = req.body;
 
       if (!date) {
-        return res.status(400).json({ error: "Обязательный параметр: date (YYYY-MM-DD)" });
+        return res.status(400).json(
+          errorResponse({
+            code: "VALIDATION_ERROR",
+            message: "Обязательный параметр: date (YYYY-MM-DD)",
+            meta: { module: "dashboard" },
+          }),
+        );
+      }
+
+      if (!parseDateInput(date)) {
+        return res.status(400).json(
+          errorResponse({
+            code: "VALIDATION_ERROR",
+            message: "Некорректный формат date. Используйте YYYY-MM-DD",
+            meta: { module: "dashboard" },
+          }),
+        );
       }
 
       const data = await dashboardService.getDashboardData({ organizationIds: organizationIds || [], date });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return res.json(successResponse(data, { module: "dashboard" }));
     } catch (error) {
       console.error("❌ DashboardController.getDashboard:", error);
-      return res.status(500).json({ error: "Ошибка загрузки дашборда", message: error.message });
+      return res.status(500).json(
+        errorResponse({
+          code: "INTERNAL_ERROR",
+          message: "Ошибка загрузки дашборда",
+          details: error.message,
+          meta: { module: "dashboard" },
+        }),
+      );
     }
   }
 }

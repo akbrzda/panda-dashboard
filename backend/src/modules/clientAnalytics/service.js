@@ -1,6 +1,7 @@
 const axios = require("axios");
 
 const reportsService = require("../reports/service");
+const { buildOlapBounds } = require("../../utils/dateUtils");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PROFILE_MODE = "top";
@@ -11,6 +12,23 @@ const DEFAULT_ANALYTICS_CACHE_TTL_MS = Number(process.env.CLIENT_ANALYTICS_AGG_C
 const DEFAULT_PROFILE_CACHE_TTL_MS = Number(process.env.CLIENT_ANALYTICS_PROFILE_CACHE_TTL_MS || 10 * 60 * 1000);
 const DEFAULT_MAX_PERIOD_DAYS = Number(process.env.CLIENT_ANALYTICS_MAX_PERIOD_DAYS || 90);
 const DEFAULT_PROFILE_LIMIT = Number(process.env.CLIENT_ANALYTICS_PROFILE_LIMIT || 50);
+const DEFAULT_OLAP_REG_LOOKBACK_FROM = String(process.env.CLIENT_ANALYTICS_OLAP_LOOKBACK_FROM || "2000-01-01");
+const OLAP_PHONE_FIELD_CANDIDATES = [
+  "Customer.Phone",
+  "GuestPhone",
+  "Client.Phone",
+  "Delivery.Customer.Phone",
+  "Delivery.Phone",
+  "Phone",
+];
+const OLAP_ACCOUNT_CREATED_FIELD_CANDIDATES = [
+  "Customer.WhenRegistered",
+  "Customer.DateCreated",
+  "Customer.CreatedDate",
+  "Customer.RegistrationDate",
+  "Customer.CreateDate",
+  "Customer.DateAdd",
+];
 
 class ClientAnalyticsService {
   constructor() {
@@ -198,6 +216,241 @@ class ClientAnalyticsService {
     };
   }
 
+  extractColumnNames(payload) {
+    const names = new Set();
+
+    const walk = (value) => {
+      if (!value) return;
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          walk(item);
+        }
+        return;
+      }
+
+      if (typeof value === "string") {
+        const normalized = value.trim();
+        if (normalized && /^[A-Za-z0-9_.]+$/.test(normalized)) {
+          names.add(normalized);
+        }
+        return;
+      }
+
+      if (typeof value === "object") {
+        const possibleNames = [value.name, value.field, value.id, value.columnName, value.code];
+        for (const item of possibleNames) {
+          if (typeof item === "string" && item.trim() && /^[A-Za-z0-9_.]+$/.test(item.trim())) {
+            names.add(item.trim());
+          }
+        }
+
+        for (const child of Object.values(value)) {
+          walk(child);
+        }
+      }
+    };
+
+    walk(payload);
+    return names;
+  }
+
+  pickFirstAvailable(columnsSet, candidates = []) {
+    for (const candidate of candidates) {
+      if (columnsSet.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  normalizeDateOnly(value) {
+    const source = String(value || "").trim();
+    if (!source) return null;
+    const isoPart = source.slice(0, 10).replace(/\./g, "-");
+    return /^\d{4}-\d{2}-\d{2}$/.test(isoPart) ? isoPart : null;
+  }
+
+  buildPhoneFilterVariants(phones = []) {
+    const variants = new Set();
+
+    for (const phone of phones) {
+      const normalized = this.normalizePhone(phone);
+      if (!normalized) continue;
+      variants.add(normalized);
+      variants.add(`+${normalized}`);
+
+      if (normalized.length === 11 && normalized.startsWith("7")) {
+        variants.add(`8${normalized.slice(1)}`);
+        variants.add(`+8${normalized.slice(1)}`);
+      }
+    }
+
+    return [...variants];
+  }
+
+  async fetchAvailableColumns(storeId) {
+    try {
+      return await reportsService.withAuth(storeId, async (client) => {
+        const session = client.__iikoSession || {};
+        if (session.mode !== "server-v2") {
+          return new Set();
+        }
+
+        const response = await reportsService.requestWithRetry(
+          client,
+          {
+            method: "get",
+            url: "/resto/api/v2/reports/olap/columns",
+            params: {
+              reportType: "SALES",
+              ...(session.key ? { key: session.key } : {}),
+            },
+            timeout: Math.min(reportsService.timeout, 20000),
+          },
+          { stage: "olap-columns", storeId },
+        );
+
+        return this.extractColumnNames(response.data);
+      });
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  classifyByAccountCreatedTimestamp(accountCreatedTimestamp, filters) {
+    if (!Number.isFinite(accountCreatedTimestamp)) {
+      return { isNew: false, isReturning: false };
+    }
+
+    const fromTs = filters.from.getTime();
+    const toTs = filters.to.getTime();
+
+    return {
+      isNew: accountCreatedTimestamp >= fromTs && accountCreatedTimestamp <= toTs,
+      isReturning: accountCreatedTimestamp < fromTs,
+    };
+  }
+
+  async fetchAccountCreatedMapViaOlap({ organizationId, phones = [], dateTo }) {
+    if (!phones.length) {
+      return {
+        enabled: false,
+        map: new Map(),
+        warning: "Нет клиентов для OLAP-классификации.",
+      };
+    }
+
+    if (!reportsService.serverBaseUrl && !reportsService.legacyBaseUrl) {
+      return {
+        enabled: false,
+        map: new Map(),
+        warning: "IIKO Server API не настроен.",
+      };
+    }
+
+    const storeId = await reportsService.resolveStoreId(organizationId);
+    const availableColumns = await this.fetchAvailableColumns(storeId);
+    const phoneField = this.pickFirstAvailable(availableColumns, OLAP_PHONE_FIELD_CANDIDATES);
+    const accountCreatedField = this.pickFirstAvailable(availableColumns, OLAP_ACCOUNT_CREATED_FIELD_CANDIDATES);
+
+    if (!phoneField || !accountCreatedField) {
+      return {
+        enabled: false,
+        map: new Map(),
+        warning: "OLAP не вернул поля телефона/даты регистрации клиента.",
+        phoneField,
+        accountCreatedField,
+      };
+    }
+
+    const dateFrom = this.normalizeDateOnly(DEFAULT_OLAP_REG_LOOKBACK_FROM) || "2000-01-01";
+    const dateToNormalized = this.normalizeDateOnly(dateTo) || new Date().toISOString().slice(0, 10);
+    const { startIso, endIso } = buildOlapBounds(dateFrom, dateToNormalized);
+    const phoneFilterValues = this.buildPhoneFilterVariants(phones).slice(0, 5000);
+
+    const body = {
+      storeIds: [String(storeId)],
+      olapType: "SALES",
+      categoryFields: [],
+      groupFields: [phoneField, accountCreatedField],
+      stackByDataFields: false,
+      dataFields: ["UniqOrderId.OrdersCount"],
+      calculatedFields: [
+        {
+          name: "UniqOrderId.OrdersCount",
+          title: "Orders Count",
+          description: "Number of unique orders",
+          formula: "[UniqOrderId.OrdersCount]",
+          type: "NUMERIC",
+          canSum: true,
+        },
+      ],
+      filters: [
+        {
+          field: "OpenDate.Typed",
+          filterType: "date_range",
+          dateFrom: startIso,
+          dateTo: endIso,
+          valueMin: null,
+          valueMax: null,
+          valueList: [],
+          includeLeft: true,
+          includeRight: false,
+          inclusiveList: true,
+        },
+        {
+          field: phoneField,
+          filterType: "include_values",
+          valueList: phoneFilterValues,
+          includeLeft: true,
+          includeRight: true,
+          inclusiveList: true,
+        },
+      ],
+      includeVoidTransactions: true,
+      includeNonBusinessPaymentTypes: true,
+    };
+
+    try {
+      const result = await reportsService.withAuth(storeId, async (client, delay) => {
+        return await reportsService.pollOlap(client, delay, body, {
+          maxAttempts: reportsService.maxAttempts,
+          fetchTimeoutMs: reportsService.timeout,
+          logEvery: 25,
+        });
+      });
+
+      const rows = reportsService.parseResultRows(result, (group) => group);
+      const map = new Map();
+
+      for (const row of rows) {
+        const normalizedPhone = this.normalizePhone(row?.[phoneField]);
+        const createdTs = this.getDateTimestamp(row?.[accountCreatedField]);
+        if (!normalizedPhone || !Number.isFinite(createdTs)) continue;
+
+        const existing = map.get(normalizedPhone);
+        if (!Number.isFinite(existing) || createdTs < existing) {
+          map.set(normalizedPhone, createdTs);
+        }
+      }
+
+      return {
+        enabled: true,
+        map,
+        phoneField,
+        accountCreatedField,
+        warning: null,
+      };
+    } catch (error) {
+      return {
+        enabled: false,
+        map: new Map(),
+        phoneField,
+        accountCreatedField,
+        warning: `OLAP-классификация недоступна: ${error?.message || "unknown error"}`,
+      };
+    }
+  }
+
   async requestRawCloudDeliveriesChunk({ token, organizationId, from, to, statuses = [] }) {
     const body = reportsService.buildCloudDeliveriesBody({ organizationId, from, to, statuses });
     const response = await axios.post(`${reportsService.cloudApiBaseUrl}/api/1/deliveries/by_delivery_date_and_status`, body, {
@@ -345,7 +598,72 @@ class ClientAnalyticsService {
       isReturning: false,
       isSleeping: false,
       segment: "new",
+      accountCreatedAt: null,
+      cohortSource: null,
     };
+  }
+
+  recalculateClientCohorts(clients = [], filters, options = {}) {
+    const accountCreatedMap = options.accountCreatedMap instanceof Map ? options.accountCreatedMap : new Map();
+    const source = options.source || "heuristic";
+    const disableReturningDetection = Boolean(options.disableReturningDetection);
+
+    let resolvedByAccountCreated = 0;
+    let unresolved = 0;
+
+    const updatedClients = clients.map((client) => {
+      const accountCreatedTs = accountCreatedMap.get(client.clientKey);
+      const hasAccountCreated = Number.isFinite(accountCreatedTs);
+      const accountCreatedIso = hasAccountCreated ? new Date(accountCreatedTs).toISOString() : client.accountCreatedAt || null;
+      const cohort = hasAccountCreated ? this.classifyByAccountCreatedTimestamp(accountCreatedTs, filters) : null;
+
+      let isNew = client.isNew;
+      let isReturning = client.isReturning;
+
+      if (cohort) {
+        isNew = cohort.isNew;
+        isReturning = cohort.isReturning;
+        resolvedByAccountCreated += 1;
+      } else if (disableReturningDetection) {
+        isReturning = false;
+        unresolved += 1;
+      } else {
+        unresolved += 1;
+      }
+
+      return {
+        ...client,
+        isNew,
+        isReturning,
+        accountCreatedAt: accountCreatedIso,
+        cohortSource: cohort ? source : client.cohortSource || null,
+      };
+    });
+
+    return {
+      clients: updatedClients,
+      meta: {
+        source,
+        resolvedByAccountCreated,
+        unresolved,
+        returningDetectionEnabled: !disableReturningDetection,
+      },
+    };
+  }
+
+  refreshSummaryAndSegments(payload = {}) {
+    const clients = Array.isArray(payload.clients) ? payload.clients : [];
+    payload.summary = {
+      ...(payload.summary || {}),
+      newClients: clients.filter((item) => item.isNew).length,
+      returningClients: clients.filter((item) => item.isReturning).length,
+      sleepingClients: clients.filter((item) => item.isSleeping).length,
+    };
+    payload.segments = ["new", "returning", "loyal", "vip", "sleeping"].map((segment) => ({
+      segment,
+      count: clients.filter((item) => item.segment === segment).length,
+    }));
+    return payload;
   }
 
   buildMetaBuckets(orders = []) {
@@ -413,6 +731,7 @@ class ClientAnalyticsService {
         client.isReturning = client.ordersCount >= 2;
         client.isSleeping = client.daysSinceLastOrder != null && client.daysSinceLastOrder > filters.sleepingThresholdDays;
         client.segment = this.defineSegment(client);
+        client.cohortSource = "heuristic";
         return client;
       })
       .sort((a, b) => b.revenue - a.revenue || b.ordersCount - a.ordersCount || a.clientKey.localeCompare(b.clientKey));
@@ -541,16 +860,25 @@ class ClientAnalyticsService {
     );
 
     const profilesByClient = new Map(profileEntries.filter(([, profile]) => profile));
+    let resolvedByProfileRegistration = 0;
     const enrichedClients = clients.map((client) => {
       const profile = profilesByClient.get(client.clientKey);
       if (!profile) return client;
 
-      const firstOrderTs = this.getDateTimestamp(profile.firstOrderDate);
-      const isNewByProfile = firstOrderTs != null && firstOrderTs >= filters.from.getTime() && firstOrderTs <= filters.to.getTime();
+      const profileRegistrationTs = this.getDateTimestamp(profile.whenRegistered) ?? this.getDateTimestamp(profile.firstOrderDate);
+      const hasProfileRegistration = Number.isFinite(profileRegistrationTs);
+      const cohort = hasProfileRegistration ? this.classifyByAccountCreatedTimestamp(profileRegistrationTs, filters) : null;
+
+      if (hasProfileRegistration) {
+        resolvedByProfileRegistration += 1;
+      }
 
       return {
         ...client,
-        isNew: isNewByProfile || client.isNew,
+        isNew: cohort ? cohort.isNew : client.isNew,
+        isReturning: cohort ? cohort.isReturning : client.isReturning,
+        accountCreatedAt: cohort ? new Date(profileRegistrationTs).toISOString() : client.accountCreatedAt || null,
+        cohortSource: cohort ? "profile" : client.cohortSource,
         profile,
       };
     });
@@ -558,6 +886,7 @@ class ClientAnalyticsService {
     return {
       clients: enrichedClients,
       profilesRequested: targetClients.length,
+      resolvedByProfileRegistration,
     };
   }
 
@@ -614,31 +943,50 @@ class ClientAnalyticsService {
       loader: async () => {
         const filteredOrders = baseOrders.filter((order) => this.shouldIncludeOrder(order, filters));
         const aggregated = this.aggregateClients(filteredOrders, filters, baseMeta);
+        const cohortFromOlap = await this.fetchAccountCreatedMapViaOlap({
+          organizationId: filters.organizationId,
+          phones: aggregated.clients.map((client) => client.clientKey),
+          dateTo: filters.to,
+        });
+        const olapCohortResult = this.recalculateClientCohorts(aggregated.clients, filters, {
+          accountCreatedMap: cohortFromOlap.map,
+          source: "olap-server",
+          disableReturningDetection: !cohortFromOlap.enabled,
+        });
+
+        let finalPayload = {
+          ...aggregated,
+          clients: olapCohortResult.clients,
+          meta: {
+            ...aggregated.meta,
+            profilesRequested: 0,
+            accountCreatedSource: cohortFromOlap.enabled ? "olap-server" : "disabled",
+            accountCreatedPhoneField: cohortFromOlap.phoneField || null,
+            accountCreatedDateField: cohortFromOlap.accountCreatedField || null,
+            accountCreatedResolvedClients: olapCohortResult.meta.resolvedByAccountCreated,
+            accountCreatedUnresolvedClients: olapCohortResult.meta.unresolved,
+            returningDetectionEnabled: olapCohortResult.meta.returningDetectionEnabled,
+            warningMessage: cohortFromOlap.warning || aggregated?.meta?.warningMessage || null,
+          },
+        };
 
         if (!filters.includeProfile) {
-          return {
-            ...aggregated,
-            meta: {
-              ...aggregated.meta,
-              profilesRequested: 0,
-            },
-          };
+          return this.refreshSummaryAndSegments(finalPayload);
         }
 
-        const enrichment = await this.enrichClients(aggregated.clients, filters);
-        const finalPayload = this.aggregateClients(filteredOrders, filters, {
-          ...baseMeta,
-          profilesRequested: enrichment.profilesRequested,
-        });
+        const enrichment = await this.enrichClients(finalPayload.clients, filters);
         finalPayload.clients = enrichment.clients;
-        finalPayload.summary.newClients = enrichment.clients.filter((item) => item.isNew).length;
-        finalPayload.summary.returningClients = enrichment.clients.filter((item) => item.isReturning).length;
-        finalPayload.summary.sleepingClients = enrichment.clients.filter((item) => item.isSleeping).length;
-        finalPayload.segments = ["new", "returning", "loyal", "vip", "sleeping"].map((segment) => ({
-          segment,
-          count: enrichment.clients.filter((item) => item.segment === segment).length,
-        }));
-        return finalPayload;
+        finalPayload.meta = {
+          ...finalPayload.meta,
+          profilesRequested: enrichment.profilesRequested,
+          profileRegistrationResolvedClients: enrichment.resolvedByProfileRegistration || 0,
+          accountCreatedSource:
+            (enrichment.resolvedByProfileRegistration || 0) > 0 && !cohortFromOlap.enabled ? "profile-fallback" : finalPayload.meta.accountCreatedSource,
+          returningDetectionEnabled:
+            finalPayload.meta.returningDetectionEnabled || (enrichment.resolvedByProfileRegistration || 0) > 0,
+        };
+
+        return this.refreshSummaryAndSegments(finalPayload);
       },
     });
   }

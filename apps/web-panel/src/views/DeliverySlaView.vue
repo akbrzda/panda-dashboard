@@ -1,7 +1,20 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">SLA доставки по этапам</h1>
+      <ReportPageHeader
+        title="SLA доставки по этапам"
+        description="Контроль этапов доставки, воронки исполнения и нарушений SLA по выбранному периоду."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -34,14 +47,14 @@
             :inverse="true"
             :loading="isPageLoading"
           />
-          <MetricCard title="Р’ SLA" :value="report?.summary?.onTimeRate ?? null" format="percent" icon="Clock" :loading="isPageLoading" />
+          <MetricCard title="В SLA" :value="report?.summary?.onTimeRate ?? null" format="percent" icon="Clock" :loading="isPageLoading" />
         </div>
       </section>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
         <div class="table-shell">
           <Table class="min-w-full border-collapse text-sm">
-            <TableHeader>
+            <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
               <TableRow class="bg-muted/30 text-muted-foreground">
                 <TableHead class="text-left font-medium">Этап</TableHead>
                 <TableHead class="text-left font-medium">Среднее, мин</TableHead>
@@ -82,9 +95,27 @@
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-          <div class="table-shell">
+          <div class="space-y-2 md:hidden">
+            <div v-for="item in report?.hourly || []" :key="item.hour" class="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-foreground">{{ formatHourRange(item.hour) }}</span>
+                <span class="text-xs text-muted-foreground">Доля {{ formatNumber(item.violationRate) }}%</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Заказов</p>
+                  <p class="font-medium text-foreground">{{ formatNumber(item.orders) }}</p>
+                </div>
+                <div class="rounded-md bg-muted/40 p-2">
+                  <p class="text-muted-foreground">Нарушений</p>
+                  <p class="font-medium text-foreground">{{ formatNumber(item.violations) }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="table-shell hidden md:block">
             <Table class="min-w-full border-collapse text-xs">
-              <TableHeader>
+              <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
                 <TableRow class="bg-muted/30 text-muted-foreground">
                   <TableHead class="text-left font-medium">Час</TableHead>
                   <TableHead class="text-left font-medium">Заказов</TableHead>
@@ -106,9 +137,35 @@
       </div>
 
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
-        <div class="table-shell">
+        <div class="space-y-2 md:hidden">
+          <div
+            v-for="item in topViolations"
+            :key="`${item.orderNumber || item.orderId}-${item.date || ''}-mobile`"
+            class="rounded-lg border border-border/70 bg-background/70 p-3"
+          >
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="text-sm font-semibold text-foreground">{{ item.orderNumber || "Без номера" }}</span>
+              <span class="text-xs text-muted-foreground">{{ item.date || "—" }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-md bg-muted/40 p-2">
+                <p class="text-muted-foreground">Курьер</p>
+                <p class="font-medium text-foreground">{{ item.courierName || "—" }}</p>
+              </div>
+              <div class="rounded-md bg-muted/40 p-2">
+                <p class="text-muted-foreground">Итого, мин</p>
+                <p class="font-medium text-foreground">{{ formatDuration(item.totalMinutes) }}</p>
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ item.violations.join(", ") || "Без нарушений" }}</p>
+          </div>
+          <div v-if="topViolations.length === 0" class="rounded-lg border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+            Нарушений за выбранный период нет
+          </div>
+        </div>
+        <div class="table-shell hidden md:block">
           <Table class="min-w-full border-collapse text-xs">
-            <TableHeader>
+            <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
               <TableRow class="bg-muted/30 text-muted-foreground">
                 <TableHead class="text-left font-medium">Дата</TableHead>
                 <TableHead class="text-left font-medium">Заказ</TableHead>
@@ -141,15 +198,18 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle, Truck } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import { formatMinutesToHms } from "../lib/utils";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -161,10 +221,20 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
+const lastLoadedAt = ref(null);
 
 const report = computed(() => reportsStore.slaReport);
 const isPageLoading = computed(() => reportsStore.isLoadingSla);
 const pageError = computed(() => reportsStore.error);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
 const stageRows = computed(() => {
   const stageKpi = report.value?.stageKpi || {};
@@ -210,6 +280,9 @@ async function handleApply(payload = {}) {
 
   revenueStore.setCurrentOrganization(organizationId);
   await reportsStore.loadSla({ organizationId, dateFrom, dateTo });
+  if (reportsStore.slaReport) {
+    lastLoadedAt.value = new Date();
+  }
 }
 
 onMounted(async () => {

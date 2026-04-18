@@ -2,13 +2,26 @@
   <div class="space-y-6">
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-foreground">Дашборд</h1>
-        <span v-if="data" class="text-xs text-muted-foreground">
-          {{ formatDate(data.date) }}
-        </span>
-      </div>
-      <DashboardFilters ref="filtersRef" :loading="dashboardStore.isLoadingDashboard" @apply="handleApply" />
+      <ReportPageHeader
+        title="Дашборд"
+        description="Оперативная витрина по ключевым KPI сети с разбивкой по каналам и подразделениям."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="dashboardStore.isLoadingDashboard"
+        @refresh="reload"
+      />
+      <PageFilters
+        ref="filtersRef"
+        mode="date"
+        :loading="dashboardStore.isLoadingDashboard"
+        @apply="handleApply"
+      />
     </div>
 
     <!-- Ошибка -->
@@ -96,19 +109,38 @@
         <h3 class="mb-4 text-sm font-semibold text-foreground">Выручка по подразделениям</h3>
         <OrgBarChart :orgs="data?.byOrganization ?? []" :loading="dashboardStore.isLoadingDashboard" />
 
-        <div class="table-shell mt-5 rounded-lg border border-border/70">
+        <div class="mt-5 space-y-2 md:hidden">
+          <div v-for="org in data?.byOrganization ?? []" :key="`${org.id}-mobile`" class="rounded-lg border border-border/70 bg-background/70 p-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <p class="text-sm font-semibold text-foreground">{{ org.name }}</p>
+              <p class="text-xs text-muted-foreground">Заказы: {{ formatNumber(org.orders) }}</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-md bg-muted/40 p-2">
+                <p class="text-muted-foreground">Выручка</p>
+                <p class="font-medium text-foreground">{{ formatCurrency(org.revenue) }}</p>
+              </div>
+              <div class="rounded-md bg-muted/40 p-2">
+                <p class="text-muted-foreground">Ср. чек</p>
+                <p class="font-medium text-foreground">{{ formatCurrency(org.avgCheck) }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-shell mt-5 hidden rounded-lg border border-border/70 md:block">
           <Table class="w-full text-sm">
-            <TableHeader>
+            <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
               <TableRow class="border-b border-border bg-muted/40">
                 <TableHead class="text-left font-medium text-muted-foreground">Подразделение</TableHead>
                 <TableHead class="text-right font-medium text-muted-foreground">Выручка</TableHead>
                 <TableHead class="text-right font-medium text-muted-foreground">Заказы</TableHead>
-                <TableHead class="text-right font-medium text-muted-foreground hidden md:table-cell">Ср. чек</TableHead>
+                <TableHead class="text-right font-medium text-muted-foreground">Ср. чек</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow v-if="dashboardStore.isLoadingDashboard" v-for="i in 4" :key="i" class="border-b border-border/40 last:border-0">
-                <TableCell colspan="4" class="">
+                <TableCell colspan="4">
                   <div class="h-6 rounded bg-muted animate-pulse" />
                 </TableCell>
               </TableRow>
@@ -116,7 +148,7 @@
                 <TableCell class="text-foreground">{{ org.name }}</TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatCurrency(org.revenue) }}</TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatNumber(org.orders) }}</TableCell>
-                <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(org.avgCheck) }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatCurrency(org.avgCheck) }}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -149,9 +181,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle, BarChart2, ArrowRight } from "lucide-vue-next";
 import MetricCard from "@/components/metrics/MetricCard.vue";
-import DashboardFilters from "@/components/filters/DashboardFilters.vue";
+import PageFilters from "@/components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "@/components/ui/Card.vue";
 import DonutChart from "@/components/charts/DonutChart.vue";
 import OrgBarChart from "@/components/charts/OrgBarChart.vue";
@@ -162,6 +196,7 @@ import { useDashboardStore } from "@/stores/dashboard";
 import { useFiltersStore } from "@/stores/filters";
 import { usePlansStore } from "@/stores/plans";
 import { dashboardQuickLinksCatalog } from "@/config/reportCatalog";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -174,13 +209,17 @@ const revenueStore = useRevenueStore();
 const dashboardStore = useDashboardStore();
 const filtersStore = useFiltersStore();
 const plansStore = usePlansStore();
+const route = useRoute();
 
 const filtersRef = ref(null);
 const error = ref(null);
+const lastLoadedAt = ref(null);
+const lastAppliedOrgIds = ref([]);
 
 const data = computed(() => dashboardStore.dashboardData);
 const hasChannels = computed(() => Object.keys(data.value?.revenueByChannel ?? {}).length > 0);
 const showOrgChart = computed(() => (data.value?.byOrganization?.length ?? 0) > 1);
+const readiness = computed(() => getFeatureReadiness(route.path));
 const currentPlanOrganizationId = computed(() => {
   if ((data.value?.byOrganization?.length ?? 0) === 1) {
     return data.value.byOrganization[0].id;
@@ -190,11 +229,27 @@ const currentPlanOrganizationId = computed(() => {
 });
 
 const sections = dashboardQuickLinksCatalog;
+const trustCoverage = computed(() => {
+  if (!lastAppliedOrgIds.value.length) {
+    const totalOrgs = revenueStore.organizations.length;
+    if (!totalOrgs) return "Все подразделения";
+    return `Все подразделения (${totalOrgs})`;
+  }
+
+  if (lastAppliedOrgIds.value.length === 1) {
+    const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === lastAppliedOrgIds.value[0]);
+    return selectedOrganization?.name || "1 подразделение";
+  }
+
+  return `${lastAppliedOrgIds.value.length} подразделения`;
+});
 
 async function handleApply({ date, organizationIds }) {
   error.value = null;
   try {
     await dashboardStore.loadDashboard({ organizationIds, date });
+    lastLoadedAt.value = new Date();
+    lastAppliedOrgIds.value = organizationIds ?? [];
   } catch (e) {
     error.value = e.message || "Ошибка загрузки дашборда";
   }
@@ -206,12 +261,6 @@ function reload() {
 
 function getPlan(metric, currentValue) {
   return plansStore.getMetricPlan(metric, filtersStore.preset, currentPlanOrganizationId.value, currentValue);
-}
-
-function formatDate(str) {
-  if (!str) return "";
-  const [y, m, d] = str.split("-");
-  return `${d}.${m}.${y}`;
 }
 
 function formatCurrency(val) {

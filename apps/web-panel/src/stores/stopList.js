@@ -4,29 +4,169 @@ import { stopListsApi } from "../api/stopLists";
 
 const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
 
+const DEFAULT_FILTERS = {
+  search: "",
+  terminalGroupId: "all",
+  entityType: "all",
+  status: "active",
+  duration: "all",
+};
+
 export const useStopListStore = defineStore("stopList", {
   state: () => ({
     organizations: [],
-    currentOrganizationId: null,
-    stopListItems: [],
-    filteredItems: [],
-    filterText: "",
-    statusFilter: "all",
+    currentOrganizationId: "all",
+    items: [],
+    meta: null,
+    filters: { ...DEFAULT_FILTERS },
     isLoading: false,
     error: null,
+    lastLoadedAt: null,
     controller: null,
     requestId: 0,
   }),
 
   getters: {
-    currentOrganization: (state) => {
-      return state.organizations.find((org) => org.id === state.currentOrganizationId);
+    organizationOptions: (state) => {
+      const orgs = (state.organizations || []).map((organization) => ({
+        id: String(organization.id),
+        name: organization.name,
+      }));
+      return [{ id: "all", name: "Все подразделения" }, ...orgs];
     },
 
-    itemsCount: (state) => state.filteredItems.length,
+    terminalGroupOptions: (state) => {
+      const map = new Map();
+      for (const item of state.items) {
+        const id = String(item.terminalGroupId || "").trim();
+        if (!id) continue;
+        if (!map.has(id)) {
+          map.set(id, item.terminalGroupName || "Без названия подразделения");
+        }
+      }
+
+      const values = Array.from(map.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+
+      return [{ id: "all", name: "Все terminal groups" }, ...values];
+    },
+
+    filteredItems: (state) => {
+      const search = state.filters.search.trim().toLowerCase();
+
+      return (state.items || []).filter((item) => {
+        if (state.currentOrganizationId !== "all" && String(item.organizationId) !== String(state.currentOrganizationId)) {
+          return false;
+        }
+
+        if (state.filters.terminalGroupId !== "all" && String(item.terminalGroupId) !== String(state.filters.terminalGroupId)) {
+          return false;
+        }
+
+        if (state.filters.entityType !== "all" && String(item.entityType) !== String(state.filters.entityType)) {
+          return false;
+        }
+
+        if (state.filters.status === "active" && item.isInStop !== true) {
+          return false;
+        }
+
+        if (state.filters.status === "completed" && item.isInStop === true) {
+          return false;
+        }
+
+        const hours = Number(item.inStopHours);
+        if (state.filters.duration === "gt1h" && !(Number.isFinite(hours) && hours > 1)) {
+          return false;
+        }
+
+        if (state.filters.duration === "gt2h" && !(Number.isFinite(hours) && hours > 2)) {
+          return false;
+        }
+
+        if (state.filters.duration === "gt24h" && !(Number.isFinite(hours) && hours > 24)) {
+          return false;
+        }
+
+        if (search) {
+          const haystack = [item.entityName, item.entityId, item.organizationName, item.terminalGroupName, item.reason]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+          if (!haystack.includes(search)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+    },
+
+    summaryCards() {
+      const list = this.filteredItems;
+      const terminalGroups = new Set(list.map((item) => item.terminalGroupId).filter(Boolean));
+      const longerThan2Hours = list.filter((item) => Number.isFinite(Number(item.inStopHours)) && Number(item.inStopHours) > 2).length;
+      const longerThan1Day = list.filter((item) => Number.isFinite(Number(item.inStopHours)) && Number(item.inStopHours) > 24).length;
+      const estimatedLostRevenue = list.reduce((sum, item) => {
+        const value = Number(item.estimatedLostRevenue);
+        return sum + (Number.isFinite(value) ? value : 0);
+      }, 0);
+
+      return {
+        total: list.length,
+        uniqueTerminalGroups: terminalGroups.size,
+        longerThan2Hours,
+        longerThan1Day,
+        estimatedLostRevenue,
+      };
+    },
+
+    itemsCount() {
+      return this.filteredItems.length;
+    },
+
+    warnings(state) {
+      return Array.isArray(state.meta?.warnings) ? state.meta.warnings : [];
+    },
+
+    isPartial(state) {
+      return state.meta?.isPartial === true;
+    },
+
+    generatedAt(state) {
+      return state.meta?.generatedAt || state.lastLoadedAt;
+    },
+
+    lostRevenueMeta(state) {
+      return state.meta?.lostRevenue || null;
+    },
   },
 
   actions: {
+    _getOrganizationIdsQuery() {
+      if (this.currentOrganizationId && this.currentOrganizationId !== "all") {
+        return String(this.currentOrganizationId);
+      }
+
+      return (this.organizations || [])
+        .map((organization) => String(organization.id))
+        .filter(Boolean)
+        .join(",");
+    },
+
+    _resolveTimezone() {
+      if (this.currentOrganizationId && this.currentOrganizationId !== "all") {
+        const selected = this.organizations.find((organization) => String(organization.id) === String(this.currentOrganizationId));
+        if (selected?.timezone) {
+          return selected.timezone;
+        }
+      }
+
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    },
+
     async loadOrganizations() {
       try {
         this.isLoading = true;
@@ -35,13 +175,11 @@ export const useStopListStore = defineStore("stopList", {
         const response = await organizationsApi.getOrganizations();
         this.organizations = response.organizations || [];
 
-        if (!this.currentOrganizationId && this.organizations.length > 0) {
-          this.currentOrganizationId = this.organizations[0].id;
+        if (!this.currentOrganizationId) {
+          this.currentOrganizationId = "all";
         }
 
-        if (this.currentOrganizationId) {
-          await this.loadStopLists();
-        }
+        await this.loadStopLists();
       } catch (error) {
         this.error = error.message || "Ошибка загрузки организаций";
       } finally {
@@ -49,8 +187,13 @@ export const useStopListStore = defineStore("stopList", {
       }
     },
 
-    async loadStopLists() {
-      if (!this.currentOrganizationId) {
+    async loadStopLists(options = {}) {
+      const refresh = options.refresh === true;
+      const organizationIdsQuery = this._getOrganizationIdsQuery();
+
+      if (!organizationIdsQuery) {
+        this.items = [];
+        this.meta = null;
         return;
       }
 
@@ -63,21 +206,13 @@ export const useStopListStore = defineStore("stopList", {
         this.isLoading = true;
         this.error = null;
 
-        const currentOrganization = this.organizations.find((organization) => String(organization.id) === String(this.currentOrganizationId));
-        const timezone = currentOrganization?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-        const response = await stopListsApi.getStopLists(this.currentOrganizationId, timezone, this.controller.signal);
+        const timezone = this._resolveTimezone();
+        const response = await stopListsApi.getStopLists(organizationIdsQuery, timezone, this.controller.signal, refresh);
         if (currentRequestId !== this.requestId) return;
-        const normalizedItems = response.normalizedItems || [];
 
-        normalizedItems.sort((a, b) => {
-          const dateA = new Date(a.dateAdd || a.openedAt || 0);
-          const dateB = new Date(b.dateAdd || b.openedAt || 0);
-          return dateB - dateA;
-        });
-
-        this.stopListItems = normalizedItems;
-        this.applyFilters();
+        this.items = Array.isArray(response?.data?.items) ? response.data.items : [];
+        this.meta = response?.meta || null;
+        this.lastLoadedAt = this.meta?.generatedAt || new Date().toISOString();
       } catch (error) {
         if (isAbortError(error)) return;
         this.error = error.message || "Ошибка загрузки стоп-листа";
@@ -90,54 +225,32 @@ export const useStopListStore = defineStore("stopList", {
     },
 
     setCurrentOrganization(organizationId) {
-      this.currentOrganizationId = organizationId;
+      this.currentOrganizationId = String(organizationId || "all");
       this.loadStopLists();
     },
 
-    setFilterText(text) {
-      this.filterText = text;
-      this.applyFilters();
+    setSearch(value) {
+      this.filters.search = String(value || "");
     },
 
-    setStatusFilter(status) {
-      this.statusFilter = status;
-      this.applyFilters();
+    setTerminalGroup(value) {
+      this.filters.terminalGroupId = String(value || "all");
     },
 
-    applyFilters() {
-      const searchText = this.filterText.toLowerCase();
+    setEntityType(value) {
+      this.filters.entityType = String(value || "all");
+    },
 
-      this.filteredItems = this.stopListItems.filter((item) => {
-        const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
+    setStatus(value) {
+      this.filters.status = String(value || "active");
+    },
 
-        if (searchText) {
-          const productName = (item.productName || "").toLowerCase();
-          const productFullName = (item.productFullName || "").toLowerCase();
-          const itemName = (item.itemName || "").toLowerCase();
-          const sku = (item.sku || "").toLowerCase();
-          const productId = (item.productId || "").toLowerCase();
+    setDuration(value) {
+      this.filters.duration = String(value || "all");
+    },
 
-          if (
-            !productName.includes(searchText) &&
-            !productFullName.includes(searchText) &&
-            !itemName.includes(searchText) &&
-            !sku.includes(searchText) &&
-            !productId.includes(searchText)
-          ) {
-            return false;
-          }
-        }
-
-        if (this.statusFilter === "stopped" && !isStopped) {
-          return false;
-        }
-
-        if (this.statusFilter === "available" && isStopped) {
-          return false;
-        }
-
-        return true;
-      });
+    resetFilters() {
+      this.filters = { ...DEFAULT_FILTERS };
     },
 
     stopAll() {

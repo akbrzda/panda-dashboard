@@ -208,9 +208,14 @@ class TopDishesService extends OlapClient {
     return data;
   }
 
-  getAbcGroup(cumulativeShare, thresholds = { a: 0.8, b: 0.95 }) {
-    if (cumulativeShare <= thresholds.a) return "A";
-    if (cumulativeShare <= thresholds.b) return "B";
+  // ABC-анализ по принципу Парето: классифицирует товар по группе на основе доли выручки
+  // Входные данные должны быть отсортированы по выручке (от большей к меньшей)
+  classifyProductByAbcShare(revenueShareUpToThisProduct) {
+    // Группа A: 20% товаров = 80% выручки (продукты, которые в сумме дали 0-80% выручки)
+    if (revenueShareUpToThisProduct <= 0.8) return "A";
+    // Группа B: 30% товаров = 15% выручки (продукты, которые в сумме дали 80-95% выручки)
+    if (revenueShareUpToThisProduct <= 0.95) return "B";
+    // Группа C: 50% товаров = 5% выручки (оставшиеся продукты, 95-100% выручки)
     return "C";
   }
 
@@ -248,13 +253,15 @@ class TopDishesService extends OlapClient {
       countC: 0,
     };
 
-    let cumulativeRevenue = 0;
+    // Вычисляем ABC-классификацию для каждого товара
+    // Товары уже отсортированы по выручке (от большей к меньшей)
+    let revenueAccumulatedSoFar = 0;
     const items = dishes.map((dish) => {
       const revenue = Number(dish.revenue || 0);
-      cumulativeRevenue += revenue;
-      const share = totalRevenue > 0 ? revenue / totalRevenue : 0;
-      const cumulativeShare = totalRevenue > 0 ? cumulativeRevenue / totalRevenue : 0;
-      const abcGroup = this.getAbcGroup(cumulativeShare);
+      revenueAccumulatedSoFar += revenue;
+      const revenueShareOfThisDish = totalRevenue > 0 ? revenue / totalRevenue : 0;
+      const shareOfRevenueUpToThisProduct = totalRevenue > 0 ? revenueAccumulatedSoFar / totalRevenue : 0;
+      const abcGroup = this.classifyProductByAbcShare(shareOfRevenueUpToThisProduct);
 
       if (abcGroup === "A") {
         summary.countA += 1;
@@ -271,8 +278,8 @@ class TopDishesService extends OlapClient {
         category: dish.category || "Без категории",
         salesCount: Number(dish.qty || 0),
         revenue,
-        share: Number(share.toFixed(6)),
-        cumulativeShare: Number(cumulativeShare.toFixed(6)),
+        revenueShare: Number(revenueShareOfThisDish.toFixed(6)), // доля выручки этого товара от общей
+        revenueShareUpToThisProduct: Number(shareOfRevenueUpToThisProduct.toFixed(6)), // накопленная доля до текущего товара включительно
         abcGroup,
       };
     });

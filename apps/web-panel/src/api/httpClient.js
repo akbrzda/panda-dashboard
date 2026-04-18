@@ -36,7 +36,12 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    const message = error.response?.data?.error || error.response?.data?.message || error.message || "Не удалось выполнить запрос";
+    const payloadError = error.response?.data?.error;
+    const message =
+      (typeof payloadError === "string" ? payloadError : payloadError?.message) ||
+      error.response?.data?.message ||
+      error.message ||
+      "Не удалось выполнить запрос";
     console.error("❌ API Response Error:", error.response?.status, error.response?.data || error.message);
     toast.error("Ошибка запроса", message);
     return Promise.reject(error);

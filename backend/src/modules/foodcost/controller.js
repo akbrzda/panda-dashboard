@@ -1,4 +1,6 @@
 const foodcostService = require("./service");
+const { successResponse, errorResponse } = require("../shared/apiResponse");
+const { validatePeriodParams } = require("../shared/requestValidation");
 
 class FoodcostController {
   isTemporaryNetworkError(error) {
@@ -11,20 +13,38 @@ class FoodcostController {
 
   async getFoodcost(req, res) {
     try {
-      const { organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo } = req.body;
-
-      if (!organizationId || !dateFrom || !dateTo) {
-        return res.status(400).json({ error: "Обязательные параметры: organizationId, dateFrom, dateTo" });
+      const validation = validatePeriodParams(req.body || {}, {
+        organizationField: "organizationId",
+        fromField: "dateFrom",
+        toField: "dateTo",
+      });
+      if (!validation.isValid) {
+        return res.status(400).json(
+          errorResponse({
+            code: validation.code || "VALIDATION_ERROR",
+            message: validation.message,
+            meta: { module: "foodcost" },
+          }),
+        );
       }
 
+      const { organizationId, dateFrom, dateTo } = validation.normalized;
+      const { lflDateFrom, lflDateTo } = req.body || {};
       const data = await foodcostService.getFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
-      return res.json({ success: true, data, timestamp: new Date().toISOString() });
+      return res.json(successResponse(data, { module: "foodcost" }));
     } catch (error) {
       const status = this.isTemporaryNetworkError(error) ? 503 : 500;
       const message = status === 503 ? "IIKO временно недоступен, попробуйте повторить запрос" : "Ошибка получения фудкоста";
 
       console.error("❌ FoodcostController.getFoodcost:", error);
-      return res.status(status).json({ error: message, message: error.message });
+      return res.status(status).json(
+        errorResponse({
+          code: status === 503 ? "UPSTREAM_ERROR" : "INTERNAL_ERROR",
+          message,
+          details: error.message,
+          meta: { module: "foodcost" },
+        }),
+      );
     }
   }
 }

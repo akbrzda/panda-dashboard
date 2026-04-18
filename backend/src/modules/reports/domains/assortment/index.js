@@ -1,12 +1,12 @@
 const reportsService = require("../../service");
 
 class AssortmentReportsDomain {
-  async getMenuAbc(params) {
-    return await reportsService.getMenuAbcReport(params);
+  async getProductAbc(params) {
+    return await reportsService.getProductAbcReport(params);
   }
 
-  async getMenuAssortment(params) {
-    return await this.getMenuAbc(params);
+  async getMenuAbc(params) {
+    return await this.getProductAbc(params);
   }
 }
 

@@ -7,69 +7,80 @@
     </div>
 
     <div v-else-if="items.length === 0" class="px-4 py-10 text-center text-sm text-muted-foreground">
-      <p>Нет данных для отображения</p>
+      <p>Нет позиций в стоп-листе по текущим фильтрам.</p>
     </div>
 
     <div v-else>
-      <div class="md:hidden space-y-3 p-3">
-        <div v-for="item in items" :key="item.productId || item.sku || item.itemName" class="rounded-lg border border-border/70 bg-background/70 p-3">
-          <div class="flex items-start justify-between gap-3">
+      <div class="space-y-3 p-3 md:hidden">
+        <article v-for="item in items" :key="item.id" class="rounded-lg border border-border/70 bg-background/70 p-3">
+          <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="truncate text-sm font-semibold text-foreground">{{ getProductName(item) }}</p>
-              <p class="text-xs text-muted-foreground">{{ item.organizationName || "—" }}</p>
+              <p class="truncate text-sm font-semibold text-foreground">{{ item.entityName || "—" }}</p>
+              <p class="text-xs text-muted-foreground">{{ formatEntityType(item.entityType) }}</p>
             </div>
-            <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
-              {{ getStatusText(item) }}
-            </span>
+            <Badge :variant="item.isInStop ? 'warning' : 'success'">{{ getStatusText(item) }}</Badge>
           </div>
 
           <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">Создано</p>
-              <p class="font-medium text-foreground">{{ formatDate(item) }}</p>
+              <p class="text-muted-foreground">Подразделение</p>
+              <p class="font-medium text-foreground">{{ formatDepartment(item) }}</p>
             </div>
             <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">В стопе</p>
+              <p class="text-muted-foreground">В стопе с</p>
+              <p class="font-medium text-foreground">{{ formatStartedAt(item.startedAt) }}</p>
+            </div>
+            <div class="rounded-md bg-muted/40 p-2">
+              <p class="text-muted-foreground">В стопе сейчас</p>
               <p class="font-medium text-foreground">{{ formatDuration(item) }}</p>
             </div>
             <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">SKU</p>
-              <p class="font-medium text-foreground">{{ item.sku || item.productCode || "—" }}</p>
+              <p class="text-muted-foreground">Баланс / статус</p>
+              <p class="font-medium text-foreground">{{ formatBalanceAndStatus(item) }}</p>
             </div>
-            <div class="rounded-md bg-muted/40 p-2">
-              <p class="text-muted-foreground">Причина</p>
-              <p class="font-medium text-foreground">{{ item.reason || "—" }}</p>
+            <div class="rounded-md bg-muted/40 p-2 col-span-2">
+              <p class="text-muted-foreground">Упущенная выручка (оценка)</p>
+              <p class="font-medium text-foreground">{{ formatCurrency(item.estimatedLostRevenue) }}</p>
             </div>
           </div>
-        </div>
+
+          <div class="mt-3 flex justify-end">
+            <Button variant="outline" size="sm" @click="emit('select', item)">Детали</Button>
+          </div>
+        </article>
       </div>
 
       <div class="hidden md:block overflow-auto">
-        <div class="min-w-[980px]">
+        <div class="min-w-[1220px]">
           <Table class="min-w-full text-sm">
-            <TableHeader class="bg-muted/40">
+            <TableHeader class="sticky top-0 z-10 bg-muted/80 backdrop-blur">
               <TableRow>
-                <TableHead class="text-left font-semibold text-muted-foreground">Дата создания</TableHead>
-                <TableHead class="text-left font-semibold text-muted-foreground">Наименование</TableHead>
-                <TableHead class="text-left font-semibold text-muted-foreground">SKU</TableHead>
-                <TableHead class="text-left font-semibold text-muted-foreground">Филиал</TableHead>
-                <TableHead class="text-left font-semibold text-muted-foreground">Причина</TableHead>
-                <TableHead class="text-right font-semibold text-muted-foreground">В стопе</TableHead>
-                <TableHead class="text-left font-semibold text-muted-foreground">Статус</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Позиция</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Тип</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Подразделение</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">В стопе с</TableHead>
+                <TableHead class="text-right font-semibold text-muted-foreground">В стопе сейчас</TableHead>
+                <TableHead class="text-right font-semibold text-muted-foreground">Упущ. выручка (оценка)</TableHead>
+                <TableHead class="text-left font-semibold text-muted-foreground">Баланс / статус</TableHead>
+                <TableHead class="text-right font-semibold text-muted-foreground">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="item in items" :key="item.productId || item.sku || item.itemName" class="border-t border-border/70 hover:bg-muted/20">
-                <TableCell class="text-foreground/80 whitespace-nowrap">{{ formatDate(item) }}</TableCell>
-                <TableCell class="font-medium text-foreground">{{ getProductName(item) }}</TableCell>
-                <TableCell class="text-foreground/80 whitespace-nowrap">{{ item.sku || item.productCode || "—" }}</TableCell>
-                <TableCell class="text-foreground/80">{{ item.organizationName || "—" }}</TableCell>
-                <TableCell class="text-foreground/80">{{ item.reason || "—" }}</TableCell>
+              <TableRow v-for="item in items" :key="item.id" class="border-t border-border/70 hover:bg-muted/20">
+                <TableCell class="font-medium text-foreground">{{ item.entityName || "—" }}</TableCell>
+                <TableCell class="text-foreground/80">{{ formatEntityType(item.entityType) }}</TableCell>
+                <TableCell class="text-foreground/80">{{ formatDepartment(item) }}</TableCell>
+                <TableCell class="text-foreground/80 whitespace-nowrap">{{ formatStartedAt(item.startedAt) }}</TableCell>
                 <TableCell class="text-right text-foreground tabular-nums">{{ formatDuration(item) }}</TableCell>
-                <TableCell class="">
-                  <span :class="['inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', getStatusClass(item)]">
-                    {{ getStatusText(item) }}
-                  </span>
+                <TableCell class="text-right text-foreground tabular-nums">{{ formatCurrency(item.estimatedLostRevenue) }}</TableCell>
+                <TableCell>
+                  <div class="flex items-center gap-2">
+                    <span class="text-foreground/80">{{ formatBalanceAndStatus(item) }}</span>
+                    <Badge :variant="item.isInStop ? 'warning' : 'success'">{{ getStatusText(item) }}</Badge>
+                  </div>
+                </TableCell>
+                <TableCell class="text-right">
+                  <Button variant="outline" size="sm" @click="emit('select', item)">Открыть</Button>
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -82,6 +93,14 @@
 
 <script setup>
 import { formatDateTimeWithSeconds } from "../lib/utils";
+import Badge from "@/components/ui/Badge.vue";
+import Button from "@/components/ui/Button.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 defineProps({
   items: {
@@ -98,62 +117,70 @@ defineProps({
   },
 });
 
-import Table from "@/components/ui/Table.vue";
-import TableBody from "@/components/ui/TableBody.vue";
-import TableCell from "@/components/ui/TableCell.vue";
-import TableHead from "@/components/ui/TableHead.vue";
-import TableHeader from "@/components/ui/TableHeader.vue";
-import TableRow from "@/components/ui/TableRow.vue";
+const emit = defineEmits(["select"]);
 
-const formatDate = (item) => {
-  const dateString = item.dateAdd || item.openedAt;
-  if (!dateString) return "—";
-  return formatDateTimeWithSeconds(dateString);
+const ENTITY_TYPE_LABEL = {
+  product: "Товар",
+  modifier: "Модификатор",
+  group: "Группа",
+};
+
+const formatEntityType = (type) => ENTITY_TYPE_LABEL[type] || "Товар";
+
+const formatStartedAt = (value) => {
+  if (!value) return "—";
+  return formatDateTimeWithSeconds(value);
 };
 
 const formatDuration = (item) => {
   const hours = Number(item.inStopHours);
-  if (!Number.isFinite(hours) || hours < 0) return "—";
+  const minutes = Number(item.inStopMinutes);
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return "—";
+  }
 
   if (hours >= 24) {
     const days = Number(item.inStopDays);
     if (Number.isFinite(days)) {
-      return `${days.toFixed(1)} дн`;
+      return `${days.toFixed(2)} дн`;
     }
   }
 
-  return `${hours.toFixed(1)} ч`;
+  if (hours >= 1) {
+    return `${hours.toFixed(2)} ч`;
+  }
+
+  return `${Math.round(minutes)} мин`;
 };
 
-const getProductName = (item) => {
-  if (item.productFullName) return item.productFullName;
-  if (item.productName) return item.productName;
-  if (item.itemName) return item.itemName;
-
-  if (item.sku) {
-    return `SKU: ${item.sku}`;
-  }
-
-  if (item.productId) {
-    return `ID: ${item.productId.substring(0, 8)}...`;
-  }
-
-  return "Товар без названия";
+const formatDepartment = (item) => {
+  const org = item.organizationName || "—";
+  const terminalGroup = item.terminalGroupName || "—";
+  return `${org} / ${terminalGroup}`;
 };
 
-const getStatusClass = (item) => {
-  const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
-  if (!isStopped) {
-    return "bg-emerald-500/15 text-emerald-400";
+const formatBalanceAndStatus = (item) => {
+  const balance = Number(item.balance);
+  const balanceLabel = Number.isFinite(balance) ? `${balance}` : "—";
+  if (item.status) {
+    return `${balanceLabel} / ${item.status}`;
   }
-  return "bg-rose-500/15 text-rose-400";
+  return balanceLabel;
 };
 
-const getStatusText = (item) => {
-  const isStopped = item.isInStopList === true || (!item.closedAt && Number(item.balance || 0) <= 0);
-  if (!isStopped) {
-    return "Доступно";
+const getStatusText = (item) => (item.isInStop ? "Активен" : "Завершен");
+
+const formatCurrency = (value) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "—";
   }
-  return "В стопе";
+
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits: 0,
+  }).format(numericValue);
 };
 </script>

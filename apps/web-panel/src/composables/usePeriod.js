@@ -6,7 +6,6 @@ export const PERIOD_PRESETS = [
   { value: "last-week", label: "Прошлая неделя" },
   { value: "current-month", label: "Текущий месяц" },
   { value: "last-month", label: "Прошлый месяц" },
-  { value: "current-year", label: "Текущий год" },
   { value: "custom", label: "Произвольный период" },
 ];
 

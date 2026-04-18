@@ -89,9 +89,13 @@ const routes = [
     component: PromotionsView,
   },
   {
-    path: "/menu-assortment",
-    name: "MenuAssortment",
+    path: "/product-abc",
+    name: "ProductAbc",
     component: MenuAssortmentView,
+  },
+  {
+    path: "/menu-assortment",
+    redirect: "/product-abc",
   },
   {
     path: "/top-dishes",

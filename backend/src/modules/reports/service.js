@@ -118,6 +118,8 @@ class ReportsService extends OlapClient {
           .trim()
           .toUpperCase();
 
+        const rawStatus = String(sourceOrder?.status || "").trim();
+
         return {
           orderId: String(item?.id || sourceOrder?.id || sourceOrder?.number || `cloud-${orgIndex}-${orderIndex}`),
           orderServiceType: orderServiceType || "DELIVERY_BY_COURIER",
@@ -134,8 +136,8 @@ class ReportsService extends OlapClient {
           sentAt,
           totalMinutes,
           revenue: Number(sourceOrder?.sum || 0),
-          rawStatus: sourceOrder?.status || null,
-          status: sourceOrder?.status || "",
+          rawStatus: rawStatus || null,
+          status: this.normalizeCloudDeliveryStatus(rawStatus),
           sourceKey: sourceOrder?.sourceKey || null,
           hour: this.getHourInTimezone(dateBase, timezone),
           weekdayIndex: this.getWeekdayIndexInTimezone(dateBase, timezone),
@@ -499,6 +501,19 @@ class ReportsService extends OlapClient {
     if (source.includes("достав") || source.includes("delivery") || source.includes("courier")) return "Доставка";
     if (source.includes("зал") || source.includes("dine")) return "Зал";
     return String(channel || "Прочее");
+  }
+
+  normalizeCloudDeliveryStatus(value) {
+    const raw = String(value || "")
+      .trim()
+      .toUpperCase();
+    if (!raw) return "Создан";
+
+    if (raw.includes("CANCEL")) return "Отменен";
+    if (raw.includes("DELIVER") || raw.includes("CLOSE")) return "Доставлен";
+    if (raw.includes("ON_WAY") || raw.includes("ONWAY") || raw.includes("COURIER")) return "В пути";
+    if (raw.includes("READY") || raw.includes("PACK")) return "Готов";
+    return "Создан";
   }
 
   extractOrderNumber(row = {}) {
@@ -1313,8 +1328,8 @@ class ReportsService extends OlapClient {
     }));
   }
 
-  buildRouteStats(rows = []) {
-    return deliveryReports.buildRouteStats(rows, this);
+  buildRouteStats(rows = [], options = {}) {
+    return deliveryReports.buildRouteStats(rows, this, options);
   }
 
   buildOperationalSummary(rows = []) {
@@ -1325,28 +1340,28 @@ class ReportsService extends OlapClient {
     return salesReports.buildHourlySalesReport(rows, timezone, this);
   }
 
-  buildSlaReport(rows = [], timezone = "Europe/Moscow") {
-    return deliveryReports.buildSlaReport(rows, timezone, this);
+  buildSlaReport(rows = [], timezone = "Europe/Moscow", options = {}) {
+    return deliveryReports.buildSlaReport(rows, timezone, this, options);
   }
 
-  buildCourierKpiReport(rows = [], timezone = "Europe/Moscow") {
-    return deliveryReports.buildCourierKpiReport(rows, timezone, this);
+  buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", options = {}) {
+    return deliveryReports.buildCourierKpiReport(rows, timezone, this, options);
   }
 
   buildMarketingSourcesReport(rows = [], timezone = "Europe/Moscow") {
     return marketingReports.buildMarketingSourcesReport(rows, timezone, this);
   }
 
-  buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow") {
-    return deliveryReports.buildDeliverySummaryReport(rows, timezone, this);
+  buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", options = {}) {
+    return deliveryReports.buildDeliverySummaryReport(rows, timezone, this, options);
   }
 
-  buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow") {
-    return deliveryReports.buildDeliveryDelaysReport(rows, timezone, this);
+  buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", options = {}) {
+    return deliveryReports.buildDeliveryDelaysReport(rows, timezone, this, options);
   }
 
-  buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Moscow") {
-    return deliveryReports.buildCourierMapReport(rows, dateTo, timezone, this);
+  buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Moscow", options = {}) {
+    return deliveryReports.buildCourierMapReport(rows, dateTo, timezone, this, options);
   }
 
   async getPromotionsRowsForPeriod({ organizationId, dateFrom, dateTo }) {
@@ -1543,32 +1558,65 @@ class ReportsService extends OlapClient {
 
   async getSlaReport({ organizationId, dateFrom, dateTo }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildSlaReport(rows, timezone), timezone };
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return { ...this.buildSlaReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
   }
 
   async getCourierKpiReport({ organizationId, dateFrom, dateTo }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildCourierKpiReport(rows, timezone), timezone };
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return { ...this.buildCourierKpiReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
   }
 
   async getMarketingSourcesReport({ organizationId, dateFrom, dateTo }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildMarketingSourcesReport(rows, timezone), timezone };
+    if (!this.canUseCloudDeliveryApi()) {
+      throw new Error("Маркетинговые источники требуют включенный iikoCloud API (IIKO_CLOUD_BASE_URL + IIKO_CLOUD_API_LOGIN)");
+    }
+
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return {
+      ...marketingReports.buildMarketingSourcesFromOrders(orders, this),
+      timezone,
+      source: "transport",
+    };
   }
 
   async getDeliverySummaryReport({ organizationId, dateFrom, dateTo }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildDeliverySummaryReport(rows, timezone), timezone };
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return { ...this.buildDeliverySummaryReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
   }
 
   async getDeliveryDelaysReport({ organizationId, dateFrom, dateTo }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return { ...this.buildDeliveryDelaysReport(rows, timezone), timezone };
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return { ...this.buildDeliveryDelaysReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
   }
 
   async exportDeliveryDelaysReport({ organizationId, dateFrom, dateTo }) {
@@ -1726,61 +1774,34 @@ class ReportsService extends OlapClient {
     }
 
     const loadPromise = (async () => {
-      try {
-        const cloudOrders = await this.getCloudDeliveryOrders({
+      const cloudOrders = await this.getCloudDeliveryOrders({
+        organizationId,
+        dateFrom,
+        dateTo,
+        terminalGroupId,
+        statuses,
+        sourceKeys,
+        courierIds,
+        timezone,
+      });
+
+      const payload = {
+        ...deliveryReports.buildDeliveryHeatmapReport([], timezone, this, {
           organizationId,
-          dateFrom,
-          dateTo,
           terminalGroupId,
           statuses,
-          sourceKeys,
-          courierIds,
-          timezone,
-        });
-
-        const payload = {
-          ...deliveryReports.buildDeliveryHeatmapReport([], timezone, this, {
-            organizationId,
-            terminalGroupId,
-            statuses,
-            preparedOrders: cloudOrders,
-            zonesGeoJson: zonesPayload.geoJson,
-            zonesVersion: zonesPayload.version,
-          }),
-          timezone,
-          source: "iiko-cloud",
-        };
-        this.heatmapResultCache.set(cacheKey, {
-          data: payload,
-          expiresAt: Date.now() + this.heatmapCacheTtlMs,
-        });
-        return payload;
-      } catch (error) {
-        console.error("❌ Ошибка загрузки delivery heatmap из iiko Cloud:", {
-          message: error?.message,
-          code: error?.code,
-          status: error?.response?.status,
-          detail: error?.response?.data,
-        });
-        const payload = {
-          ...deliveryReports.buildDeliveryHeatmapReport([], timezone, this, {
-            organizationId,
-            terminalGroupId,
-            statuses,
-            zonesGeoJson: zonesPayload.geoJson,
-            zonesVersion: zonesPayload.version,
-          }),
-          timezone,
-          degraded: true,
-          warningMessage: "Не удалось получить данные доставок из iiko Cloud",
-          source: "iiko-cloud",
-        };
-        this.heatmapResultCache.set(cacheKey, {
-          data: payload,
-          expiresAt: Date.now() + this.heatmapCacheTtlMs,
-        });
-        return payload;
-      }
+          preparedOrders: cloudOrders,
+          zonesGeoJson: zonesPayload.geoJson,
+          zonesVersion: zonesPayload.version,
+        }),
+        timezone,
+        source: "iiko-cloud",
+      };
+      this.heatmapResultCache.set(cacheKey, {
+        data: payload,
+        expiresAt: Date.now() + this.heatmapCacheTtlMs,
+      });
+      return payload;
     })();
 
     try {
@@ -1796,13 +1817,27 @@ class ReportsService extends OlapClient {
     return this.buildPromotionsReport(rows);
   }
 
-  async getMenuAbcReport({ organizationId, dateFrom, dateTo, abcGroup, page, limit }) {
+  async getProductAbcReport({ organizationId, dateFrom, dateTo, abcGroup, page, limit }) {
     return await topDishesService.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
   }
 
+  async getMenuAbcReport(params) {
+    return await this.getProductAbcReport(params);
+  }
+
   async getCourierRoutes({ organizationId, dateFrom, dateTo }) {
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return this.buildRouteStats(rows);
+    const timezone = await this.getOrganizationTimezone(organizationId);
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return {
+      ...this.buildRouteStats([], { preparedOrders: orders }),
+      timezone,
+      source: "iiko-cloud",
+    };
   }
 
   async getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) {

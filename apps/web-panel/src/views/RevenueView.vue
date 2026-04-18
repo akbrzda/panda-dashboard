@@ -2,7 +2,20 @@
   <div class="space-y-5">
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Отчёт по выручке</h1>
+      <ReportPageHeader
+        title="Отчёт по выручке"
+        description="Ключевые финансовые и операционные метрики по выбранному периоду с LFL-сравнением."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
     </div>
 
@@ -115,7 +128,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle, BarChart2 } from "lucide-vue-next";
 import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useRevenueStore } from "../stores/revenue";
@@ -123,18 +137,31 @@ import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { usePlansStore } from "../stores/plans";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "../components/reports/ReportPageHeader.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 const store = useRevenueStore();
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const plansStore = usePlansStore();
+const route = useRoute();
+const lastLoadedAt = ref(null);
 
 const isPageLoading = computed(() => store.isLoading || reportsStore.isLoadingRevenue);
 const pageError = computed(() => reportsStore.error || store.error);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${store.organizations.length || 0})`;
+  }
+
+  const organization = store.organizations.find((org) => org.id === store.currentOrganizationId);
+  return organization ? organization.name : "Выбранное подразделение";
+});
 
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? store.currentOrganizationId;
@@ -151,6 +178,7 @@ async function handleApply(payload = {}) {
 
   if (reportsStore.revenueData) {
     store.revenueData = reportsStore.revenueData;
+    lastLoadedAt.value = new Date();
   }
 }
 

@@ -1,33 +1,61 @@
-function buildRouteStats(rows = [], ctx) {
+function resolveOrders(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  if (Array.isArray(options?.preparedOrders)) {
+    return options.preparedOrders;
+  }
+  return ctx.toOrderEntities(rows, timezone);
+}
+
+function buildRouteStats(rows = [], ctx, options = {}) {
   const routeMergeWindowMs = 5 * 60 * 1000;
   const groupedByCourier = new Map();
+  const preparedOrders = Array.isArray(options?.preparedOrders) ? options.preparedOrders : null;
 
-  for (const row of rows) {
-    if (!ctx.isDeliveryOrder(row)) continue;
-    const courierId = String(row["Delivery.Courier.Id"] || "").trim();
-    if (!courierId) continue;
-    if (!groupedByCourier.has(courierId)) groupedByCourier.set(courierId, []);
-    groupedByCourier.get(courierId).push(row);
+  if (preparedOrders) {
+    for (const order of preparedOrders) {
+      if (!ctx.isCourierDeliveryByServiceType({ OrderServiceType: order?.orderServiceType })) continue;
+      const courierId = String(order?.courierId || "").trim();
+      if (!courierId) continue;
+      if (!groupedByCourier.has(courierId)) groupedByCourier.set(courierId, []);
+      groupedByCourier.get(courierId).push(order);
+    }
+  } else {
+    for (const row of rows) {
+      if (!ctx.isDeliveryOrder(row)) continue;
+      const courierId = String(row["Delivery.Courier.Id"] || "").trim();
+      if (!courierId) continue;
+      if (!groupedByCourier.has(courierId)) groupedByCourier.set(courierId, []);
+      groupedByCourier.get(courierId).push(row);
+    }
   }
 
   const routes = [];
 
   for (const [courierId, courierRows] of groupedByCourier.entries()) {
     const sortedRows = [...courierRows].sort((left, right) => {
-      return (ctx.parseDateTime(left["Delivery.SendTime"]) || 0) - (ctx.parseDateTime(right["Delivery.SendTime"]) || 0);
+      const leftSendAt = preparedOrders
+        ? Number(left?.sentAt || left?.openAt || 0)
+        : ctx.parseDateTime(left["Delivery.SendTime"]) || 0;
+      const rightSendAt = preparedOrders
+        ? Number(right?.sentAt || right?.openAt || 0)
+        : ctx.parseDateTime(right["Delivery.SendTime"]) || 0;
+      return leftSendAt - rightSendAt;
     });
 
     let currentRoute = null;
 
     for (const row of sortedRows) {
-      const sendAt = ctx.parseDateTime(row["Delivery.SendTime"]) || ctx.parseDateTime(row.OpenTime) || 0;
-      const closeAt = ctx.parseDateTime(row["Delivery.CloseTime"]) || sendAt;
-      const orderId = String(row["UniqOrderId.Id"] || "").trim();
+      const sendAt = preparedOrders
+        ? Number(row?.sentAt || row?.openAt || 0)
+        : ctx.parseDateTime(row["Delivery.SendTime"]) || ctx.parseDateTime(row.OpenTime) || 0;
+      const closeAt = preparedOrders
+        ? Number(row?.actualDeliveryAt || row?.deliveredAt || sendAt)
+        : ctx.parseDateTime(row["Delivery.CloseTime"]) || sendAt;
+      const orderId = preparedOrders ? String(row?.orderId || "").trim() : String(row["UniqOrderId.Id"] || "").trim();
 
       if (!currentRoute || sendAt > currentRoute.endAt + routeMergeWindowMs) {
         currentRoute = {
           courierId,
-          courierName: row["Delivery.Courier"] || "Неизвестный курьер",
+          courierName: preparedOrders ? row?.courierName || "Неизвестный курьер" : row["Delivery.Courier"] || "Неизвестный курьер",
           endAt: closeAt,
           orders: new Set(orderId ? [orderId] : []),
         };
@@ -67,9 +95,8 @@ function buildRouteStats(rows = [], ctx) {
   };
 }
 
-function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx) {
-  const orders = ctx
-    .toOrderEntities(rows, timezone)
+function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  const orders = resolveOrders(rows, timezone, ctx, options)
     .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
   const prepThreshold = 25;
   const shelfThreshold = 10;
@@ -148,9 +175,8 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx) {
   };
 }
 
-function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx) {
-  const orders = ctx
-    .toOrderEntities(rows, timezone)
+function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  const orders = resolveOrders(rows, timezone, ctx, options)
     .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
   const totalThreshold = 60;
   const couriers = new Map();
@@ -210,7 +236,7 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx) {
       violationRate: totalOrders > 0 ? ctx.roundMetric((weightedLate / totalOrders) * 100) : 0,
     },
     couriers: couriersList.sort((a, b) => b.orders - a.orders),
-    routeDistribution: buildRouteStats(rows, ctx).distribution,
+    routeDistribution: buildRouteStats(rows, ctx, options).distribution,
   };
 }
 
@@ -275,9 +301,8 @@ function buildMarketingSourcesReport(rows = [], timezone = "Europe/Moscow", ctx)
   };
 }
 
-function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx) {
-  const orders = ctx
-    .toOrderEntities(rows, timezone)
+function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  const orders = resolveOrders(rows, timezone, ctx, options)
     .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
   const statusMap = new Map();
   const channelMap = new Map();
@@ -369,9 +394,8 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx) 
   };
 }
 
-function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx) {
-  const orders = ctx
-    .toOrderEntities(rows, timezone)
+function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
+  const orders = resolveOrders(rows, timezone, ctx, options)
     .filter((order) => ctx.isCourierDeliveryByServiceType({ OrderServiceType: order.orderServiceType }));
   const delayedOrders = [];
   const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, total: 0, delayed: 0, lateMinutes: 0 }));
@@ -484,9 +508,8 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx) {
   };
 }
 
-function buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Moscow", ctx) {
-  const orders = ctx
-    .toOrderEntities(rows, timezone)
+function buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Moscow", ctx, options = {}) {
+  const orders = resolveOrders(rows, timezone, ctx, options)
     .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
   const couriersMap = new Map();
   const timeline = [];
