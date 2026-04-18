@@ -21,7 +21,7 @@
     <template v-if="store.hasData || isPageLoading">
       <section>
         <h2 class="text-lg font-semibold text-foreground mb-4">Финансовые показатели</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             title="Общая выручка"
             :value="store.summary?.totalRevenue ?? null"
@@ -51,18 +51,11 @@
           <MetricCard
             title="Дисконт"
             :value="store.summary?.discountSum ?? null"
+            :display-value="formatDiscountDisplay(store.summary?.discountPercent, store.summary?.discountSum)"
             format="currency"
             icon="Percent"
             :inverse="true"
             :plan="getPlan('discountSum', store.summary?.discountSum)"
-            :loading="isPageLoading"
-          />
-          <MetricCard
-            title="% дисконта"
-            :value="store.summary?.discountPercent ?? null"
-            format="percent"
-            icon="Percent"
-            :inverse="true"
             :loading="isPageLoading"
           />
         </div>
@@ -163,6 +156,21 @@ async function handleApply(payload = {}) {
 
 function getPlan(metric, currentValue) {
   return plansStore.getMetricPlan(metric, filtersStore.preset, store.currentOrganizationId, currentValue);
+}
+
+function formatCurrency(value) {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatPercent(value) {
+  if (value == null) return "—";
+  return `${Number(value).toFixed(2)}%`;
+}
+
+function formatDiscountDisplay(discountPercent, discountSum) {
+  if (discountPercent == null && discountSum == null) return "—";
+  return `${formatPercent(discountPercent)} (${formatCurrency(discountSum)})`;
 }
 
 useAutoRefresh(() => {

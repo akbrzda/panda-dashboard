@@ -1001,12 +1001,6 @@ class ReportsService extends OlapClient {
           "OpenTime",
           "Delivery.CookingFinishTime",
           "Delivery.WayDuration",
-          "Delivery.DeliveryZone",
-          "Delivery.DeliveryZone.Name",
-          "Delivery.DeliveryZone.Id",
-          "Delivery.Zone",
-          "Delivery.Zone.Name",
-          "Delivery.Zone.Id",
           "OrderTime.OrderLength",
         ];
 
@@ -1473,9 +1467,14 @@ class ReportsService extends OlapClient {
   }
 
   async getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) {
+    const includeOperationalSummary =
+      String(process.env.REPORTS_ENABLE_REVENUE_OPERATIONAL_SUMMARY || "true")
+        .trim()
+        .toLowerCase() === "true";
+
     const [current, currentSummary] = await Promise.all([
       revenueService.getRevenueReport(organizationId, new Date(dateFrom), new Date(dateTo)),
-      this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo }).catch(() => null),
+      includeOperationalSummary ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo }).catch(() => null) : Promise.resolve(null),
     ]);
 
     let lfl = null;
@@ -1483,7 +1482,9 @@ class ReportsService extends OlapClient {
     if (lflDateFrom && lflDateTo) {
       [lfl, lflSummary] = await Promise.all([
         revenueService.getRevenueReport(organizationId, new Date(lflDateFrom), new Date(lflDateTo)).catch(() => null),
-        this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo }).catch(() => null),
+        includeOperationalSummary
+          ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo }).catch(() => null)
+          : Promise.resolve(null),
       ]);
     }
 
@@ -1528,8 +1529,8 @@ class ReportsService extends OlapClient {
       summary: {
         ...current.summary,
         avgPerOrder: currentSummary?.avgPerOrder ?? current.summary.avgPerOrder,
-        avgDeliveryTime: currentSummary?.avgDeliveryTime ?? current.summary.avgDeliveryTime,
-        avgCookingTime: currentSummary?.avgCookingTime ?? current.summary.avgCookingTime,
+        avgDeliveryTime: currentSummary?.avgDeliveryTime ?? null,
+        avgCookingTime: currentSummary?.avgCookingTime ?? null,
         lfl: revenueLFL,
         ordersLFL,
         avgDeliveryTimeLFL: lflSummary ? calculateMetricLFL(currentSummary?.avgDeliveryTime, lflSummary?.avgDeliveryTime) : null,

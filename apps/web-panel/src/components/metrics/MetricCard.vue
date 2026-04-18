@@ -94,6 +94,8 @@ const ICONS = {
 const props = defineProps({
   title: { type: String, required: true },
   value: { type: [Number, String], default: null },
+  // Готовая строка значения (если нужно кастомное отображение)
+  displayValue: { type: String, default: "" },
   // Формат значения: currency | number | percent | time
   format: { type: String, default: "number" },
   // Объект LFL: { percent: Number }
@@ -140,7 +142,10 @@ function formatValue(val) {
   }
 }
 
-const formattedValue = computed(() => formatValue(props.value));
+const formattedValue = computed(() => {
+  if (props.displayValue) return props.displayValue;
+  return formatValue(props.value);
+});
 
 const planPercent = computed(() => {
   if (!props.plan || !props.plan.target) return 0;

@@ -56,6 +56,7 @@
           <MetricCard
             title="Дисконт"
             :value="data?.summary.discountSum ?? null"
+            :display-value="formatDiscountDisplay(data?.summary?.discountPercent, data?.summary?.discountSum)"
             format="currency"
             icon="Tag"
             :inverse="true"
@@ -147,31 +148,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from"vue";
-import {
-  AlertCircle,
-  BarChart2,
-  ArrowRight,
-} from"lucide-vue-next";
-import MetricCard from"@/components/metrics/MetricCard.vue";
-import DashboardFilters from"@/components/filters/DashboardFilters.vue";
-import Card from"@/components/ui/Card.vue";
-import DonutChart from"@/components/charts/DonutChart.vue";
-import OrgBarChart from"@/components/charts/OrgBarChart.vue";
-import Button from"@/components/ui/Button.vue";
-import { useAutoRefresh } from"@/composables/useAutoRefresh";
-import { useRevenueStore } from"@/stores/revenue";
-import { useDashboardStore } from"@/stores/dashboard";
-import { useFiltersStore } from"@/stores/filters";
-import { usePlansStore } from"@/stores/plans";
-import { dashboardQuickLinksCatalog } from"@/config/reportCatalog";
+import { ref, computed, onMounted } from "vue";
+import { AlertCircle, BarChart2, ArrowRight } from "lucide-vue-next";
+import MetricCard from "@/components/metrics/MetricCard.vue";
+import DashboardFilters from "@/components/filters/DashboardFilters.vue";
+import Card from "@/components/ui/Card.vue";
+import DonutChart from "@/components/charts/DonutChart.vue";
+import OrgBarChart from "@/components/charts/OrgBarChart.vue";
+import Button from "@/components/ui/Button.vue";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
+import { useRevenueStore } from "@/stores/revenue";
+import { useDashboardStore } from "@/stores/dashboard";
+import { useFiltersStore } from "@/stores/filters";
+import { usePlansStore } from "@/stores/plans";
+import { dashboardQuickLinksCatalog } from "@/config/reportCatalog";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const revenueStore = useRevenueStore();
 const dashboardStore = useDashboardStore();
@@ -189,7 +186,7 @@ const currentPlanOrganizationId = computed(() => {
     return data.value.byOrganization[0].id;
   }
 
-  return"";
+  return "";
 });
 
 const sections = dashboardQuickLinksCatalog;
@@ -199,7 +196,7 @@ async function handleApply({ date, organizationIds }) {
   try {
     await dashboardStore.loadDashboard({ organizationIds, date });
   } catch (e) {
-    error.value = e.message ||"Ошибка загрузки дашборда";
+    error.value = e.message || "Ошибка загрузки дашборда";
   }
 }
 
@@ -212,18 +209,28 @@ function getPlan(metric, currentValue) {
 }
 
 function formatDate(str) {
-  if (!str) return"";
+  if (!str) return "";
   const [y, m, d] = str.split("-");
   return `${d}.${m}.${y}`;
 }
 
 function formatCurrency(val) {
-  if (val == null) return"—";
-  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(val);
+  if (val == null) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
+}
+
+function formatPercent(val) {
+  if (val == null) return "—";
+  return `${Number(val).toFixed(2)}%`;
+}
+
+function formatDiscountDisplay(discountPercent, discountSum) {
+  if (discountPercent == null && discountSum == null) return "—";
+  return `${formatPercent(discountPercent)} (${formatCurrency(discountSum)})`;
 }
 
 function formatNumber(val) {
-  if (val == null) return"—";
+  if (val == null) return "—";
   return new Intl.NumberFormat("ru-RU").format(val);
 }
 

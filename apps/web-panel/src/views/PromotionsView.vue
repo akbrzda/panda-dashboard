@@ -12,11 +12,18 @@
 
     <template v-if="report || isPageLoading">
       <section>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard title="Заказов" :value="report?.summary?.totalOrders ?? null" format="number" icon="ShoppingCart" :loading="isPageLoading" />
           <MetricCard title="Выручка" :value="report?.summary?.totalRevenue ?? null" format="currency" icon="TrendingUp" :loading="isPageLoading" />
-          <MetricCard title="Сумма скидок" :value="report?.summary?.totalDiscount ?? null" format="currency" icon="Percent" :inverse="true" :loading="isPageLoading" />
-          <MetricCard title="Доля скидки" :value="report?.summary?.discountRate ?? null" format="percent" icon="BarChart2" :inverse="true" :loading="isPageLoading" />
+          <MetricCard
+            title="Дисконт"
+            :value="report?.summary?.totalDiscount ?? null"
+            :display-value="formatDiscountDisplay(report?.summary?.discountRate, report?.summary?.totalDiscount)"
+            format="currency"
+            icon="Percent"
+            :inverse="true"
+            :loading="isPageLoading"
+          />
         </div>
       </section>
 
@@ -29,15 +36,18 @@
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
           <h3 class="mb-3 text-sm font-semibold text-foreground">Топ акций по сумме скидки</h3>
           <div class="space-y-2">
-            <div v-for="item in topPromotions" :key="`${item.promoType}-${item.promoName}`" class="rounded-lg border border-border/60 bg-background/60 p-3">
+            <div
+              v-for="item in topPromotions"
+              :key="`${item.promoType}-${item.promoName}`"
+              class="rounded-lg border border-border/60 bg-background/60 p-3"
+            >
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
                   <div class="truncate text-sm font-semibold text-foreground">{{ item.promoName }}</div>
                   <div class="text-xs text-muted-foreground">{{ item.promoType }}</div>
                 </div>
                 <div class="text-right text-xs">
-                  <div class="font-semibold text-foreground">{{ formatCurrency(item.discountSum) }}</div>
-                  <div class="text-muted-foreground">{{ formatNumber(item.discountRate) }}%</div>
+                  <div class="font-semibold text-foreground">{{ formatDiscountDisplay(item.discountRate, item.discountSum) }}</div>
                 </div>
               </div>
             </div>
@@ -55,7 +65,6 @@
                 <TableHead class="text-left font-medium">Заказов</TableHead>
                 <TableHead class="text-left font-medium">Скидка</TableHead>
                 <TableHead class="text-left font-medium">Net sales</TableHead>
-                <TableHead class="text-left font-medium">Доля скидки, %</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -63,9 +72,8 @@
                 <TableCell class="text-foreground">{{ item.promoType }}</TableCell>
                 <TableCell class="text-foreground">{{ item.promoName }}</TableCell>
                 <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
-                <TableCell class="text-foreground">{{ formatCurrency(item.discountSum) }}</TableCell>
+                <TableCell class="text-foreground">{{ formatDiscountDisplay(item.discountRate, item.discountSum) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatCurrency(item.netSales) }}</TableCell>
-                <TableCell class="text-foreground">{{ formatNumber(item.discountRate) }}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -76,22 +84,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from"vue";
-import { AlertCircle } from"lucide-vue-next";
-import { useReportsStore } from"../stores/reports";
-import { useFiltersStore } from"../stores/filters";
-import { useRevenueStore } from"../stores/revenue";
-import PageFilters from"../components/filters/PageFilters.vue";
-import Card from"../components/ui/Card.vue";
-import MetricCard from"../components/metrics/MetricCard.vue";
-import AreaChart from"../components/charts/AreaChart.vue";
+import { computed, onMounted } from "vue";
+import { AlertCircle } from "lucide-vue-next";
+import { useReportsStore } from "../stores/reports";
+import { useFiltersStore } from "../stores/filters";
+import { useRevenueStore } from "../stores/revenue";
+import PageFilters from "../components/filters/PageFilters.vue";
+import Card from "../components/ui/Card.vue";
+import MetricCard from "../components/metrics/MetricCard.vue";
+import AreaChart from "../components/charts/AreaChart.vue";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
@@ -115,7 +123,18 @@ function formatNumber(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+  if (value == null) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
+}
+
+function formatPercent(value) {
+  if (value == null) return "—";
+  return `${Number(value).toFixed(2)}%`;
+}
+
+function formatDiscountDisplay(discountPercent, discountSum) {
+  if (discountPercent == null && discountSum == null) return "—";
+  return `${formatPercent(discountPercent)} (${formatCurrency(discountSum)})`;
 }
 
 async function handleApply(payload = {}) {

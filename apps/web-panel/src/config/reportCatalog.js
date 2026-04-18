@@ -14,7 +14,6 @@ import {
   Users,
   Percent,
   Target,
-  Factory,
 } from "lucide-vue-next";
 
 export const reportSectionsCatalog = [
@@ -47,13 +46,6 @@ export const reportSectionsCatalog = [
         title: "Продажи по часам",
         desc: "Почасовая динамика выручки и заказов",
         icon: Clock3,
-      },
-      {
-        to: "/production-forecast",
-        label: "Прогноз загрузки",
-        title: "Прогноз загрузки производства",
-        desc: "Историческая модель + подтвержденные предзаказы",
-        icon: Factory,
       },
       {
         to: "/top-dishes",
