@@ -5,6 +5,41 @@ function resolveOrders(rows = [], timezone = "Europe/Moscow", ctx, options = {})
   return ctx.toOrderEntities(rows, timezone);
 }
 
+function buildTechnicalReconciliation(orders = [], ctx, options = {}) {
+  if (!options?.enabled) return null;
+
+  const normalizedOrderIds = Array.from(
+    new Set(
+      orders
+        .map((order) => String(order?.orderId || order?.orderNumber || "").trim())
+        .filter(Boolean),
+    ),
+  ).sort((left, right) => left.localeCompare(right));
+
+  const checksum = normalizedOrderIds.reduce((hash, id) => {
+    let next = hash;
+    for (let index = 0; index < id.length; index += 1) {
+      next = (next * 31 + id.charCodeAt(index)) >>> 0;
+    }
+    return next;
+  }, 2166136261);
+
+  const lateSummary = options?.lateSummary || ctx.buildLateOrdersSummary(orders);
+
+  return {
+    enabled: true,
+    scope: String(options?.scope || "orders"),
+    totalOrders: orders.length,
+    uniqueOrderIds: normalizedOrderIds.length,
+    comparableOrders: Number(lateSummary?.comparableOrders || 0),
+    excludedOrdersWithoutTimestamps: Number(lateSummary?.excludedOrders || 0),
+    lateOrders: Number(lateSummary?.lateOrders || 0),
+    orderIds: normalizedOrderIds,
+    sampleOrderIds: normalizedOrderIds.slice(0, 30),
+    orderIdsChecksum: checksum.toString(16),
+  };
+}
+
 function buildRouteStats(rows = [], ctx, options = {}) {
   const routeMergeWindowMs = 5 * 60 * 1000;
   const groupedByCourier = new Map();
@@ -92,9 +127,7 @@ function buildRouteStats(rows = [], ctx, options = {}) {
 }
 
 function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
-    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
-  );
+  const orders = resolveOrders(rows, timezone, ctx, options);
   const prepThreshold = 25;
   const shelfThreshold = 10;
   const routeThreshold = 40;
@@ -108,6 +141,7 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}
   const totalValues = [];
   const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, violations: 0 }));
   const violations = [];
+  const lateSummary = ctx.buildLateOrdersSummary(orders);
 
   orders.forEach((order) => {
     if (order.prepMinutes != null) prepValues.push(order.prepMinutes);
@@ -151,6 +185,10 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}
       violationsCount,
       violationRate,
       onTimeRate: totalOrders > 0 ? ctx.roundMetric(100 - violationRate) : 0,
+      lateOrders: lateSummary.lateOrders,
+      lateRate: lateSummary.lateRate,
+      comparableOrders: lateSummary.comparableOrders,
+      excludedOrdersWithoutTimestamps: lateSummary.excludedOrders,
     },
     stageKpi: {
       prep: { avg: toAverage(prepValues), threshold: prepThreshold, count: prepValues.length },
@@ -169,14 +207,18 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}
       violationRate: item.orders > 0 ? ctx.roundMetric((item.violations / item.orders) * 100) : 0,
     })),
     violations: violations.sort((a, b) => (b.totalMinutes || 0) - (a.totalMinutes || 0)).slice(0, 100),
+    reconciliation: buildTechnicalReconciliation(orders, ctx, {
+      enabled: options?.reconciliationMode === true,
+      scope: "all-orders-sla",
+      lateSummary,
+    }),
   };
 }
 
 function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
   const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
-    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
+    ctx.isCourierDeliveryByServiceType({ OrderServiceType: order.orderServiceType }),
   );
-  const totalThreshold = 60;
   const couriers = new Map();
 
   for (const order of orders) {
@@ -187,6 +229,9 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
         orders: 0,
         revenue: 0,
         lateOrders: 0,
+        comparableOrders: 0,
+        excludedOrdersWithoutTimestamps: 0,
+        totalLateMinutes: 0,
         routeMinutes: [],
         totalMinutes: [],
         hours: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 })),
@@ -198,14 +243,23 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
     courier.revenue += Number(order.revenue) || 0;
     if (order.totalMinutes != null) courier.totalMinutes.push(order.totalMinutes);
     if (order.routeMinutes != null) courier.routeMinutes.push(order.routeMinutes);
-    if (order.totalMinutes != null && order.totalMinutes > totalThreshold) courier.lateOrders += 1;
+    const lateMetrics = ctx.calculateLateMetrics(order);
+    if (lateMetrics.hasComparableTimes) {
+      courier.comparableOrders += 1;
+      if (lateMetrics.isLate) {
+        courier.lateOrders += 1;
+        courier.totalLateMinutes += lateMetrics.lateMinutes;
+      }
+    } else {
+      courier.excludedOrdersWithoutTimestamps += 1;
+    }
     if (Number.isInteger(order.hour) && order.hour >= 0 && order.hour <= 23) courier.hours[order.hour].orders += 1;
   }
 
   const toAverage = (values) => (values.length ? ctx.roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length) : null);
 
   const couriersList = [...couriers.values()].map((courier) => {
-    const violationRate = courier.orders > 0 ? ctx.roundMetric((courier.lateOrders / courier.orders) * 100) : 0;
+    const violationRate = courier.comparableOrders > 0 ? ctx.roundMetric((courier.lateOrders / courier.comparableOrders) * 100) : 0;
     return {
       courierId: courier.courierId,
       courierName: courier.courierName,
@@ -214,8 +268,11 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
       avgRouteMinutes: toAverage(courier.routeMinutes),
       avgTotalMinutes: toAverage(courier.totalMinutes),
       lateOrders: courier.lateOrders,
+      comparableOrders: courier.comparableOrders,
+      excludedOrdersWithoutTimestamps: courier.excludedOrdersWithoutTimestamps,
+      avgLateMinutes: courier.lateOrders > 0 ? ctx.roundMetric(courier.totalLateMinutes / courier.lateOrders) : 0,
       violationRate,
-      onTimeRate: courier.orders > 0 ? ctx.roundMetric(100 - violationRate) : 0,
+      onTimeRate: courier.comparableOrders > 0 ? ctx.roundMetric(100 - violationRate) : 0,
       hourly: courier.hours,
     };
   });
@@ -223,6 +280,8 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
   const totalOrders = couriersList.reduce((sum, item) => sum + item.orders, 0);
   const totalRevenue = couriersList.reduce((sum, item) => sum + item.revenue, 0);
   const weightedLate = couriersList.reduce((sum, item) => sum + item.lateOrders, 0);
+  const comparableOrders = couriersList.reduce((sum, item) => sum + item.comparableOrders, 0);
+  const excludedOrdersWithoutTimestamps = couriersList.reduce((sum, item) => sum + item.excludedOrdersWithoutTimestamps, 0);
 
   return {
     summary: {
@@ -231,10 +290,21 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
       totalRevenue: ctx.roundMetric(totalRevenue),
       avgOrdersPerCourier: couriersList.length > 0 ? ctx.roundMetric(totalOrders / couriersList.length) : 0,
       lateOrders: weightedLate,
-      violationRate: totalOrders > 0 ? ctx.roundMetric((weightedLate / totalOrders) * 100) : 0,
+      comparableOrders,
+      excludedOrdersWithoutTimestamps,
+      violationRate: comparableOrders > 0 ? ctx.roundMetric((weightedLate / comparableOrders) * 100) : 0,
     },
     couriers: couriersList.sort((a, b) => b.orders - a.orders),
     routeDistribution: buildRouteStats(rows, ctx, options).distribution,
+    reconciliation: buildTechnicalReconciliation(orders, ctx, {
+      enabled: options?.reconciliationMode === true,
+      scope: "completed-courier-delivery-orders",
+      lateSummary: {
+        comparableOrders,
+        excludedOrders: excludedOrdersWithoutTimestamps,
+        lateOrders: weightedLate,
+      },
+    }),
   };
 }
 
@@ -310,7 +380,7 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx, 
 
   let totalRevenue = 0;
   for (const order of orders) {
-    const status = order.status || "Создан";
+    const status = order.status || "Прочие";
     const channel = ctx.normalizeChannelName(order.orderType);
     const departmentId = order.departmentId || "unknown";
     const date = order.date || "unknown";
@@ -336,12 +406,12 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx, 
     const daily = dailyMap.get(date);
     daily.orders += 1;
     daily.revenue += revenue;
-    if (status === "Доставлен") daily.delivered += 1;
+    if (status === "Завершен") daily.delivered += 1;
     if (status === "Отменен") daily.canceled += 1;
   }
 
   const totalOrders = orders.length;
-  const deliveredOrders = orders.filter((order) => order.status === "Доставлен").length;
+  const deliveredOrders = orders.filter((order) => order.status === "Завершен").length;
   const canceledOrders = orders.filter((order) => order.status === "Отменен").length;
 
   const statuses = [...statusMap.values()]
@@ -402,15 +472,18 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, o
   const couriersMap = new Map();
   const departmentsMap = new Map();
 
-  for (const order of orders) {
-    const expectedDeliveryAt = order.promisedAt;
-    const actualDeliveryAt = order.actualDeliveryAt;
-    if (!expectedDeliveryAt || !actualDeliveryAt) continue;
+  const lateSummary = ctx.buildLateOrdersSummary(orders);
 
-    const promisedMinutes = order.openAt && expectedDeliveryAt ? (Number(expectedDeliveryAt) - Number(order.openAt)) / (1000 * 60) : 0;
+  for (const order of orders) {
+    const lateMetrics = ctx.calculateLateMetrics(order);
+    if (!lateMetrics.hasComparableTimes) continue;
+
+    const expectedDeliveryAt = Number(order.promisedAt || 0);
+    const actualDeliveryAt = Number(order.actualDeliveryAt || 0);
+    const promisedMinutes = order.openAt && expectedDeliveryAt ? (expectedDeliveryAt - Number(order.openAt)) / (1000 * 60) : 0;
     const actualMinutes = Number(order.totalMinutes || 0);
 
-    const lateMinutes = Math.max(0, (Number(actualDeliveryAt) - Number(expectedDeliveryAt)) / (1000 * 60));
+    const lateMinutes = lateMetrics.lateMinutes;
 
     const isDelayed = lateMinutes > 0;
     const hour = Number.isInteger(order.hour) ? order.hour : null;
@@ -468,8 +541,8 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, o
   }
 
   const totalOrders = orders.length;
-  const delayedCount = delayedOrders.length;
-  const totalLateMinutes = delayedOrders.reduce((sum, item) => sum + item.lateMinutes, 0);
+  const delayedCount = lateSummary.lateOrders;
+  const totalLateMinutes = lateSummary.totalLateMinutes;
 
   const couriers = [...couriersMap.values()]
     .map((item) => ({
@@ -490,11 +563,13 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, o
   return {
     summary: {
       totalOrders,
+      comparableOrders: lateSummary.comparableOrders,
+      excludedOrdersWithoutTimestamps: lateSummary.excludedOrders,
       delayedOrders: delayedCount,
-      onTimeOrders: totalOrders - delayedCount,
-      delayRate: totalOrders > 0 ? ctx.roundMetric((delayedCount / totalOrders) * 100) : 0,
-      totalLateMinutes: ctx.roundMetric(totalLateMinutes),
-      avgLateMinutes: delayedCount > 0 ? ctx.roundMetric(totalLateMinutes / delayedCount) : 0,
+      onTimeOrders: lateSummary.onTimeOrders,
+      delayRate: lateSummary.lateRate,
+      totalLateMinutes,
+      avgLateMinutes: lateSummary.avgLateMinutes,
     },
     hourly: hourly.map((item) => ({
       ...item,
@@ -505,6 +580,11 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, o
     couriers,
     departments,
     delayedOrders: delayedOrders.sort((a, b) => b.lateMinutes - a.lateMinutes).slice(0, 100),
+    reconciliation: buildTechnicalReconciliation(orders, ctx, {
+      enabled: options?.reconciliationMode === true,
+      scope: "completed-courier-delivery-orders",
+      lateSummary,
+    }),
   };
 }
 
@@ -714,6 +794,7 @@ function buildDeliveryHeatmapReport(rows = [], timezone = "Europe/Moscow", ctx, 
       if (statusesFilter.size === 0) return true;
       return statusesFilter.has(resolveOrderStatusForFilter(order));
     });
+  const lateSummary = ctx.buildLateOrdersSummary(orders);
   const totalRevenue = ctx.roundMetric(orders.reduce((sum, order) => sum + Number(order?.revenue || 0), 0));
 
   const zonesGeoJson = options?.zonesGeoJson && options.zonesGeoJson.type === "FeatureCollection" ? options.zonesGeoJson : null;
@@ -739,24 +820,20 @@ function buildDeliveryHeatmapReport(rows = [], timezone = "Europe/Moscow", ctx, 
     })),
   }));
 
-  let delayedOrders = 0;
-
   for (const order of orders) {
     const hour = Number.isInteger(order.hour) && order.hour >= 0 && order.hour <= 23 ? order.hour : null;
     const weekdayIndex = Number(order.weekdayIndex);
     if (hour == null || !weekdayIndex || weekdayIndex < 1 || weekdayIndex > 7) continue;
 
-    const expectedDeliveryAt = Number(order.promisedAt || 0);
-    const actualDeliveryAt = Number(order.actualDeliveryAt || 0);
-    const lateMinutes = expectedDeliveryAt > 0 && actualDeliveryAt > 0 ? Math.max(0, (actualDeliveryAt - expectedDeliveryAt) / (1000 * 60)) : 0;
-    const isDelayed = lateMinutes > 0;
+    const lateMetrics = ctx.calculateLateMetrics(order);
+    const lateMinutes = lateMetrics.lateMinutes;
+    const isDelayed = lateMetrics.isLate;
 
     const hourBucket = hourly[hour];
     hourBucket.orders += 1;
     if (isDelayed) {
       hourBucket.delayed += 1;
       hourBucket.totalLateMinutes += lateMinutes;
-      delayedOrders += 1;
     }
 
     const weekdayBucket = weekdayBuckets[weekdayIndex - 1];
@@ -892,11 +969,7 @@ function buildDeliveryHeatmapReport(rows = [], timezone = "Europe/Moscow", ctx, 
         stat.totalMinutesSum += Number(order.totalMinutes || 0);
         stat.totalMinutesCount += 1;
       }
-      if (
-        Number.isFinite(Number(order.promisedAt)) &&
-        Number.isFinite(Number(order.actualDeliveryAt)) &&
-        Number(order.actualDeliveryAt) > Number(order.promisedAt)
-      ) {
+      if (ctx.calculateLateMetrics(order).isLate) {
         stat.delayedOrders += 1;
       }
     }
@@ -949,10 +1022,12 @@ function buildDeliveryHeatmapReport(rows = [], timezone = "Europe/Moscow", ctx, 
   return {
     summary: {
       totalOrders: orders.length,
+      comparableOrders: lateSummary.comparableOrders,
+      excludedOrdersWithoutTimestamps: lateSummary.excludedOrders,
       totalRevenue,
-      delayedOrders,
-      onTimeOrders: Math.max(orders.length - delayedOrders, 0),
-      delayRate: orders.length > 0 ? ctx.roundMetric((delayedOrders / orders.length) * 100) : 0,
+      delayedOrders: lateSummary.lateOrders,
+      onTimeOrders: lateSummary.onTimeOrders,
+      delayRate: lateSummary.lateRate,
       peakHour,
       matchedByCoordinates,
       matchedByZoneAlias,

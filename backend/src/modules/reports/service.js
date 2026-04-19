@@ -10,6 +10,7 @@ const fileLogger = require("../../utils/fileLogger");
 const deliveryReports = require("./services/deliveryReports");
 const salesReports = require("./services/salesReports");
 const marketingReports = require("./services/marketingReports");
+const orderRules = require("../shared/orderRules");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class ReportsService extends OlapClient {
@@ -142,6 +143,7 @@ class ReportsService extends OlapClient {
           .toUpperCase();
 
         const rawStatus = String(sourceOrder?.status || "").trim();
+        const statusCategory = orderRules.resolveOrderStatusCategory(rawStatus);
 
         return {
           orderId: String(item?.id || sourceOrder?.id || sourceOrder?.number || `cloud-${orgIndex}-${orderIndex}`),
@@ -169,7 +171,8 @@ class ReportsService extends OlapClient {
           totalMinutes,
           revenue: Number(sourceOrder?.sum || 0),
           rawStatus: rawStatus || null,
-          status: this.normalizeCloudDeliveryStatus(rawStatus),
+          status: orderRules.getCanonicalDeliveryStatus(rawStatus),
+          statusCategory,
           sourceKey: sourceOrder?.sourceKey || null,
           hour: this.getHourInTimezone(dateBase, timezone),
           weekdayIndex: this.getWeekdayIndexInTimezone(dateBase, timezone),
@@ -349,6 +352,8 @@ class ReportsService extends OlapClient {
       courierIds,
       timezone,
     });
+    const hasExplicitStatuses = Array.isArray(statuses) && statuses.length > 0;
+
     return normalizedOrders.filter((item) => {
       if (terminalGroupId && String(item?.terminalGroupId || "") !== String(terminalGroupId)) {
         return false;
@@ -358,6 +363,9 @@ class ReportsService extends OlapClient {
         if (!allowed.has(String(item?.courierId || ""))) {
           return false;
         }
+      }
+      if (!hasExplicitStatuses && !this.isCompletedOrderStatus(item?.statusCategory || item?.status)) {
+        return false;
       }
       return true;
     });
@@ -451,6 +459,34 @@ class ReportsService extends OlapClient {
     return Math.round(numericValue * factor) / factor;
   }
 
+  isCompletedOrderStatus(value) {
+    return orderRules.isCompletedStatus(value);
+  }
+
+  calculateLateMetrics(order = {}) {
+    return orderRules.calculateLateMetrics({
+      promisedAt: order?.promisedAt,
+      actualDeliveryAt: order?.actualDeliveryAt,
+    });
+  }
+
+  buildLateOrdersSummary(orders = []) {
+    return orderRules.calculateLateOrdersSummary(orders, {
+      round: (value) => this.roundMetric(value),
+    });
+  }
+
+  calculateDiscountMetrics({ netRevenue, revenueBeforeDiscount, discountSum }) {
+    return orderRules.calculateDiscountMetrics(
+      {
+        netRevenue,
+        revenueBeforeDiscount,
+        discountSum,
+      },
+      (value) => this.roundMetric(value),
+    );
+  }
+
   parseDateTime(value) {
     if (!value) return null;
     const timestamp = new Date(value).getTime();
@@ -536,16 +572,7 @@ class ReportsService extends OlapClient {
   }
 
   normalizeCloudDeliveryStatus(value) {
-    const raw = String(value || "")
-      .trim()
-      .toUpperCase();
-    if (!raw) return "Создан";
-
-    if (raw.includes("CANCEL")) return "Отменен";
-    if (raw.includes("DELIVER") || raw.includes("CLOSE")) return "Доставлен";
-    if (raw.includes("ON_WAY") || raw.includes("ONWAY") || raw.includes("COURIER")) return "В пути";
-    if (raw.includes("READY") || raw.includes("PACK")) return "Готов";
-    return "Создан";
+    return orderRules.getCanonicalDeliveryStatus(value);
   }
 
   extractOrderNumber(row = {}) {
@@ -878,16 +905,24 @@ class ReportsService extends OlapClient {
   extractOrderStatus(row = {}, order = null) {
     const cancelCause = String(row["Delivery.CancelCause"] || "").trim();
     const isCanceled = this.isDeletedOrderFlag(row.OrderDeleted) || this.isTrueFlag(row.Storned) || Boolean(cancelCause);
-    if (isCanceled) return "Отменен";
+    if (isCanceled) return orderRules.getCanonicalDeliveryStatus("canceled");
+
+    const rawServiceType =
+      order?.orderServiceType || row.OrderServiceType || row["Order.ServiceType"] || row["OrderServiceType.Name"] || row["Delivery.OrderServiceType"];
+    const serviceType = this.normalizeOrderServiceType(rawServiceType);
 
     const deliveredAt = order?.deliveredAt || this.parseDateTime(row["Delivery.CloseTime"]);
     const sentAt = order?.sentAt || this.parseDateTime(row["Delivery.SendTime"]);
     const cookedAt = order?.cookedAt || this.parseDateTime(row["Delivery.CookingFinishTime"]);
 
-    if (deliveredAt) return "Доставлен";
-    if (sentAt) return "В пути";
-    if (cookedAt) return "Готов";
-    return "Создан";
+    // Для зал/самовывоз считаем заказ завершенным: этапы доставки для них отсутствуют по модели данных iiko.
+    if (serviceType && serviceType !== "DELIVERY_BY_COURIER") {
+      return orderRules.getCanonicalDeliveryStatus("completed");
+    }
+
+    if (deliveredAt) return orderRules.getCanonicalDeliveryStatus("completed");
+    if (sentAt || cookedAt) return orderRules.getCanonicalDeliveryStatus("in_transit");
+    return orderRules.getCanonicalDeliveryStatus("other");
   }
 
   getStablePoint(seed) {
@@ -907,6 +942,23 @@ class ReportsService extends OlapClient {
     const normalizedFrom = this.toDateOnly(dateFrom) || String(dateFrom || "").slice(0, 10);
     const normalizedTo = this.toDateOnly(dateTo) || String(dateTo || "").slice(0, 10);
     return `${organizationId}:${normalizedFrom}:${normalizedTo}`;
+  }
+
+  filterOperationalRowsByCompletion(rows = [], timezone = "Europe/Moscow", completedOnly = true) {
+    if (!completedOnly) return rows;
+
+    const completedOrderIds = new Set(
+      this.toOrderEntities(rows, timezone)
+        .filter((order) => this.isCompletedOrderStatus(order?.statusCategory || order?.status))
+        .map((order) => String(order.orderId || "").trim())
+        .filter(Boolean),
+    );
+
+    if (completedOrderIds.size === 0) {
+      return [];
+    }
+
+    return rows.filter((row) => completedOrderIds.has(String(this.getOrderId(row)).trim()));
   }
 
   getHeatmapResultCacheKey({
@@ -959,11 +1011,11 @@ class ReportsService extends OlapClient {
     return `${organizationId}:${normalizedTerminalGroupId}:${normalizedFrom}:${normalizedTo}:${normalizedStatuses}:${normalizedSourceKeys}:${normalizedCourierIds}:${Number(zoneVersion || 0)}`;
   }
 
-  async getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo }) {
+  async getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo, timezone = "Europe/Moscow", completedOnly = true }) {
     const cacheKey = this.getOperationalRowsCacheKey({ organizationId, dateFrom, dateTo });
     const cached = this.operationalRowsCache.get(cacheKey);
     if (cached) {
-      return cached;
+      return this.filterOperationalRowsByCompletion(cached, timezone, completedOnly);
     }
 
     if (this.operationalRowsInflight.has(cacheKey)) {
@@ -1076,15 +1128,17 @@ class ReportsService extends OlapClient {
         AverageOrderTime: parseFloat(values[2]) || 0,
       }));
 
-      const filteredRows = this.filterCanceledOrders(rows).rows;
-      this.operationalRowsCache.set(cacheKey, filteredRows, this.operationalRowsCacheTtlMs);
+      const activeRows = this.filterCanceledOrders(rows).rows;
+      const filteredRows = this.filterOperationalRowsByCompletion(activeRows, timezone, completedOnly);
+      this.operationalRowsCache.set(cacheKey, activeRows, this.operationalRowsCacheTtlMs);
 
       return filteredRows;
     })();
 
     this.operationalRowsInflight.set(cacheKey, loadPromise);
     try {
-      return await loadPromise;
+      const activeRows = await loadPromise;
+      return this.filterOperationalRowsByCompletion(activeRows, timezone, completedOnly);
     } finally {
       this.operationalRowsInflight.delete(cacheKey);
     }
@@ -1353,10 +1407,14 @@ class ReportsService extends OlapClient {
       order.deliveryPoint = order.deliveryPoint || this.extractCoordinatePairFromRow(row);
       order.rawStatus = order.rawStatus || this.pickFirstValue(row, ["Delivery.Status", "OrderStatus", "Status"]) || null;
     });
-    return [...orderMap.values()].map((order) => ({
-      ...order,
-      status: order.isOrderDeleted || order.isStorned || order.cancelCause ? "Отменен" : this.extractOrderStatus({}, order),
-    }));
+    return [...orderMap.values()].map((order) => {
+      const status = order.isOrderDeleted || order.isStorned || order.cancelCause ? "Отменен" : this.extractOrderStatus({}, order);
+      return {
+        ...order,
+        status,
+        statusCategory: orderRules.resolveOrderStatusCategory(status),
+      };
+    });
   }
 
   buildRouteStats(rows = [], options = {}) {
@@ -1492,10 +1550,11 @@ class ReportsService extends OlapClient {
     return marketingReports.buildPromotionsReport(rows, this);
   }
 
-  async getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo }) {
+  async getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo, completedOnly = true }) {
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
+    const timezone = await this.getOrganizationTimezone(organizationId);
+    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo, timezone, completedOnly });
     const summary = this.buildOperationalSummary(rows);
     return {
       ...summary,
@@ -1506,7 +1565,7 @@ class ReportsService extends OlapClient {
     };
   }
 
-  async getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) {
+  async getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true }) {
     const includeOperationalSummary =
       String(process.env.REPORTS_ENABLE_REVENUE_OPERATIONAL_SUMMARY || "true")
         .trim()
@@ -1514,7 +1573,9 @@ class ReportsService extends OlapClient {
 
     const [current, currentSummary] = await Promise.all([
       revenueService.getRevenueReport(organizationId, new Date(dateFrom), new Date(dateTo)),
-      includeOperationalSummary ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo }).catch(() => null) : Promise.resolve(null),
+      includeOperationalSummary
+        ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo, completedOnly }).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
     let lfl = null;
@@ -1523,10 +1584,28 @@ class ReportsService extends OlapClient {
       [lfl, lflSummary] = await Promise.all([
         revenueService.getRevenueReport(organizationId, new Date(lflDateFrom), new Date(lflDateTo)).catch(() => null),
         includeOperationalSummary
-          ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo }).catch(() => null)
+          ? this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo, completedOnly }).catch(() => null)
           : Promise.resolve(null),
       ]);
     }
+
+    const lflTotalRevenue = lfl?.summary?.totalRevenue ?? null;
+    const lflTotalOrders = lfl?.summary?.totalOrders ?? null;
+    const revenueLFL =
+      lflTotalRevenue != null && lflTotalRevenue > 0
+        ? Math.round(((current.summary.totalRevenue - lflTotalRevenue) / lflTotalRevenue) * 10000) / 100
+        : current.summary.lfl;
+    const ordersLFL =
+      lflTotalOrders != null && lflTotalOrders > 0
+        ? Math.round(((current.summary.totalOrders - lflTotalOrders) / lflTotalOrders) * 10000) / 100
+        : null;
+    const calculateMetricLFL = (currentValue, previousValue) =>
+      currentValue != null && previousValue != null && previousValue > 0
+        ? Math.round(((currentValue - previousValue) / previousValue) * 10000) / 100
+        : null;
+    const avgPerOrderLFL = calculateMetricLFL(current.summary?.avgPerOrder, lfl?.summary?.avgPerOrder);
+    const discountSumLFL = calculateMetricLFL(current.summary?.discountSum, lfl?.summary?.discountSum);
+    const discountPercentLFL = calculateMetricLFL(current.summary?.discountPercent, lfl?.summary?.discountPercent);
 
     const channelsWithLFL = {};
     for (const [channel, data] of Object.entries(current.revenueByChannel || {})) {
@@ -1549,28 +1628,16 @@ class ReportsService extends OlapClient {
       };
     }
 
-    const lflTotalRevenue = lfl?.summary?.totalRevenue ?? null;
-    const lflTotalOrders = lfl?.summary?.totalOrders ?? null;
-    const revenueLFL =
-      lflTotalRevenue != null && lflTotalRevenue > 0
-        ? Math.round(((current.summary.totalRevenue - lflTotalRevenue) / lflTotalRevenue) * 10000) / 100
-        : current.summary.lfl;
-    const ordersLFL =
-      lflTotalOrders != null && lflTotalOrders > 0
-        ? Math.round(((current.summary.totalOrders - lflTotalOrders) / lflTotalOrders) * 10000) / 100
-        : null;
-    const calculateMetricLFL = (currentValue, previousValue) =>
-      currentValue != null && previousValue != null && previousValue > 0
-        ? Math.round(((currentValue - previousValue) / previousValue) * 10000) / 100
-        : null;
-
     return {
       ...current,
       summary: {
         ...current.summary,
         avgPerOrder: currentSummary?.avgPerOrder ?? current.summary.avgPerOrder,
+        avgPerOrderLFL,
         avgDeliveryTime: currentSummary?.avgDeliveryTime ?? null,
         avgCookingTime: currentSummary?.avgCookingTime ?? null,
+        discountSumLFL,
+        discountPercentLFL,
         lfl: revenueLFL,
         ordersLFL,
         avgDeliveryTimeLFL: lflSummary ? calculateMetricLFL(currentSummary?.avgDeliveryTime, lflSummary?.avgDeliveryTime) : null,
@@ -1581,24 +1648,19 @@ class ReportsService extends OlapClient {
     };
   }
 
-  async getHourlySalesReport({ organizationId, dateFrom, dateTo }) {
+  async getHourlySalesReport({ organizationId, dateFrom, dateTo, completedOnly = true }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
+    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo, timezone, completedOnly });
     return { ...this.buildHourlySalesReport(rows, timezone), timezone };
   }
 
-  async getSlaReport({ organizationId, dateFrom, dateTo }) {
+  async getSlaReport({ organizationId, dateFrom, dateTo, reconciliationMode = false }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    const orders = await this.getCloudDeliveryOrders({
-      organizationId,
-      dateFrom,
-      dateTo,
-      timezone,
-    });
-    return { ...this.buildSlaReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
+    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo });
+    return { ...this.buildSlaReport(rows, timezone, { reconciliationMode }), timezone, source: "server-olap" };
   }
 
-  async getCourierKpiReport({ organizationId, dateFrom, dateTo }) {
+  async getCourierKpiReport({ organizationId, dateFrom, dateTo, reconciliationMode = false }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
     const orders = await this.getCloudDeliveryOrders({
       organizationId,
@@ -1606,25 +1668,16 @@ class ReportsService extends OlapClient {
       dateTo,
       timezone,
     });
-    return { ...this.buildCourierKpiReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
+    return { ...this.buildCourierKpiReport([], timezone, { preparedOrders: orders, reconciliationMode }), timezone, source: "iiko-cloud" };
   }
 
-  async getMarketingSourcesReport({ organizationId, dateFrom, dateTo }) {
+  async getMarketingSourcesReport({ organizationId, dateFrom, dateTo, completedOnly = true }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
-    if (!this.canUseCloudDeliveryApi()) {
-      throw new Error("Маркетинговые источники требуют включенный iikoCloud API (IIKO_CLOUD_BASE_URL + IIKO_CLOUD_API_LOGIN)");
-    }
-
-    const orders = await this.getCloudDeliveryOrders({
-      organizationId,
-      dateFrom,
-      dateTo,
-      timezone,
-    });
+    const rows = await this.getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo, timezone, completedOnly });
     return {
-      ...marketingReports.buildMarketingSourcesFromOrders(orders, this),
+      ...marketingReports.buildMarketingSourcesReport(rows, timezone, this),
       timezone,
-      source: "transport",
+      source: "server-olap",
     };
   }
 
@@ -1639,7 +1692,7 @@ class ReportsService extends OlapClient {
     return { ...this.buildDeliverySummaryReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
   }
 
-  async getDeliveryDelaysReport({ organizationId, dateFrom, dateTo }) {
+  async getDeliveryDelaysReport({ organizationId, dateFrom, dateTo, reconciliationMode = false }) {
     const timezone = await this.getOrganizationTimezone(organizationId);
     const orders = await this.getCloudDeliveryOrders({
       organizationId,
@@ -1647,7 +1700,7 @@ class ReportsService extends OlapClient {
       dateTo,
       timezone,
     });
-    return { ...this.buildDeliveryDelaysReport([], timezone, { preparedOrders: orders }), timezone, source: "iiko-cloud" };
+    return { ...this.buildDeliveryDelaysReport([], timezone, { preparedOrders: orders, reconciliationMode }), timezone, source: "iiko-cloud" };
   }
 
   async exportDeliveryDelaysReport({ organizationId, dateFrom, dateTo }) {
@@ -1840,40 +1893,34 @@ class ReportsService extends OlapClient {
     }
   }
 
-  async getPromotionsReport({ organizationId, dateFrom, dateTo }) {
+  async getPromotionsReport({ organizationId, dateFrom, dateTo, completedOnly = true }) {
+    const timezone = await this.getOrganizationTimezone(organizationId);
     const rows = await this.getPromotionsRowsForPeriod({ organizationId, dateFrom, dateTo });
-    return this.buildPromotionsReport(rows);
+    const filteredRows = this.filterOperationalRowsByCompletion(rows, timezone, completedOnly);
+    return this.buildPromotionsReport(filteredRows);
   }
 
-  async getProductAbcReport({ organizationId, dateFrom, dateTo, abcGroup, page, limit }) {
-    return await topDishesService.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
+  async getProductAbcReport({ organizationId, dateFrom, dateTo, abcGroup, page, limit, completedOnly = true }) {
+    const report = await topDishesService.getMenuAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
+    return {
+      ...report,
+      filters: {
+        ...(report?.filters || {}),
+        completedOnly,
+      },
+    };
   }
 
   async getMenuAbcReport(params) {
     return await this.getProductAbcReport(params);
   }
 
-  async getCourierRoutes({ organizationId, dateFrom, dateTo }) {
-    const timezone = await this.getOrganizationTimezone(organizationId);
-    const orders = await this.getCloudDeliveryOrders({
-      organizationId,
-      dateFrom,
-      dateTo,
-      timezone,
-    });
-    return {
-      ...this.buildRouteStats([], { preparedOrders: orders }),
-      timezone,
-      source: "iiko-cloud",
-    };
-  }
-
-  async getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) {
-    const current = await this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo });
+  async getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true }) {
+    const current = await this.getRevenueSummaryForPeriod({ organizationId, dateFrom, dateTo, completedOnly });
 
     let lfl = null;
     if (lflDateFrom && lflDateTo) {
-      lfl = await this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo }).catch(() => null);
+      lfl = await this.getRevenueSummaryForPeriod({ organizationId, dateFrom: lflDateFrom, dateTo: lflDateTo, completedOnly }).catch(() => null);
     }
 
     const currentSummary = current;
@@ -1895,6 +1942,21 @@ class ReportsService extends OlapClient {
       },
       period: current.period,
       lflPeriod: lfl ? { startDate: lflDateFrom, endDate: lflDateTo } : null,
+    };
+  }
+
+  async getCourierRoutes({ organizationId, dateFrom, dateTo }) {
+    const timezone = await this.getOrganizationTimezone(organizationId);
+    const orders = await this.getCloudDeliveryOrders({
+      organizationId,
+      dateFrom,
+      dateTo,
+      timezone,
+    });
+    return {
+      ...this.buildRouteStats([], { preparedOrders: orders }),
+      timezone,
+      source: "iiko-cloud",
     };
   }
 }

@@ -73,23 +73,35 @@ function validateDeliveryZonesSaveParams(payload = {}) {
 }
 
 function validateProductionForecastParams(payload = {}) {
-  const base = validateCommonParams(payload);
-  if (!base.isValid) return base;
-
-  const forecastDate = String(payload.forecastDate || "").trim();
-  if (forecastDate && Number.isNaN(new Date(forecastDate).getTime())) {
+  const organizationId = String(payload.organizationId || "").trim();
+  if (!organizationId) {
     return {
       isValid: false,
       code: "VALIDATION_ERROR",
-      message: "Параметр forecastDate имеет некорректный формат даты",
+      message: "Обязательный параметр: organizationId",
     };
+  }
+
+  const forecastDate = String(payload.forecastDate || "").trim();
+  if (!forecastDate || Number.isNaN(new Date(forecastDate).getTime())) {
+    return {
+      isValid: false,
+      code: "VALIDATION_ERROR",
+      message: "Параметр forecastDate обязателен и должен быть в формате даты",
+    };
+  }
+
+  const analysisWindowValidation = validatePositiveInteger(payload.analysisWindowDays || 28, "analysisWindowDays", { min: 7, max: 90 });
+  if (!analysisWindowValidation.isValid) {
+    return analysisWindowValidation;
   }
 
   return {
     isValid: true,
     normalized: {
-      ...base.normalized,
-      forecastDate: forecastDate || null,
+      organizationId,
+      forecastDate,
+      analysisWindowDays: analysisWindowValidation.value,
     },
   };
 }

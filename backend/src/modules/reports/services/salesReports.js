@@ -169,8 +169,12 @@ function buildProductionForecastReport(
     forecastDate,
     timezone = "Europe/Moscow",
     organizationId = null,
+    organizationName = null,
     verifiedColumns = [],
     missingColumns = [],
+    analysisDateFrom = null,
+    analysisDateTo = null,
+    analysisWindowDays = null,
   },
   ctx,
 ) {
@@ -201,11 +205,19 @@ function buildProductionForecastReport(
   const departmentHistory = new Map();
   const departmentPreorders = new Map();
 
+  const normalizeDepartmentName = (rawName, departmentId) => {
+    const source = String(rawName || "").trim();
+    if (!source || /^(unknown|неизвестно|null|undefined|-|n\/a)$/i.test(source)) {
+      return departmentId && departmentId !== "unknown" ? `Подразделение ${departmentId}` : "Подразделение без названия";
+    }
+    return source;
+  };
+
   const registerDepartment = (map, departmentId, departmentName) => {
     if (!map.has(departmentId)) {
       map.set(departmentId, {
         departmentId,
-        departmentName: departmentName || departmentId || "Неизвестно",
+        departmentName: normalizeDepartmentName(departmentName, departmentId),
         hourly: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, revenue: 0 })),
       });
     }
@@ -217,7 +229,7 @@ function buildProductionForecastReport(
 
     const revenue = Number(order.revenue || 0);
     const departmentId = String(order.departmentId || "unknown");
-    const departmentName = order.departmentName || departmentId;
+    const departmentName = normalizeDepartmentName(order.departmentName, departmentId);
     const hourBucket = byHourBase[order.hour];
     hourBucket.orders += 1;
     hourBucket.revenue += revenue;
@@ -233,7 +245,7 @@ function buildProductionForecastReport(
 
     const revenue = Number(order.revenue || 0);
     const departmentId = String(order.departmentId || "unknown");
-    const departmentName = order.departmentName || departmentId;
+    const departmentName = normalizeDepartmentName(order.departmentName, departmentId);
     const hourBucket = byHourPreorders[order.hour];
     hourBucket.orders += 1;
     hourBucket.revenue += revenue;
@@ -346,6 +358,7 @@ function buildProductionForecastReport(
   return {
     summary: {
       organizationId,
+      organizationName: organizationName || null,
       forecastDate: forecastDateOnly,
       weekdayIndex: normalizedWeekdayIndex,
       historicalDays,
@@ -361,6 +374,9 @@ function buildProductionForecastReport(
     departments,
     metadata: {
       timezone,
+      analysisDateFrom,
+      analysisDateTo,
+      analysisWindowDays,
       verifiedColumns,
       missingColumns,
       generatedAt: new Date().toISOString(),

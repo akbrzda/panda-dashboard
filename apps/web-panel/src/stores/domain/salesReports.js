@@ -16,44 +16,44 @@ export const useSalesReportsStore = defineStore("salesReports", () => {
   const isLoadingOperational = runner.getLoadingRef("operational");
   const isLoadingProductionForecast = runner.getLoadingRef("productionForecast");
 
-  const loadRevenue = async ({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) =>
+  const loadRevenue = async ({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true }) =>
     await runner.runRequest({
       key: "revenue",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }),
+      request: (signal) => reportsApi.getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly, signal }),
       onSuccess: (data) => {
         revenueData.value = data;
       },
       errorMessage: "Ошибка загрузки отчета по выручке",
     });
 
-  const loadHourlySales = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadHourlySales = async ({ organizationId, dateFrom, dateTo, completedOnly = true }) =>
     await runner.runRequest({
       key: "hourlySales",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getHourlySales({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getHourlySales({ organizationId, dateFrom, dateTo, completedOnly, signal }),
       onSuccess: (data) => {
         hourlySales.value = data;
       },
       errorMessage: "Ошибка загрузки отчета по продажам по часам",
     });
 
-  const loadOperational = async ({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo }) =>
+  const loadOperational = async ({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true }) =>
     await runner.runRequest({
       key: "operational",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }),
+      request: (signal) => reportsApi.getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly, signal }),
       onSuccess: (data) => {
         operationalMetrics.value = data;
       },
       errorMessage: "Ошибка загрузки операционного отчета",
     });
 
-  const loadProductionForecast = async ({ organizationId, dateFrom, dateTo, forecastDate }) =>
+  const loadProductionForecast = async ({ organizationId, forecastDate, analysisWindowDays }) =>
     await runner.runRequest({
       key: "productionForecast",
-      hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate, signal }),
+      hasRequiredParams: () => Boolean(organizationId && forecastDate),
+      request: (signal) => reportsApi.getProductionForecast({ organizationId, forecastDate, analysisWindowDays, signal }),
       onSuccess: (data) => {
         productionForecast.value = data;
       },
@@ -86,4 +86,3 @@ export const useSalesReportsStore = defineStore("salesReports", () => {
     $reset,
   };
 });
-

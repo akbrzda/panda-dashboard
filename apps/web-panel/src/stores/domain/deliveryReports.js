@@ -31,22 +31,22 @@ export const useDeliveryReportsStore = defineStore("deliveryReports", () => {
       errorMessage: "Ошибка загрузки маршрутов курьеров",
     });
 
-  const loadSla = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadSla = async ({ organizationId, dateFrom, dateTo, reconciliationMode = false }) =>
     await runner.runRequest({
       key: "sla",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getSla({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getSla({ organizationId, dateFrom, dateTo, reconciliationMode, signal }),
       onSuccess: (data) => {
         slaReport.value = data;
       },
       errorMessage: "Ошибка загрузки SLA-отчета",
     });
 
-  const loadCourierKpi = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadCourierKpi = async ({ organizationId, dateFrom, dateTo, reconciliationMode = false }) =>
     await runner.runRequest({
       key: "courierKpi",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getCourierKpi({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getCourierKpi({ organizationId, dateFrom, dateTo, reconciliationMode, signal }),
       onSuccess: (data) => {
         courierKpiReport.value = data;
       },
@@ -64,11 +64,11 @@ export const useDeliveryReportsStore = defineStore("deliveryReports", () => {
       errorMessage: "Ошибка загрузки сводки доставки",
     });
 
-  const loadDeliveryDelays = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadDeliveryDelays = async ({ organizationId, dateFrom, dateTo, reconciliationMode = false }) =>
     await runner.runRequest({
       key: "deliveryDelays",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getDeliveryDelays({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getDeliveryDelays({ organizationId, dateFrom, dateTo, reconciliationMode, signal }),
       onSuccess: (data) => {
         deliveryDelaysReport.value = data;
       },
@@ -120,4 +120,3 @@ export const useDeliveryReportsStore = defineStore("deliveryReports", () => {
     $reset,
   };
 });
-

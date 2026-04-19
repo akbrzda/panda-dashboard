@@ -11,13 +11,10 @@ import RevenueView from "../views/RevenueView.vue";
 import HourlySalesView from "../views/HourlySalesView.vue";
 import ProductionForecastView from "../views/ProductionForecastView.vue";
 import DeliverySlaView from "../views/DeliverySlaView.vue";
-import CourierKpiView from "../views/CourierKpiView.vue";
 import MarketingSourcesView from "../views/MarketingSourcesView.vue";
-import DeliverySummaryView from "../views/DeliverySummaryView.vue";
 import DeliveryDelaysView from "../views/DeliveryDelaysView.vue";
 import CourierMapView from "../views/CourierMapView.vue";
 import PromotionsView from "../views/PromotionsView.vue";
-import MenuAssortmentView from "../views/MenuAssortmentView.vue";
 import TopDishesView from "../views/TopDishesView.vue";
 import ClientsView from "../views/ClientsView.vue";
 import FoodcostView from "../views/FoodcostView.vue";
@@ -55,14 +52,17 @@ const routes = [
     component: ProductionForecastView,
   },
   {
-    path: "/delivery-sla",
-    name: "DeliverySla",
+    path: "/orders-sla",
+    name: "OrdersSla",
     component: DeliverySlaView,
   },
   {
+    path: "/delivery-sla",
+    redirect: "/orders-sla",
+  },
+  {
     path: "/courier-kpi",
-    name: "CourierKpi",
-    component: CourierKpiView,
+    redirect: "/delivery-delays",
   },
   {
     path: "/marketing-sources",
@@ -71,8 +71,7 @@ const routes = [
   },
   {
     path: "/delivery-summary",
-    name: "DeliverySummary",
-    component: DeliverySummaryView,
+    redirect: "/revenue",
   },
   {
     path: "/delivery-delays",
@@ -92,7 +91,7 @@ const routes = [
   {
     path: "/product-abc",
     name: "ProductAbc",
-    component: MenuAssortmentView,
+    component: TopDishesView,
   },
   {
     path: "/menu-assortment",

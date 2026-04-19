@@ -4,6 +4,7 @@
       <ReportPageHeader
         title="Клиентская аналитика"
         description="Метрики клиентской базы, сегменты и профиль повторных заказов по выбранному периоду."
+        details="Отчет показывает структуру клиентской базы, активность сегментов и вклад клиентов в выручку. Используется для решений по retention и маркетингу."
         :status="readiness.status"
         :tier="readiness.tier"
         :source="readiness.source"
@@ -16,66 +17,6 @@
         @refresh="handleRefresh"
       />
       <PageFilters :loading="clientsStore.isLoadingClients" @apply="handleApply" />
-
-      <Card class="p-4 md:p-5">
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,240px)_minmax(0,1fr)_auto] xl:items-end">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-medium text-muted-foreground">Группа терминалов</label>
-            <Select v-model="terminalGroupValue" placeholder="Все группы">
-              <SelectItem value="__all__">Все группы</SelectItem>
-              <SelectItem v-for="group in terminalGroupOptions" :key="group.id" :value="group.id">
-                {{ group.id }} ({{ formatNumber(group.count) }})
-              </SelectItem>
-            </Select>
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <label class="text-xs font-medium text-muted-foreground">Статусы</label>
-            <div class="flex flex-wrap gap-2">
-              <Button
-                v-for="status in statusOptions"
-                :key="status.status"
-                size="sm"
-                :variant="selectedStatuses.includes(status.status) ? 'default' : 'outline'"
-                @click="toggleStatus(status.status)"
-              >
-                {{ status.status }}
-                <span class="text-[10px] opacity-70">{{ formatNumber(status.count) }}</span>
-              </Button>
-            </div>
-            <p class="text-xs text-muted-foreground">Если ничего не выбрано, backend учитывает завершенные заказы и исключает отмененные.</p>
-          </div>
-
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <Button size="sm" variant="outline" @click="showAdvancedFilters = !showAdvancedFilters">
-              {{ showAdvancedFilters ? "Скрыть расширенные" : "Расширенные фильтры" }}
-            </Button>
-            <Button size="sm" variant="secondary" @click="handleRefresh">Обновить без кэша</Button>
-          </div>
-        </div>
-
-        <div v-if="showAdvancedFilters" class="mt-4 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <Button size="sm" :variant="includeProfile ? 'default' : 'outline'" @click="toggleProfiles">
-              {{ includeProfile ? "Профиль включен" : "Без профиля" }}
-            </Button>
-          </div>
-
-          <div v-if="includeProfile" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,180px)_120px]">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-muted-foreground">Режим enrichment</label>
-              <Select v-model="profileMode" placeholder="top">
-                <SelectItem value="top">Топ клиенты</SelectItem>
-                <SelectItem value="all">Все клиенты</SelectItem>
-              </Select>
-            </div>
-            <div v-if="profileMode === 'top'" class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-muted-foreground">Лимит профилей</label>
-              <Input v-model="profileLimitInput" type="number" min="1" max="200" placeholder="20" />
-            </div>
-          </div>
-        </div>
-      </Card>
     </div>
 
     <div v-if="pageError" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -171,8 +112,6 @@
             <div class="flex flex-wrap gap-2">
               <Badge v-if="selectedSegment" variant="outline">Сегмент: {{ getSegmentLabel(selectedSegment) }}</Badge>
               <Badge v-if="customerSource" variant="outline">Источник: {{ customerSource }}</Badge>
-              <Badge v-if="report.filters?.terminalGroupId" variant="outline">TG: {{ report.filters.terminalGroupId }}</Badge>
-              <Badge v-if="selectedStatuses.length > 0" variant="outline">Статусов: {{ selectedStatuses.length }}</Badge>
             </div>
           </div>
           <div class="space-y-2 md:hidden">
@@ -206,7 +145,7 @@
                   <p class="font-medium text-foreground">{{ formatCurrency(client.avgCheck) }}</p>
                 </div>
                 <div class="rounded-md bg-muted/40 p-2">
-                  <p class="text-muted-foreground">Р§Р°СЃС‚РѕС‚Р°</p>
+                  <p class="text-muted-foreground">Частота</p>
                   <p class="font-medium text-foreground">{{ formatDecimal(client.orderFrequency) }}</p>
                 </div>
               </div>
@@ -261,12 +200,23 @@
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            v-if="clientsPagination.totalItems > 0"
+            :current-page="clientsPagination.currentPage"
+            :total-pages="clientsPagination.totalPages"
+            :total-items="clientsPagination.totalItems"
+            :range-start="clientsPagination.rangeStart"
+            :range-end="clientsPagination.rangeEnd"
+            :loading="clientsStore.isLoadingClients"
+            @prev="clientsPagination.prevPage"
+            @next="clientsPagination.nextPage"
+          />
         </Card>
       </div>
 
       <Card v-if="selectedClient" class="p-4 md:p-5">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 class="text-sm font-semibold text-foreground">Карточка клиента (drill-down)</h3>
+          <h3 class="text-sm font-semibold text-foreground">Карточка клиента</h3>
           <Button type="button" variant="outline" size="sm" @click="openMarketingContext">Открыть источники</Button>
         </div>
         <div class="grid grid-cols-1 gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
@@ -311,7 +261,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Users } from "lucide-vue-next";
 import { useAutoRefresh } from "../composables/useAutoRefresh";
@@ -321,9 +271,6 @@ import MetricCard from "../components/metrics/MetricCard.vue";
 import Badge from "../components/ui/Badge.vue";
 import Button from "../components/ui/Button.vue";
 import Card from "../components/ui/Card.vue";
-import Input from "../components/ui/Input.vue";
-import Select from "../components/ui/Select.vue";
-import SelectItem from "../components/ui/SelectItem.vue";
 import { useClientsStore } from "../stores/clients";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
@@ -335,13 +282,8 @@ import TableHeader from "@/components/ui/TableHeader.vue";
 import TableRow from "@/components/ui/TableRow.vue";
 import { getFeatureReadiness } from "@/config/featureReadiness";
 import { pickQueryValue } from "@/composables/filterQuery";
-
-const DEFAULT_STATUS_OPTIONS = [
-  { status: "Delivered", count: 0 },
-  { status: "Closed", count: 0 },
-  { status: "Completed", count: 0 },
-  { status: "Доставлен", count: 0 },
-];
+import { usePagination } from "@/composables/usePagination";
+import PaginationControls from "@/components/ui/PaginationControls.vue";
 
 const clientsStore = useClientsStore();
 const filtersStore = useFiltersStore();
@@ -349,40 +291,23 @@ const revenueStore = useRevenueStore();
 const route = useRoute();
 const router = useRouter();
 
-const selectedStatuses = ref([]);
-const includeProfile = ref(false);
-const showAdvancedFilters = ref(false);
-const profileMode = ref("top");
-const profileLimitInput = ref("20");
-const terminalGroupValue = ref("__all__");
 const lastLoadedAt = ref(null);
 const selectedSegment = ref("");
 const selectedClientKey = ref("");
 const customerSource = ref("");
 const isSyncingQuery = ref(false);
 
-let applyTimer = null;
-
 const report = computed(() => clientsStore.clientsData);
 const pageError = computed(() => clientsStore.error || "");
 const readiness = computed(() => getFeatureReadiness(route.path));
-const terminalGroupOptions = computed(() => report.value?.meta?.availableTerminalGroups || []);
-const statusOptions = computed(() => {
-  const dynamicOptions = report.value?.meta?.availableStatuses || [];
-  if (dynamicOptions.length === 0) return DEFAULT_STATUS_OPTIONS;
-
-  const optionMap = new Map(DEFAULT_STATUS_OPTIONS.map((item) => [item.status, item]));
-  for (const option of dynamicOptions) {
-    optionMap.set(option.status, option);
-  }
-  return [...optionMap.values()];
-});
-const visibleClients = computed(() => {
+const filteredClients = computed(() => {
   const clients = report.value?.clients || [];
   const filteredBySegment = selectedSegment.value ? clients.filter((client) => client.segment === selectedSegment.value) : clients;
-  return filteredBySegment.slice(0, 200);
+  return filteredBySegment;
 });
-const selectedClient = computed(() => visibleClients.value.find((client) => client.clientKey === selectedClientKey.value) || null);
+const clientsPagination = usePagination(filteredClients, { pageSize: 20 });
+const visibleClients = computed(() => clientsPagination.pageItems.value);
+const selectedClient = computed(() => filteredClients.value.find((client) => client.clientKey === selectedClientKey.value) || null);
 const trustCoverage = computed(() => {
   if (!route.query.org) {
     return `Все подразделения (${revenueStore.organizations.length || 0})`;
@@ -390,11 +315,6 @@ const trustCoverage = computed(() => {
   const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
   return selectedOrganization?.name || "Выбранное подразделение";
 });
-
-function getProfileLimit() {
-  const parsed = Number.parseInt(String(profileLimitInput.value || "").trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 20;
-}
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 0 });
@@ -461,11 +381,6 @@ async function applyCurrentFilters(extra = {}) {
     organizationId,
     dateFrom,
     dateTo,
-    terminalGroupId: terminalGroupValue.value === "__all__" ? null : terminalGroupValue.value,
-    statuses: selectedStatuses.value,
-    includeProfile: includeProfile.value,
-    profileMode: profileMode.value,
-    profileLimit: getProfileLimit(),
     refresh: Boolean(extra.refresh),
   });
 
@@ -487,17 +402,6 @@ async function handleApply(payload = {}) {
   await applyCurrentFilters();
 }
 
-async function toggleStatus(status) {
-  selectedStatuses.value = selectedStatuses.value.includes(status)
-    ? selectedStatuses.value.filter((item) => item !== status)
-    : [...selectedStatuses.value, status];
-  await applyCurrentFilters();
-}
-
-async function toggleProfiles() {
-  includeProfile.value = !includeProfile.value;
-}
-
 function selectSegment(segment) {
   selectedSegment.value = selectedSegment.value === segment ? "" : segment;
 }
@@ -510,29 +414,11 @@ async function handleRefresh() {
   await applyCurrentFilters({ refresh: true });
 }
 
-function parseStatuses(value) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function applyQueryState(query) {
-  const terminalGroup = pickQueryValue(query, ["tg", "terminalGroupId"]);
-  const statuses = pickQueryValue(query, ["statuses", "status"]);
-  const includeProfiles = pickQueryValue(query, ["profiles", "includeProfile"]);
-  const mode = pickQueryValue(query, ["profileMode"]);
-  const limit = pickQueryValue(query, ["profileLimit"]);
   const segment = pickQueryValue(query, ["segment"]);
   const clientKey = pickQueryValue(query, ["clientKey"]);
   const source = pickQueryValue(query, ["customerSource", "source"]);
 
-  terminalGroupValue.value = terminalGroup || "__all__";
-  selectedStatuses.value = parseStatuses(statuses);
-  includeProfile.value = includeProfiles === "1";
-  profileMode.value = mode === "all" ? "all" : "top";
-  profileLimitInput.value = limit || "20";
   selectedSegment.value = segment || "";
   selectedClientKey.value = clientKey || "";
   customerSource.value = source || "";
@@ -541,35 +427,14 @@ function applyQueryState(query) {
 function buildCanonicalQuery() {
   const nextQuery = { ...route.query };
 
-  delete nextQuery.terminalGroupId;
+  delete nextQuery.tg;
+  delete nextQuery.statuses;
   delete nextQuery.status;
+  delete nextQuery.profiles;
+  delete nextQuery.profileMode;
+  delete nextQuery.profileLimit;
+  delete nextQuery.terminalGroupId;
   delete nextQuery.includeProfile;
-
-  if (terminalGroupValue.value !== "__all__") {
-    nextQuery.tg = terminalGroupValue.value;
-  } else {
-    delete nextQuery.tg;
-  }
-
-  if (selectedStatuses.value.length) {
-    nextQuery.statuses = selectedStatuses.value.join(",");
-  } else {
-    delete nextQuery.statuses;
-  }
-
-  if (includeProfile.value) {
-    nextQuery.profiles = "1";
-    nextQuery.profileMode = profileMode.value;
-    if (profileMode.value === "top") {
-      nextQuery.profileLimit = String(getProfileLimit());
-    } else {
-      delete nextQuery.profileLimit;
-    }
-  } else {
-    delete nextQuery.profiles;
-    delete nextQuery.profileMode;
-    delete nextQuery.profileLimit;
-  }
 
   if (selectedSegment.value) {
     nextQuery.segment = selectedSegment.value;
@@ -606,53 +471,17 @@ async function syncQueryState() {
   }
 }
 
-function scheduleApply() {
-  if (applyTimer) {
-    clearTimeout(applyTimer);
-  }
-
-  applyTimer = setTimeout(() => {
-    applyCurrentFilters();
-    applyTimer = null;
-  }, 220);
-}
-
 watch(
-  () => [
-    terminalGroupValue.value,
-    selectedStatuses.value.join(","),
-    profileMode.value,
-    includeProfile.value,
-    profileMode.value === "top" ? profileLimitInput.value : "all",
-  ],
-  (_, __, onCleanup) => {
-    if (!filtersStore.dateFrom || !filtersStore.dateTo || !revenueStore.currentOrganizationId) {
-      return;
-    }
-
-    scheduleApply();
-
-    onCleanup(() => {
-      if (applyTimer) {
-        clearTimeout(applyTimer);
-        applyTimer = null;
-      }
-    });
+  () => [selectedSegment.value, selectedClientKey.value],
+  () => {
+    syncQueryState();
   },
 );
 
 watch(
-  () => [
-    terminalGroupValue.value,
-    selectedStatuses.value.join(","),
-    includeProfile.value,
-    profileMode.value,
-    profileLimitInput.value,
-    selectedSegment.value,
-    selectedClientKey.value,
-  ],
+  () => selectedSegment.value,
   () => {
-    syncQueryState();
+    clientsPagination.resetPage();
   },
 );
 
@@ -679,13 +508,6 @@ watch(
 useAutoRefresh(() => {
   if (report.value && revenueStore.currentOrganizationId && filtersStore.dateFrom && filtersStore.dateTo) {
     applyCurrentFilters();
-  }
-});
-
-onBeforeUnmount(() => {
-  if (applyTimer) {
-    clearTimeout(applyTimer);
-    applyTimer = null;
   }
 });
 

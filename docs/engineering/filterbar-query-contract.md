@@ -1,6 +1,6 @@
 # FilterBar Query Contract & Trust Layer
 
-Дата актуализации: 2026-04-18
+Дата актуализации: 2026-04-19
 
 ## 1. Единый URL-контракт фильтров
 
@@ -15,7 +15,7 @@
 
 - Dashboard: `date` (режим дневного фильтра)
 - Stop List: `status`, `q`
-- Clients: `tg`, `statuses`, `profiles`, `profileMode`, `profileLimit`
+- Clients: `segment`, `clientKey`, `customerSource`
 
 ### 1.3 Backward compatibility (legacy aliases)
 

@@ -15,11 +15,6 @@
           <p class="truncate text-xs text-muted-foreground">Analytics</p>
         </div>
       </router-link>
-
-      <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground" @click="sidebarStore.toggleDesktop">
-        <PanelLeftClose v-if="sidebarStore.open" class="h-4 w-4" />
-        <PanelLeftOpen v-else class="h-4 w-4" />
-      </Button>
     </div>
 
     <nav class="flex-1 overflow-y-auto p-2">
@@ -39,13 +34,6 @@
         >
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
           <span v-if="sidebarStore.open" class="truncate">{{ item.label }}</span>
-          <Badge
-            v-if="sidebarStore.open"
-            :variant="getStatusVariant(item.status)"
-            class="ml-auto px-1.5 py-0 text-[10px] font-semibold uppercase tracking-[0.03em]"
-          >
-            {{ getStatusLabel(item.status) }}
-          </Badge>
         </router-link>
       </section>
     </nav>
@@ -90,9 +78,6 @@
         >
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
           <span class="truncate">{{ item.label }}</span>
-          <Badge :variant="getStatusVariant(item.status)" class="ml-auto px-1.5 py-0 text-[10px] font-semibold uppercase tracking-[0.03em]">
-            {{ getStatusLabel(item.status) }}
-          </Badge>
         </router-link>
       </section>
     </nav>
@@ -102,11 +87,9 @@
 <script setup>
 import { onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { Panda, PanelLeftClose, PanelLeftOpen, X } from "lucide-vue-next";
+import { Panda, X } from "lucide-vue-next";
 import { reportSectionsCatalog as menuSections } from "@/config/reportCatalog";
-import { getReadinessStatusBadgeVariant, getReadinessStatusLabel } from "@/config/readinessUi";
 import { useSidebarStore } from "@/stores/sidebar";
-import Badge from "@/components/ui/Badge.vue";
 import Button from "@/components/ui/Button.vue";
 
 const sidebarStore = useSidebarStore();
@@ -118,14 +101,6 @@ const removeAfterEach = router.afterEach(() => {
 onUnmounted(() => {
   removeAfterEach();
 });
-
-function getStatusVariant(status) {
-  return getReadinessStatusBadgeVariant(status);
-}
-
-function getStatusLabel(status) {
-  return getReadinessStatusLabel(status);
-}
 
 function isPlanned(status) {
   return String(status || "").toLowerCase() === "planned";

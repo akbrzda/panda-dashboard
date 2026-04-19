@@ -221,7 +221,7 @@ export function getLFLRange(preset, range) {
       return { from: subDays(from, diffDays), to: subDays(to, diffDays) };
 
     default:
-      return { from: subDays(from, 7), to: subDays(to, 7) };
+      return { from: subDays(from, diffDays), to: subDays(to, diffDays) };
   }
 }
 

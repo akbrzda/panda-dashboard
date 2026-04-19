@@ -22,13 +22,21 @@ export const featureReadinessCatalog = {
     lastReviewedAt: "2026-04-18",
     knownLimitations: ["LFL-пояснения по методике не вынесены в интерфейс"],
   },
+  "/orders-sla": {
+    status: FEATURE_STATUS.READY,
+    tier: 1,
+    owner: "backend",
+    source: "iiko-olap",
+    lastReviewedAt: "2026-04-18",
+    knownLimitations: ["Часть SLA-полей для не-доставочных заказов может быть неполной"],
+  },
   "/delivery-sla": {
     status: FEATURE_STATUS.READY,
     tier: 1,
     owner: "backend",
-    source: "iiko-cloud-deliveries",
+    source: "iiko-olap",
     lastReviewedAt: "2026-04-18",
-    knownLimitations: ["Требуется активный iikoCloud API, иначе отчет недоступен"],
+    knownLimitations: ["Legacy alias. Используйте /orders-sla"],
   },
   "/stop-list": {
     status: FEATURE_STATUS.READY,
@@ -61,14 +69,6 @@ export const featureReadinessCatalog = {
     source: "iiko-olap",
     lastReviewedAt: "2026-04-18",
     knownLimitations: ["Нет сравнения по LFL на уровне позиции"],
-  },
-  "/delivery-summary": {
-    status: FEATURE_STATUS.BETA,
-    tier: 2,
-    owner: "operations",
-    source: "iiko-cloud-deliveries",
-    lastReviewedAt: "2026-04-18",
-    knownLimitations: ["Drill-down поддерживает основные сценарии; детальная трассировка до заказа будет расширяться"],
   },
   "/delivery-delays": {
     status: FEATURE_STATUS.BETA,

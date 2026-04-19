@@ -3,7 +3,7 @@ import { apiClient } from "./httpClient";
 const isNotFound = (error) => Number(error?.response?.status) === 404;
 
 export const reportsApi = {
-  async getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }) {
+  async getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/revenue",
       {
@@ -12,13 +12,14 @@ export const reportsApi = {
         dateTo,
         lflDateFrom,
         lflDateTo,
+        completedOnly,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, signal }) {
+  async getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/operational",
       {
@@ -27,6 +28,7 @@ export const reportsApi = {
         dateTo,
         lflDateFrom,
         lflDateTo,
+        completedOnly,
       },
       { signal },
     );
@@ -46,66 +48,69 @@ export const reportsApi = {
     return response.data;
   },
 
-  async getHourlySales({ organizationId, dateFrom, dateTo, signal }) {
+  async getHourlySales({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/hourly-sales",
       {
         organizationId,
         dateFrom,
         dateTo,
+        completedOnly,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate, signal }) {
+  async getProductionForecast({ organizationId, forecastDate, analysisWindowDays, signal }) {
     const response = await apiClient.post(
       "/reports/production-forecast",
       {
         organizationId,
-        dateFrom,
-        dateTo,
         forecastDate,
+        analysisWindowDays,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getSla({ organizationId, dateFrom, dateTo, signal }) {
+  async getSla({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
       "/reports/sla",
       {
         organizationId,
         dateFrom,
         dateTo,
+        reconciliationMode,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getCourierKpi({ organizationId, dateFrom, dateTo, signal }) {
+  async getCourierKpi({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
       "/reports/courier-kpi",
       {
         organizationId,
         dateFrom,
         dateTo,
+        reconciliationMode,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getMarketingSources({ organizationId, dateFrom, dateTo, signal }) {
+  async getMarketingSources({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/marketing-sources",
       {
         organizationId,
         dateFrom,
         dateTo,
+        completedOnly,
       },
       { signal },
     );
@@ -125,13 +130,14 @@ export const reportsApi = {
     return response.data;
   },
 
-  async getDeliveryDelays({ organizationId, dateFrom, dateTo, signal }) {
+  async getDeliveryDelays({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
       "/reports/delivery-delays",
       {
         organizationId,
         dateFrom,
         dateTo,
+        reconciliationMode,
       },
       { signal },
     );
@@ -226,20 +232,21 @@ export const reportsApi = {
     return response.data;
   },
 
-  async getPromotions({ organizationId, dateFrom, dateTo, signal }) {
+  async getPromotions({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/promotions",
       {
         organizationId,
         dateFrom,
         dateTo,
+        completedOnly,
       },
       { signal },
     );
     return response.data;
   },
 
-  async getProductAbc({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, signal }) {
+  async getProductAbc({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, completedOnly = true, signal }) {
     const response = await apiClient.post(
       "/reports/product-abc",
       {
@@ -249,6 +256,7 @@ export const reportsApi = {
         abcGroup,
         page,
         limit,
+        completedOnly,
       },
       { signal },
     );

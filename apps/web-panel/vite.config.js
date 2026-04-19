@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       port: 5173,
       strictPort: true,
-      hmr: hmr || false,
+      hmr,
       proxy: {
         "/api": {
           target: apiProxyTarget,

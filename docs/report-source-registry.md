@@ -75,3 +75,52 @@
 - `Сводка доставки`, `SLA`, `KPI курьеров`, `Опоздания`, `Маршруты курьеров` переведены на `Transport/Biz` (iikoCloud deliveries) без fallback на `Server OLAP`.
 - Для отчетов `Продажи по часам`, `Динамика продаж`, `Себестоимость` сохранен `Server`-метод как базовый, так как эти метрики в проекте строятся на OLAP/складских полях и не эквивалентны cloud-delivery данным.
 - Следующие кандидаты на перевод по той же схеме (где это бизнес-корректно): `Клиенты`, `Прогноз загрузки` (при наличии полноты данных в cloud для требуемых KPI).
+
+## 5. Этап 1: единые правила данных (2026-04-19)
+
+### 5.1 Единый словарь статусов (backend)
+
+- `Завершен` -> category `completed`
+- `Отменен` -> category `canceled`
+- `В пути` -> category `in_transit`
+- `Прочие` -> category `other`
+
+Реализовано в общем модуле: `backend/src/modules/shared/orderRules.js`.
+
+### 5.2 Политика выборки по умолчанию
+
+- Для пользовательских delivery-отчетов при обращении к cloud-данным по умолчанию включаются только `completed` заказы.
+- Отмененные и прочие статусы исключаются.
+- Если в запросе явно передан `statuses`, применяется явная выборка запроса.
+
+### 5.3 Контрольная сверка (Опоздания vs SLA vs KPI курьеров)
+
+Сверка выполнена на едином наборе order-entities за одинаковый период и подразделение с единым правилом late:
+
+- `lateMinutes = max(0, actualDeliveryAt - promisedAt)`
+- заказ участвует в late-метриках только при наличии обеих меток (`promisedAt` и `actualDeliveryAt`)
+- `lateRate = lateOrders / comparableOrders`
+
+Единая реализация late-логики вынесена в `orderRules.calculateLateMetrics` и `orderRules.calculateLateOrdersSummary`, далее используется в:
+
+- `delivery-delays`
+- `delivery-sla` (summary late-блок)
+- `courier-kpi`
+- `delivery-heatmap`
+
+### 5.4 Причины расхождений (задокументировано)
+
+- Разные выборки заказов: часть отчетов считала все заказы, часть только доставленные.
+- Разный знаменатель late-rate: `late/total` vs `late/orders_with_timestamps`.
+- Разные правила late: threshold по `totalMinutes` vs сравнение `promised/actual`.
+- Неполнота данных по timestamp: отсутствие promised/actual и неявное включение таких заказов в denominator.
+- Разные источники discount% и знаменатели: `discount/netRevenue` vs `discount/grossRevenue`.
+
+### 5.5 Единый расчет discount%
+
+Для revenue/dashboard/promotions введена единая функция:
+
+- `discountSum = explicitDiscountSum || max(0, gross - net)`
+- `discountPercent = discountSum / gross * 100`
+
+Реализация: `orderRules.calculateDiscountMetrics`.

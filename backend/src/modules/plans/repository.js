@@ -74,22 +74,48 @@ class PlansRepository {
         id TEXT PRIMARY KEY,
         metric TEXT NOT NULL,
         period TEXT NOT NULL,
+        planMonth TEXT,
         organizationId TEXT,
         organizationName TEXT,
         targetValue REAL NOT NULL,
+        distributionJson TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
     `);
+
+    const existingColumns = this.sqlite.prepare("PRAGMA table_info(plans);").all();
+    const columnNames = new Set(existingColumns.map((column) => String(column.name)));
+    if (!columnNames.has("planMonth")) {
+      this.sqlite.exec("ALTER TABLE plans ADD COLUMN planMonth TEXT;");
+    }
+    if (!columnNames.has("distributionJson")) {
+      this.sqlite.exec("ALTER TABLE plans ADD COLUMN distributionJson TEXT;");
+    }
   }
 
   _readAllFromSqlite() {
     const stmt = this.sqlite.prepare(
-      `SELECT id, metric, period, organizationId, organizationName, targetValue, createdAt, updatedAt
+      `SELECT id, metric, period, planMonth, organizationId, organizationName, targetValue, distributionJson, createdAt, updatedAt
        FROM plans
        ORDER BY datetime(updatedAt) DESC, datetime(createdAt) DESC`,
     );
-    return stmt.all();
+    return stmt.all().map((item) => {
+      let distributionDays = [];
+      if (item.distributionJson) {
+        try {
+          const parsed = JSON.parse(item.distributionJson);
+          if (Array.isArray(parsed)) {
+            distributionDays = parsed;
+          }
+        } catch (_) {}
+      }
+
+      return {
+        ...item,
+        distributionDays,
+      };
+    });
   }
 
   _writeAllToSqlite(plans) {
@@ -97,8 +123,8 @@ class PlansRepository {
     try {
       this.sqlite.exec("DELETE FROM plans;");
       const insert = this.sqlite.prepare(
-        `INSERT INTO plans (id, metric, period, organizationId, organizationName, targetValue, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO plans (id, metric, period, planMonth, organizationId, organizationName, targetValue, distributionJson, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
 
       for (const plan of plans) {
@@ -106,9 +132,11 @@ class PlansRepository {
           plan.id,
           plan.metric,
           plan.period,
+          plan.planMonth || "",
           plan.organizationId || "",
           plan.organizationName || "",
           Number(plan.targetValue || 0),
+          JSON.stringify(Array.isArray(plan.distributionDays) ? plan.distributionDays : []),
           plan.createdAt,
           plan.updatedAt,
         );

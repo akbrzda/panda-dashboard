@@ -9,11 +9,11 @@ export const useProductAbcReportsStore = defineStore("productAbcReports", () => 
   const productAbcReport = ref(null);
   const isLoadingProductAbc = runner.getLoadingRef("productAbc");
 
-  const loadProductAbc = async ({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50 }) =>
+  const loadProductAbc = async ({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, completedOnly = true }) =>
     await runner.runRequest({
       key: "productAbc",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getProductAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit, signal }),
+      request: (signal) => reportsApi.getProductAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit, completedOnly, signal }),
       onSuccess: (data) => {
         productAbcReport.value = data;
       },

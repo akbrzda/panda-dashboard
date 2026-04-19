@@ -1,7 +1,21 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Тепловая карта доставок</h1>
+      <ReportPageHeader
+        title="Карта курьеров"
+        description="Интенсивность заказов и риски опозданий по зонам доставки."
+        details="Отчет показывает распределение заказов по зонам, долю опозданий и среднее время доставки. Используется для балансировки зон и контроля нагрузки курьеров."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
 
       <Card class="border-border/70 bg-card/95 p-4">
@@ -131,15 +145,18 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import { reportsApi } from "../api/reports";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import { formatMinutesToHms, formatTimeHms } from "../lib/utils";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -151,10 +168,20 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 
 const report = computed(() => reportsStore.courierMapReport);
 const isPageLoading = computed(() => reportsStore.isLoadingCourierMap);
 const pageError = computed(() => reportsStore.error);
+const lastLoadedAt = ref(null);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
 const zonesMeta = ref({
   organizationId: null,
@@ -533,7 +560,10 @@ async function handleApply(payload = {}) {
   revenueStore.setCurrentOrganization(organizationId);
   zonesActionMessage.value = "";
   await loadZonesMeta(organizationId);
-  await reportsStore.loadCourierMap({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadCourierMap({ organizationId, dateFrom, dateTo });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
 }
 
 onMounted(async () => {
@@ -544,6 +574,9 @@ onMounted(async () => {
   await ensureMap();
   if (revenueStore.currentOrganizationId) {
     await loadZonesMeta(revenueStore.currentOrganizationId);
+  }
+  if (!report.value) {
+    await handleApply();
   }
 });
 

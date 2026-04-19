@@ -25,7 +25,7 @@ const props = defineProps({
 const themeVersion = ref(0);
 let observer = null;
 
-const hasData = computed(() => props.rows.some((item) => Number(item.avgOrders || 0) > 0 || Number(item.avgRevenue || 0) > 0));
+const hasData = computed(() => props.rows.some((item) => Number(item.orders || 0) > 0 || Number(item.revenue || 0) > 0));
 
 onMounted(() => {
   if (typeof document === "undefined") return;
@@ -74,12 +74,12 @@ const chartData = computed(() => {
   themeVersion.value;
 
   return {
-    labels: props.rows.map((row) => row.weekday),
+    labels: props.rows.map((row) => `${String(row.hour).padStart(2, "0")}:00`),
     datasets: [
       {
-        label: "Среднее количество заказов",
+        label: "Заказы",
         yAxisID: "ordersAxis",
-        data: props.rows.map((row) => Number(row.avgOrders || 0)),
+        data: props.rows.map((row) => Number(row.orders || 0)),
         borderColor: getCssColor("--chart-2", 1),
         backgroundColor: getCssColor("--chart-2", 0.2),
         tension: 0.35,
@@ -88,9 +88,9 @@ const chartData = computed(() => {
         borderWidth: 2,
       },
       {
-        label: "Средняя выручка",
+        label: "Выручка",
         yAxisID: "revenueAxis",
-        data: props.rows.map((row) => Number(row.avgRevenue || 0)),
+        data: props.rows.map((row) => Number(row.revenue || 0)),
         borderColor: getCssColor("--chart-1", 1),
         backgroundColor: getCssColor("--chart-1", 0.2),
         tension: 0.35,
@@ -129,9 +129,9 @@ const chartOptions = computed(() => {
         callbacks: {
           label(context) {
             if (context.dataset.yAxisID === "ordersAxis") {
-              return `${context.parsed.y.toLocaleString("ru-RU")} заказов`;
+              return `Заказы: ${context.parsed.y.toLocaleString("ru-RU")}`;
             }
-            return `${context.parsed.y.toLocaleString("ru-RU")} ₽`;
+            return `Выручка: ${context.parsed.y.toLocaleString("ru-RU")} ₽`;
           },
         },
       },

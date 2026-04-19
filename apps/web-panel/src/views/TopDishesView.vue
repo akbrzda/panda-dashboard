@@ -1,159 +1,185 @@
 <template>
   <div class="min-w-0 space-y-6">
-    <!-- Заголовок + фильтры -->
-    <div class="space-y-4">
-      <ReportPageHeader
-        title="Топ блюд"
-        description="Рейтинг позиций меню по выручке и количеству продаж."
-        :status="readiness.status"
-        :tier="readiness.tier"
-        :source="readiness.source"
-        :coverage="trustCoverage"
-        :updated-at="lastLoadedAt"
-        :last-reviewed-at="readiness.lastReviewedAt"
-        :warnings="readiness.knownLimitations"
-        :show-refresh="true"
-        :refreshing="topDishesStore.isLoadingTopDishes"
-        @refresh="handleApply()"
-      />
-      <PageFilters :loading="topDishesStore.isLoadingTopDishes" @apply="handleApply" />
+    <div class="flex items-center gap-2">
+      <Button @click="mode = 'top'" size="sm" :variant="mode === 'top' ? 'default' : 'secondary'">Топ блюд</Button>
+      <Button @click="mode = 'abc'" size="sm" :variant="mode === 'abc' ? 'default' : 'secondary'">Продуктовый ABC</Button>
     </div>
 
-    <!-- Ошибка -->
-    <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-      <AlertCircle class="w-5 h-5 shrink-0" />
-      <span>{{ error }}</span>
-    </div>
+    <MenuAssortmentView v-if="mode === 'abc'" />
 
-    <div
-      v-if="!error && topDishesStore.topDishes?.warningMessage"
-      class="flex items-center gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-800 dark:text-yellow-300"
-    >
-      <AlertCircle class="w-5 h-5 shrink-0" />
-      <span>{{ topDishesStore.topDishes.warningMessage }}</span>
-    </div>
-
-    <!-- Пустое состояние -->
-    <div
-      v-if="!topDishesStore.isLoadingTopDishes && !topDishesStore.topDishes && !error"
-      class="flex flex-col items-center justify-center py-16 text-center"
-    >
-      <UtensilsCrossed class="w-12 h-12 text-muted-foreground/40 mb-4" />
-      <p class="text-sm text-muted-foreground">Выберите организацию и период</p>
-    </div>
-
-    <template v-if="topDishesStore.topDishes || topDishesStore.isLoadingTopDishes">
-      <!-- Итоги -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
-        <MetricCard title="Блюд в меню" :value="topDishesStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
-        <MetricCard
-          title="Выручка по блюдам"
-          :value="topDishesStore.topDishes.totalRevenue ?? null"
-          format="currency"
-          icon="TrendingUp"
-          :loading="false"
+    <template v-else>
+      <div class="space-y-4">
+        <ReportPageHeader
+          title="Продажи меню"
+          description="Рейтинг позиций меню по выручке и количеству продаж."
+          :status="readiness.status"
+          :tier="readiness.tier"
+          :source="readiness.source"
+          :coverage="trustCoverage"
+          :updated-at="lastLoadedAt"
+          :last-reviewed-at="readiness.lastReviewedAt"
+          :warnings="readiness.knownLimitations"
+          :show-refresh="true"
+          :refreshing="topDishesStore.isLoadingTopDishes"
+          @refresh="handleApply()"
         />
-        <MetricCard title="Порций продано" :value="topDishesStore.topDishes.totalQty ?? null" format="number" icon="ShoppingCart" :loading="false" />
+        <PageFilters :loading="topDishesStore.isLoadingTopDishes" @apply="handleApply" />
       </div>
 
-      <!-- Переключатель -->
-      <div class="flex items-center gap-2">
-        <Button @click="view = 'top'" size="sm" :variant="view === 'top' ? 'default' : 'secondary'"> Топ-{{ limit }} </Button>
-        <Button @click="view = 'outsiders'" size="sm" :variant="view === 'outsiders' ? 'default' : 'secondary'"> Аутсайдеры </Button>
+      <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+        <AlertCircle class="w-5 h-5 shrink-0" />
+        <span>{{ error }}</span>
+      </div>
 
-        <!-- Поиск -->
-        <div class="ml-auto relative">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input v-model="search" type="text" placeholder="Поиск блюда..." class="h-9 w-56 pl-9" />
+      <div
+        v-if="!error && topDishesStore.topDishes?.warningMessage"
+        class="flex items-center gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-800 dark:text-yellow-300"
+      >
+        <AlertCircle class="w-5 h-5 shrink-0" />
+        <span>{{ topDishesStore.topDishes.warningMessage }}</span>
+      </div>
+
+      <div
+        v-if="!topDishesStore.isLoadingTopDishes && !topDishesStore.topDishes && !error"
+        class="flex flex-col items-center justify-center py-16 text-center"
+      >
+        <UtensilsCrossed class="w-12 h-12 text-muted-foreground/40 mb-4" />
+        <p class="text-sm text-muted-foreground">Выберите организацию и период</p>
+      </div>
+
+      <template v-if="topDishesStore.topDishes || topDishesStore.isLoadingTopDishes">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
+          <MetricCard title="Блюд в меню" :value="topDishesStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
+          <MetricCard
+            title="Выручка по блюдам"
+            :value="topDishesStore.topDishes.totalRevenue ?? null"
+            format="currency"
+            icon="TrendingUp"
+            :loading="false"
+          />
+          <MetricCard
+            title="Порций продано"
+            :value="topDishesStore.topDishes.totalQty ?? null"
+            format="number"
+            icon="ShoppingCart"
+            :loading="false"
+          />
         </div>
-      </div>
 
-      <!-- Скелетон -->
-      <div v-if="topDishesStore.isLoadingTopDishes" class="space-y-2">
-        <div v-for="i in 10" :key="i" class="h-12 rounded-lg bg-muted animate-pulse" />
-      </div>
+        <div class="flex items-center gap-2">
+          <Button @click="view = 'top'" size="sm" :variant="view === 'top' ? 'default' : 'secondary'"> Топ-{{ limit }} </Button>
+          <Button @click="view = 'outsiders'" size="sm" :variant="view === 'outsiders' ? 'default' : 'secondary'"> Аутсайдеры </Button>
 
-      <!-- Таблица -->
-      <Card v-else class="overflow-hidden min-w-0">
-        <div class="overflow-auto">
-          <Table class="min-w-[980px] w-full text-sm">
-            <TableHeader>
-              <TableRow class="border-b border-border bg-muted/50">
-                <TableHead class="text-left font-medium text-muted-foreground w-8">#</TableHead>
-                <TableHead
-                  class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                  @click="toggleSort('name')"
-                >
-                  Блюдо
-                  <SortIcon field="name" :sort="sort" />
-                </TableHead>
-                <TableHead
-                  class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
-                  @click="toggleSort('category')"
-                >
-                  Категория
-                  <SortIcon field="category" :sort="sort" />
-                </TableHead>
-                <TableHead
-                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                  @click="toggleSort('qty')"
-                >
-                  Кол-во
-                  <SortIcon field="qty" :sort="sort" />
-                </TableHead>
-                <TableHead
-                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
-                  @click="toggleSort('revenue')"
-                >
-                  Выручка
-                  <SortIcon field="revenue" :sort="sort" />
-                </TableHead>
-                <TableHead
-                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
-                  @click="toggleSort('revenueShare')"
-                >
-                  % от итога
-                  <SortIcon field="revenueShare" :sort="sort" />
-                </TableHead>
-                <TableHead
-                  class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
-                  @click="toggleSort('avgPrice')"
-                >
-                  Ср. цена
-                  <SortIcon field="avgPrice" :sort="sort" />
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-if="filteredRows.length === 0">
-                <TableCell colspan="7" class="text-center text-muted-foreground">Ничего не найдено</TableCell>
-              </TableRow>
-              <TableRow v-for="(dish, idx) in filteredRows" :key="dish.name" class="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                <TableCell class="text-muted-foreground">{{ idx + 1 }}</TableCell>
-                <TableCell class="font-medium text-foreground">{{ dish.name }}</TableCell>
-                <TableCell class="text-muted-foreground hidden sm:table-cell">{{ dish.category || "—" }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatNumber(dish.qty) }}</TableCell>
-                <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(dish.revenue) }}</TableCell>
-                <TableCell class="text-right hidden md:table-cell">
-                  <span class="inline-flex items-center gap-1">
-                    <span class="text-xs text-muted-foreground">{{ dish.revenueShare }}%</span>
-                    <div class="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
-                      <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(dish.revenueShare * 2, 100)}%` }" />
-                    </div>
-                  </span>
-                </TableCell>
-                <TableCell class="text-right tabular-nums hidden lg:table-cell text-muted-foreground">{{ formatCurrency(dish.avgPrice) }}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+          <div class="ml-auto relative">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input v-model="search" type="text" placeholder="Поиск блюда..." class="h-9 w-56 pl-9" />
+          </div>
         </div>
-      </Card>
+
+        <div v-if="topDishesStore.isLoadingTopDishes" class="space-y-2">
+          <div v-for="i in 10" :key="i" class="h-12 rounded-lg bg-muted animate-pulse" />
+        </div>
+
+        <Card v-else class="overflow-hidden min-w-0">
+          <div class="overflow-auto">
+            <Table class="min-w-[980px] w-full text-sm">
+              <TableHeader>
+                <TableRow class="border-b border-border bg-muted/50">
+                  <TableHead class="text-left font-medium text-muted-foreground w-8">#</TableHead>
+                  <TableHead
+                    class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                    @click="toggleSort('name')"
+                  >
+                    Блюдо
+                    <SortIcon field="name" :sort="sort" />
+                  </TableHead>
+                  <TableHead
+                    class="text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
+                    @click="toggleSort('category')"
+                  >
+                    Категория
+                    <SortIcon field="category" :sort="sort" />
+                  </TableHead>
+                  <TableHead
+                    class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                    @click="toggleSort('qty')"
+                  >
+                    Кол-во
+                    <SortIcon field="qty" :sort="sort" />
+                  </TableHead>
+                  <TableHead
+                    class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
+                    @click="toggleSort('revenue')"
+                  >
+                    Выручка
+                    <SortIcon field="revenue" :sort="sort" />
+                  </TableHead>
+                  <TableHead
+                    class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden md:table-cell"
+                    @click="toggleSort('revenueShare')"
+                  >
+                    % от итога
+                    <SortIcon field="revenueShare" :sort="sort" />
+                  </TableHead>
+                  <TableHead
+                    class="text-right font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
+                    @click="toggleSort('avgPrice')"
+                  >
+                    Ср. цена
+                    <SortIcon field="avgPrice" :sort="sort" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-if="dishesPagination.totalItems === 0">
+                  <TableCell colspan="7" class="text-center text-muted-foreground">Ничего не найдено</TableCell>
+                </TableRow>
+                <TableRow
+                  v-for="(dish, idx) in dishesPagination.pageItems"
+                  :key="dish.name"
+                  class="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                >
+                  <TableCell class="text-muted-foreground">{{ dishesPagination.rangeStart + idx }}</TableCell>
+                  <TableCell class="font-medium text-foreground">{{ dish.name }}</TableCell>
+                  <TableCell class="text-muted-foreground hidden sm:table-cell">{{ dish.category || "—" }}</TableCell>
+                  <TableCell class="text-right tabular-nums">{{ formatNumber(dish.qty) }}</TableCell>
+                  <TableCell class="text-right tabular-nums hidden md:table-cell">{{ formatCurrency(dish.revenue) }}</TableCell>
+                  <TableCell class="text-right hidden md:table-cell">
+                    <span class="inline-flex items-center gap-1">
+                      <span class="text-xs text-muted-foreground">{{ dish.revenueShare }}%</span>
+                      <div class="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
+                        <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(dish.revenueShare * 2, 100)}%` }" />
+                      </div>
+                    </span>
+                  </TableCell>
+                  <TableCell class="text-right tabular-nums hidden lg:table-cell text-muted-foreground">{{
+                    formatCurrency(dish.avgPrice)
+                  }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          <div class="px-4 pb-4">
+            <PaginationControls
+              v-if="dishesPagination.totalItems > 0"
+              :current-page="dishesPagination.currentPage"
+              :total-pages="dishesPagination.totalPages"
+              :total-items="dishesPagination.totalItems"
+              :range-start="dishesPagination.rangeStart"
+              :range-end="dishesPagination.rangeEnd"
+              :loading="topDishesStore.isLoadingTopDishes"
+              @prev="dishesPagination.prevPage"
+              @next="dishesPagination.nextPage"
+            />
+          </div>
+        </Card>
+      </template>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { AlertCircle, Search, UtensilsCrossed } from "lucide-vue-next";
 import { useAutoRefresh } from "../composables/useAutoRefresh";
@@ -166,9 +192,11 @@ import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 import Button from "../components/ui/Button.vue";
 import Input from "../components/ui/Input.vue";
+import MenuAssortmentView from "./MenuAssortmentView.vue";
 import { getFeatureReadiness } from "@/config/featureReadiness";
+import { usePagination } from "@/composables/usePagination";
+import PaginationControls from "@/components/ui/PaginationControls.vue";
 
-// Компонент иконки сортировки
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
 import TableCell from "@/components/ui/TableCell.vue";
@@ -192,6 +220,7 @@ const revenueStore = useRevenueStore();
 const route = useRoute();
 
 const view = ref("top");
+const mode = ref(route.path === "/product-abc" ? "abc" : "top");
 const search = ref("");
 const limit = ref(20);
 const error = ref(null);
@@ -251,6 +280,8 @@ const filteredRows = computed(() => {
   });
 });
 
+const dishesPagination = usePagination(filteredRows, { pageSize: 20 });
+
 function formatCurrency(val) {
   if (val == null) return "—";
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
@@ -262,7 +293,7 @@ function formatNumber(val) {
 }
 
 useAutoRefresh(() => {
-  if (topDishesStore.topDishes && filtersStore.organizationId) {
+  if (topDishesStore.topDishes && filtersStore.organizationId && mode.value === "top") {
     handleApply();
   }
 });
@@ -272,8 +303,25 @@ onMounted(async () => {
     await revenueStore.loadOrganizations();
   }
 
-  if (filtersStore.dateFrom && filtersStore.dateTo && filtersStore.organizationId && !topDishesStore.topDishes) {
+  if (filtersStore.dateFrom && filtersStore.dateTo && filtersStore.organizationId && !topDishesStore.topDishes && mode.value === "top") {
     handleApply();
   }
+});
+
+watch(
+  () => route.path,
+  (path) => {
+    if (path === "/product-abc") {
+      mode.value = "abc";
+      return;
+    }
+    if (path === "/top-dishes") {
+      mode.value = "top";
+    }
+  },
+);
+
+watch([search, view, sort], () => {
+  dishesPagination.resetPage();
 });
 </script>

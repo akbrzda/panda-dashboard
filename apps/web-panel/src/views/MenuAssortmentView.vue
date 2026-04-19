@@ -1,15 +1,29 @@
 <template>
   <div class="min-w-0 space-y-5">
     <div class="space-y-4">
-      <div class="flex items-center justify-between gap-3">
-        <h1 class="text-2xl font-bold text-foreground">Продуктовый ABC-анализ</h1>
-        <Button class="md:hidden" size="sm" variant="outline" @click="showFiltersMobile = !showFiltersMobile">
-          {{ showFiltersMobile ? "Скрыть фильтры" : "Фильтры" }}
-        </Button>
-      </div>
+      <ReportPageHeader
+        title="Продуктовый ABC-анализ"
+        description="Классификация меню по вкладу в выручку с фильтром A/B/C."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      >
+        <template #actions>
+          <Button class="md:hidden" size="sm" variant="outline" @click="showFiltersMobile = !showFiltersMobile">
+            {{ showFiltersMobile ? "Скрыть фильтры" : "Фильтры" }}
+          </Button>
+        </template>
+      </ReportPageHeader>
 
       <div :class="showFiltersMobile ? 'block' : 'hidden md:block'">
-        <PageFilters :loading="isPageLoading" @apply="handleApply" />
+        <PageFilters :loading="isPageLoading" :show-completed-only="false" @apply="handleApply" />
       </div>
     </div>
 
@@ -160,15 +174,18 @@
 
 <script setup>
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
 import Badge from "../components/ui/Badge.vue";
 import Button from "../components/ui/Button.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -180,10 +197,12 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 const showFiltersMobile = ref(false);
 const groupFilter = ref("all");
 const page = ref(1);
 const pageLimit = ref(50);
+const lastLoadedAt = ref(null);
 
 const groupTabs = [
   { label: "Все", value: "all" },
@@ -195,6 +214,15 @@ const groupTabs = [
 const report = computed(() => reportsStore.menuAbcReport);
 const isPageLoading = computed(() => reportsStore.isLoadingMenuAbc);
 const pageError = computed(() => reportsStore.error);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+
+  const organization = revenueStore.organizations.find((org) => org.id === revenueStore.currentOrganizationId);
+  return organization ? organization.name : "Выбранное подразделение";
+});
 const pagination = computed(() => ({
   page: Number(report.value?.pagination?.page || 1),
   limit: Number(report.value?.pagination?.limit || pageLimit.value),
@@ -229,6 +257,7 @@ async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? revenueStore.currentOrganizationId;
   const dateFrom = payload.dateFrom ?? filtersStore.dateFrom;
   const dateTo = payload.dateTo ?? filtersStore.dateTo;
+  const completedOnly = payload.completedOnly ?? filtersStore.completedOnly;
   const nextPage = Number(payload.page || 1);
   if (!organizationId || !dateFrom || !dateTo) return;
 
@@ -241,7 +270,9 @@ async function handleApply(payload = {}) {
     abcGroup: groupFilter.value,
     page: nextPage,
     limit: pageLimit.value,
+    completedOnly,
   });
+  lastLoadedAt.value = new Date();
 }
 
 async function applyGroupFilter(nextGroup) {

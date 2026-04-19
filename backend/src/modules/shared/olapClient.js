@@ -250,7 +250,8 @@ class OlapClient {
     };
 
     for (const order of ordersMap.values()) {
-      const isCanceledOrder = order.isOrderDeleted || order.isStorned || order.hasCancelCause || order.hasItemDeletion;
+      // hasItemDeletion (DeletedWithWriteoff) означает удаление позиции внутри заказа, а не отмену заказа целиком
+      const isCanceledOrder = order.isOrderDeleted || order.isStorned || order.hasCancelCause;
 
       if (order.isOrderDeleted) orderStats.orderDeleted += 1;
       if (order.isStorned) orderStats.storned += 1;

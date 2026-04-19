@@ -130,6 +130,7 @@ function buildPromotionsReport(rows = [], ctx) {
   const promoMap = new Map();
   const dailyMap = new Map();
   let totalRevenue = 0;
+  let totalRevenueBeforeDiscount = 0;
   let totalDiscount = 0;
   const uniqueOrders = new Set();
 
@@ -149,6 +150,7 @@ function buildPromotionsReport(rows = [], ctx) {
     const netSales = Number(row.Sales || 0);
 
     totalRevenue += netSales;
+    totalRevenueBeforeDiscount += revenue;
     totalDiscount += Math.max(discount, 0);
 
     if (!promoMap.has(key)) {
@@ -168,13 +170,21 @@ function buildPromotionsReport(rows = [], ctx) {
   }
 
   const promotions = [...promoMap.values()]
-    .map((item) => ({
-      ...item,
-      revenue: ctx.roundMetric(item.revenue),
-      discountSum: ctx.roundMetric(item.discountSum),
-      netSales: ctx.roundMetric(item.netSales),
-      discountRate: item.revenue > 0 ? ctx.roundMetric((item.discountSum / item.revenue) * 100) : 0,
-    }))
+    .map((item) => {
+      const discountMetrics = ctx.calculateDiscountMetrics({
+        netRevenue: item.netSales,
+        revenueBeforeDiscount: item.revenue,
+        discountSum: item.discountSum,
+      });
+
+      return {
+        ...item,
+        revenue: ctx.roundMetric(item.revenue),
+        discountSum: discountMetrics.discountSum,
+        netSales: ctx.roundMetric(item.netSales),
+        discountRate: discountMetrics.discountPercent,
+      };
+    })
     .sort((a, b) => b.discountSum - a.discountSum);
 
   const dailyBreakdown = [...dailyMap.values()]
@@ -186,12 +196,18 @@ function buildPromotionsReport(rows = [], ctx) {
       netSales: ctx.roundMetric(item.netSales),
     }));
 
+  const totalDiscountMetrics = ctx.calculateDiscountMetrics({
+    netRevenue: totalRevenue,
+    revenueBeforeDiscount: totalRevenueBeforeDiscount,
+    discountSum: totalDiscount,
+  });
+
   return {
     summary: {
       totalOrders: uniqueOrders.size,
       totalRevenue: ctx.roundMetric(totalRevenue),
-      totalDiscount: ctx.roundMetric(totalDiscount),
-      discountRate: totalRevenue > 0 ? ctx.roundMetric((totalDiscount / totalRevenue) * 100) : 0,
+      totalDiscount: totalDiscountMetrics.discountSum,
+      discountRate: totalDiscountMetrics.discountPercent,
     },
     promotions,
     dailyBreakdown,

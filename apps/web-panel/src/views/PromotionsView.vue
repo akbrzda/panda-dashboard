@@ -1,7 +1,21 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Акции и промокоды</h1>
+      <ReportPageHeader
+        title="Акции и промокоды"
+        description="Динамика скидок и вклад промо-механик в заказы и выручку."
+        details="Отчет помогает оценивать эффективность промо по сумме и доле скидок, а также сравнивать вклад разных акций."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
 
@@ -60,39 +74,62 @@
           <Table class="min-w-full border-collapse text-xs">
             <TableHeader>
               <TableRow class="bg-muted/30 text-muted-foreground">
-                <TableHead class="text-left font-medium">Тип</TableHead>
-                <TableHead class="text-left font-medium">Название</TableHead>
-                <TableHead class="text-left font-medium">Заказов</TableHead>
-                <TableHead class="text-left font-medium">Скидка</TableHead>
-                <TableHead class="text-left font-medium">Net sales</TableHead>
+                <TableHead class="text-left font-medium">Механика акции</TableHead>
+                <TableHead class="text-left font-medium">Акция</TableHead>
+                <TableHead class="text-left font-medium">Заказы с акцией</TableHead>
+                <TableHead class="text-left font-medium">Сумма скидки</TableHead>
+                <TableHead class="text-left font-medium">Выручка после скидки</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="item in report?.promotions || []" :key="`${item.promoType}-${item.promoName}`" class="border-t border-border/50">
+              <TableRow
+                v-for="item in promotionsPagination.pageItems"
+                :key="`${item.promoType}-${item.promoName}`"
+                class="border-t border-border/50"
+              >
                 <TableCell class="text-foreground">{{ item.promoType }}</TableCell>
                 <TableCell class="text-foreground">{{ item.promoName }}</TableCell>
                 <TableCell class="text-foreground">{{ formatNumber(item.orders) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatDiscountDisplay(item.discountRate, item.discountSum) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatCurrency(item.netSales) }}</TableCell>
               </TableRow>
+              <TableRow v-if="promotionsPagination.totalItems === 0" class="border-t border-border/50">
+                <TableCell colspan="5" class="text-center text-muted-foreground">Нет данных по акциям за выбранный период</TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </div>
+        <PaginationControls
+          v-if="promotionsPagination.totalItems > 0"
+          :current-page="promotionsPagination.currentPage"
+          :total-pages="promotionsPagination.totalPages"
+          :total-items="promotionsPagination.totalItems"
+          :range-start="promotionsPagination.rangeStart"
+          :range-end="promotionsPagination.rangeEnd"
+          :loading="isPageLoading"
+          @prev="promotionsPagination.prevPage"
+          @next="promotionsPagination.nextPage"
+        />
       </Card>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import AreaChart from "../components/charts/AreaChart.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
+import { usePagination } from "@/composables/usePagination";
+import PaginationControls from "@/components/ui/PaginationControls.vue";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -104,12 +141,24 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 
 const report = computed(() => reportsStore.promotionsReport);
 const isPageLoading = computed(() => reportsStore.isLoadingPromotions);
 const pageError = computed(() => reportsStore.error);
+const lastLoadedAt = ref(null);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
 const topPromotions = computed(() => (report.value?.promotions || []).slice(0, 8));
+const promotionsRows = computed(() => report.value?.promotions || []);
+const promotionsPagination = usePagination(promotionsRows, { pageSize: 15 });
 const discountBreakdown = computed(() =>
   (report.value?.dailyBreakdown || []).map((item) => ({
     date: item.date,
@@ -141,10 +190,14 @@ async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? revenueStore.currentOrganizationId;
   const dateFrom = payload.dateFrom ?? filtersStore.dateFrom;
   const dateTo = payload.dateTo ?? filtersStore.dateTo;
+  const completedOnly = payload.completedOnly ?? filtersStore.completedOnly;
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  await reportsStore.loadPromotions({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadPromotions({ organizationId, dateFrom, dateTo, completedOnly });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
 }
 
 onMounted(async () => {

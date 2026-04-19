@@ -1,8 +1,27 @@
 <template>
   <div class="space-y-6">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Фудкост</h1>
-      <PageFilters :loading="foodcostStore.isLoadingFoodcost" :include-lfl="true" :show-lfl-hint="true" @apply="handleApply" />
+      <ReportPageHeader
+        title="Фудкост"
+        description="Контроль доли себестоимости в выручке и отклонений от целевых порогов."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="foodcostStore.isLoadingFoodcost"
+        @refresh="handleApply()"
+      />
+      <PageFilters
+        :loading="foodcostStore.isLoadingFoodcost"
+        :include-lfl="true"
+        :show-lfl-hint="true"
+        :show-completed-only="false"
+        @apply="handleApply"
+      />
     </div>
 
     <div v-if="error" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -96,80 +115,93 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from"vue";
-import { AlertCircle, Percent } from"lucide-vue-next";
-import PageFilters from"@/components/filters/PageFilters.vue";
-import MetricCard from"@/components/metrics/MetricCard.vue";
-import Card from"@/components/ui/Card.vue";
-import { useAutoRefresh } from"@/composables/useAutoRefresh";
-import { useRevenueStore } from"@/stores/revenue";
-import { useFoodcostStore } from"@/stores/foodcost";
-import { useFiltersStore } from"@/stores/filters";
-import { usePlansStore } from"@/stores/plans";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
+import { AlertCircle, Percent } from "lucide-vue-next";
+import PageFilters from "@/components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
+import MetricCard from "@/components/metrics/MetricCard.vue";
+import Card from "@/components/ui/Card.vue";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
+import { useRevenueStore } from "@/stores/revenue";
+import { useFoodcostStore } from "@/stores/foodcost";
+import { useFiltersStore } from "@/stores/filters";
+import { usePlansStore } from "@/stores/plans";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
-import Table from"@/components/ui/Table.vue";
-import TableBody from"@/components/ui/TableBody.vue";
-import TableCell from"@/components/ui/TableCell.vue";
-import TableHead from"@/components/ui/TableHead.vue";
-import TableHeader from"@/components/ui/TableHeader.vue";
-import TableRow from"@/components/ui/TableRow.vue";
+import Table from "@/components/ui/Table.vue";
+import TableBody from "@/components/ui/TableBody.vue";
+import TableCell from "@/components/ui/TableCell.vue";
+import TableHead from "@/components/ui/TableHead.vue";
+import TableHeader from "@/components/ui/TableHeader.vue";
+import TableRow from "@/components/ui/TableRow.vue";
 
 const revenueStore = useRevenueStore();
 const foodcostStore = useFoodcostStore();
 const filtersStore = useFiltersStore();
 const plansStore = usePlansStore();
+const route = useRoute();
 const error = ref(null);
+const lastLoadedAt = ref(null);
 
 const data = computed(() => foodcostStore.foodcostData);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const organization = revenueStore.organizations.find((org) => org.id === revenueStore.currentOrganizationId);
+  return organization ? organization.name : "Выбранное подразделение";
+});
 
 const statusLabel = computed(() => {
   switch (data.value?.status) {
-    case"critical":
-      return"Критично";
-    case"warning":
-      return"Требует внимания";
-    case"unavailable":
-      return"Нет данных";
+    case "critical":
+      return "Критично";
+    case "warning":
+      return "Требует внимания";
+    case "unavailable":
+      return "Нет данных";
     default:
-      return"Норма";
+      return "Норма";
   }
 });
 
 const statusClass = computed(() => {
   switch (data.value?.status) {
-    case"critical":
-      return"bg-destructive/10 text-destructive";
-    case"warning":
-      return"bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-    case"unavailable":
-      return"bg-muted text-muted-foreground";
+    case "critical":
+      return "bg-destructive/10 text-destructive";
+    case "warning":
+      return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
+    case "unavailable":
+      return "bg-muted text-muted-foreground";
     default:
-      return"bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
   }
 });
 
 const barClass = computed(() => {
   switch (data.value?.status) {
-    case"critical":
-      return"bg-destructive";
-    case"warning":
-      return"bg-yellow-500";
-    case"unavailable":
-      return"bg-muted-foreground/40";
+    case "critical":
+      return "bg-destructive";
+    case "warning":
+      return "bg-yellow-500";
+    case "unavailable":
+      return "bg-muted-foreground/40";
     default:
-      return"bg-emerald-500";
+      return "bg-emerald-500";
   }
 });
 
 function getPercentClass(value) {
-  if (value > 35) return"text-destructive";
-  if (value >= 30) return"text-yellow-700 dark:text-yellow-400";
-  return"text-emerald-700 dark:text-emerald-400";
+  if (value > 35) return "text-destructive";
+  if (value >= 30) return "text-yellow-700 dark:text-yellow-400";
+  return "text-emerald-700 dark:text-emerald-400";
 }
 
 function formatCurrency(val) {
-  if (val == null) return"—";
-  return new Intl.NumberFormat("ru-RU", { style:"currency", currency:"RUB", maximumFractionDigits: 0 }).format(val);
+  if (val == null) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(val);
 }
 
 function formatPercent(val) {
@@ -190,9 +222,12 @@ async function handleApply(payload = {}) {
 
   error.value = null;
   try {
-    await foodcostStore.loadFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+    const result = await foodcostStore.loadFoodcost({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+    if (result) {
+      lastLoadedAt.value = new Date();
+    }
   } catch (e) {
-    error.value = e.message ||"Ошибка загрузки фудкоста";
+    error.value = e.message || "Ошибка загрузки фудкоста";
   }
 }
 

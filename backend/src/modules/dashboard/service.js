@@ -1,5 +1,6 @@
 const organizationsService = require("../organizations/service");
 const revenueService = require("../revenue/service");
+const orderRules = require("../shared/orderRules");
 
 class DashboardService {
   async withTimeout(promise, timeoutMs = 45000) {
@@ -87,8 +88,13 @@ class DashboardService {
       data.avgCheck = data.orders > 0 ? data.revenue / data.orders : 0;
     }
 
-    const discountSum = Math.max(0, totalRevenueBeforeDiscount - totalRevenue);
-    const discountPercent = totalRevenueBeforeDiscount > 0 ? Math.round((discountSum / totalRevenueBeforeDiscount) * 10000) / 100 : 0;
+    const discountMetrics = orderRules.calculateDiscountMetrics(
+      {
+        netRevenue: totalRevenue,
+        revenueBeforeDiscount: totalRevenueBeforeDiscount,
+      },
+      (value) => Math.round(value * 100) / 100,
+    );
 
     return {
       date: dayIso,
@@ -98,8 +104,8 @@ class DashboardService {
         totalRevenue,
         totalOrders,
         avgPerOrder: totalOrders > 0 ? totalRevenue / totalOrders : 0,
-        discountSum,
-        discountPercent,
+        discountSum: discountMetrics.discountSum,
+        discountPercent: discountMetrics.discountPercent,
       },
       revenueByChannel: channelMap,
       byOrganization,

@@ -17,6 +17,7 @@ export const useFiltersStore = defineStore("filters", () => {
   const organizationId = ref(null);
   const timezone = ref(DEFAULT_PERIOD_TIMEZONE);
   const operatingDayStart = ref(DEFAULT_OPERATING_DAY_START);
+  const completedOnly = ref(true);
   // Пустой массив = все подразделения
   const departments = ref([]);
 
@@ -73,6 +74,11 @@ export const useFiltersStore = defineStore("filters", () => {
     persistToStorage();
   }
 
+  function setCompletedOnly(value) {
+    completedOnly.value = value !== false;
+    persistToStorage();
+  }
+
   function hydrateFromStorage() {
     try {
       const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
@@ -85,6 +91,7 @@ export const useFiltersStore = defineStore("filters", () => {
       if (parsed?.timezone) timezone.value = parsed.timezone;
       if (parsed?.operatingDayStart) operatingDayStart.value = normalizeOperatingDayStart(parsed.operatingDayStart);
       if (Array.isArray(parsed?.departments)) departments.value = parsed.departments;
+      if (typeof parsed?.completedOnly === "boolean") completedOnly.value = parsed.completedOnly;
     } catch (error) {
       console.warn("Не удалось восстановить фильтры из localStorage:", error);
     }
@@ -102,6 +109,7 @@ export const useFiltersStore = defineStore("filters", () => {
           timezone: timezone.value,
           operatingDayStart: operatingDayStart.value,
           departments: departments.value,
+          completedOnly: completedOnly.value,
         }),
       );
     } catch (error) {
@@ -116,6 +124,7 @@ export const useFiltersStore = defineStore("filters", () => {
     organizationId,
     timezone,
     operatingDayStart,
+    completedOnly,
     departments,
     dateRange,
     lflRange,
@@ -129,6 +138,7 @@ export const useFiltersStore = defineStore("filters", () => {
     setOrganization,
     setOrganizationContext,
     setDepartments,
+    setCompletedOnly,
     hydrateFromStorage,
     persistToStorage,
   };

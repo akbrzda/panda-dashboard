@@ -12,22 +12,22 @@ export const useMarketingReportsStore = defineStore("marketingReports", () => {
   const isLoadingMarketingSources = runner.getLoadingRef("marketingSources");
   const isLoadingPromotions = runner.getLoadingRef("promotions");
 
-  const loadMarketingSources = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadMarketingSources = async ({ organizationId, dateFrom, dateTo, completedOnly = true }) =>
     await runner.runRequest({
       key: "marketingSources",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getMarketingSources({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getMarketingSources({ organizationId, dateFrom, dateTo, completedOnly, signal }),
       onSuccess: (data) => {
         marketingSourcesReport.value = data;
       },
       errorMessage: "Ошибка загрузки отчета по источникам",
     });
 
-  const loadPromotions = async ({ organizationId, dateFrom, dateTo }) =>
+  const loadPromotions = async ({ organizationId, dateFrom, dateTo, completedOnly = true }) =>
     await runner.runRequest({
       key: "promotions",
       hasRequiredParams: () => Boolean(organizationId && dateFrom && dateTo),
-      request: (signal) => reportsApi.getPromotions({ organizationId, dateFrom, dateTo, signal }),
+      request: (signal) => reportsApi.getPromotions({ organizationId, dateFrom, dateTo, completedOnly, signal }),
       onSuccess: (data) => {
         promotionsReport.value = data;
       },
@@ -52,4 +52,3 @@ export const useMarketingReportsStore = defineStore("marketingReports", () => {
     $reset,
   };
 });
-

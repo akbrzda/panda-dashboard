@@ -62,6 +62,12 @@ export function buildRangeFilterQuery(currentQuery, state) {
     delete nextQuery.to;
   }
 
+  if (state.completedOnly === "false") {
+    nextQuery.completedOnly = "false";
+  } else {
+    delete nextQuery.completedOnly;
+  }
+
   return nextQuery;
 }
 
@@ -83,6 +89,12 @@ export function buildDateFilterQuery(currentQuery, state) {
     nextQuery.date = state.date;
   } else {
     delete nextQuery.date;
+  }
+
+  if (state.completedOnly === "false") {
+    nextQuery.completedOnly = "false";
+  } else {
+    delete nextQuery.completedOnly;
   }
 
   return nextQuery;

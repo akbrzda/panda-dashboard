@@ -90,3 +90,80 @@ test("KPI курьеров не подменяет отсутствие врем
   assert.equal(report.couriers[0].avgRouteMinutes, null);
   assert.equal(report.couriers[0].avgTotalMinutes, 42);
 });
+
+test("KPI курьеров считает late только по promised/actual timestamp", () => {
+  const report = reportsService.buildCourierKpiReport(
+    [],
+    "Europe/Moscow",
+    {
+      preparedOrders: [
+        {
+          orderId: "order-late",
+          orderType: "Доставка",
+          orderServiceType: "DELIVERY_BY_COURIER",
+          courierId: "courier-1",
+          courierName: "Курьер 1",
+          revenue: 100,
+          totalMinutes: 80,
+          promisedAt: new Date("2026-04-18T10:30:00.000Z").getTime(),
+          actualDeliveryAt: new Date("2026-04-18T10:45:00.000Z").getTime(),
+          hour: 13,
+        },
+        {
+          orderId: "order-unknown",
+          orderType: "Доставка",
+          orderServiceType: "DELIVERY_BY_COURIER",
+          courierId: "courier-1",
+          courierName: "Курьер 1",
+          revenue: 100,
+          totalMinutes: 120,
+          promisedAt: null,
+          actualDeliveryAt: null,
+          hour: 14,
+        },
+      ],
+    },
+  );
+
+  assert.equal(report.summary.totalOrders, 2);
+  assert.equal(report.summary.comparableOrders, 1);
+  assert.equal(report.summary.excludedOrdersWithoutTimestamps, 1);
+  assert.equal(report.summary.lateOrders, 1);
+  assert.equal(report.summary.violationRate, 100);
+});
+
+test("KPI курьеров исключает самовывоз и заказы в зале", () => {
+  const report = reportsService.buildCourierKpiReport([], "Europe/Moscow", {
+    preparedOrders: [
+      {
+        orderId: "delivery-1",
+        orderType: "Доставка",
+        orderServiceType: "DELIVERY_BY_COURIER",
+        courierId: "courier-1",
+        courierName: "Курьер 1",
+        revenue: 1000,
+      },
+      {
+        orderId: "pickup-1",
+        orderType: "Самовывоз",
+        orderServiceType: "DELIVERY_BY_CLIENT",
+        courierId: "unknown",
+        courierName: "Неизвестный курьер",
+        revenue: 500,
+      },
+      {
+        orderId: "hall-1",
+        orderType: "В зале",
+        orderServiceType: "COMMON",
+        courierId: "unknown",
+        courierName: "Неизвестный курьер",
+        revenue: 300,
+      },
+    ],
+  });
+
+  assert.equal(report.summary.totalOrders, 1);
+  assert.equal(report.summary.totalRevenue, 1000);
+  assert.equal(report.summary.totalCouriers, 1);
+  assert.equal(report.couriers[0].courierId, "courier-1");
+});

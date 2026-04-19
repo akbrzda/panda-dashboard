@@ -5,6 +5,7 @@
       <ReportPageHeader
         title="Отчёт по выручке"
         description="Ключевые финансовые и операционные метрики по выбранному периоду с LFL-сравнением."
+        details="Отчет используется для контроля выручки, заказов, среднего чека и дисконтов, а также для сравнения с аналогичным периодом через LFL."
         :status="readiness.status"
         :tier="readiness.tier"
         :source="readiness.source"
@@ -58,6 +59,7 @@
             :value="store.summary?.avgPerOrder ?? null"
             format="currency"
             icon="BarChart2"
+            :lfl="store.summary?.avgPerOrderLFL != null ? { percent: store.summary.avgPerOrderLFL } : null"
             :plan="getPlan('avgPerOrder', store.summary?.avgPerOrder)"
             :loading="isPageLoading"
           />
@@ -67,6 +69,7 @@
             :display-value="formatDiscountDisplay(store.summary?.discountPercent, store.summary?.discountSum)"
             format="currency"
             icon="Percent"
+            :lfl="store.summary?.discountSumLFL != null ? { percent: store.summary.discountSumLFL } : null"
             :inverse="true"
             :plan="getPlan('discountSum', store.summary?.discountSum)"
             :loading="isPageLoading"
@@ -169,12 +172,13 @@ async function handleApply(payload = {}) {
   const dateTo = payload.dateTo ?? filtersStore.dateTo;
   const lflDateFrom = payload.lflDateFrom ?? filtersStore.lflDateFrom;
   const lflDateTo = payload.lflDateTo ?? filtersStore.lflDateTo;
+  const completedOnly = payload.completedOnly ?? filtersStore.completedOnly;
 
   store.setCurrentOrganization(organizationId);
   store.startDate = dateFrom;
   store.endDate = dateTo;
 
-  await reportsStore.loadRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+  await reportsStore.loadRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly });
 
   if (reportsStore.revenueData) {
     store.revenueData = reportsStore.revenueData;
@@ -183,7 +187,10 @@ async function handleApply(payload = {}) {
 }
 
 function getPlan(metric, currentValue) {
-  return plansStore.getMetricPlan(metric, filtersStore.preset, store.currentOrganizationId, currentValue);
+  const planMonth =
+    metric === "revenue" && filtersStore.preset === "current-month" && filtersStore.dateTo ? String(filtersStore.dateTo).slice(0, 7) : "";
+
+  return plansStore.getMetricPlan(metric, filtersStore.preset, store.currentOrganizationId, currentValue, { planMonth });
 }
 
 function formatCurrency(value) {

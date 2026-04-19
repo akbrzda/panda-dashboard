@@ -2,6 +2,7 @@ const OlapClient = require("../shared/olapClient");
 const organizationsService = require("../organizations/service");
 const { TTLCache } = require("../shared/cache");
 const fileLogger = require("../../utils/fileLogger");
+const orderRules = require("../shared/orderRules");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class RevenueService {
@@ -274,8 +275,14 @@ class RevenueService {
       totalDiscountSum += order.discountSum;
     }
 
-    const computedDiscountSum = totalDiscountSum > 0 ? totalDiscountSum : Math.max(0, totalRevenueBeforeDiscount - totalRevenue);
-    const discountPercent = totalRevenueBeforeDiscount > 0 ? Math.round((computedDiscountSum / totalRevenueBeforeDiscount) * 10000) / 100 : 0;
+    const discountMetrics = orderRules.calculateDiscountMetrics(
+      {
+        netRevenue: totalRevenue,
+        revenueBeforeDiscount: totalRevenueBeforeDiscount,
+        discountSum: totalDiscountSum,
+      },
+      (value) => Math.round(value * 100) / 100,
+    );
 
     const dailyBreakdown = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -318,8 +325,8 @@ class RevenueService {
         avgPerOrder: totalOrders > 0 ? totalRevenue / totalOrders : 0,
         avgDeliveryTime: 0,
         avgCookingTime: 0,
-        discountSum: computedDiscountSum,
-        discountPercent,
+        discountSum: discountMetrics.discountSum,
+        discountPercent: discountMetrics.discountPercent,
         lfl: null,
         previousPeriodRevenue: null,
         orderStats,

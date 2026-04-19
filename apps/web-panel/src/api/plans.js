@@ -11,6 +11,11 @@ export const plansApi = {
     return response.data;
   },
 
+  async getMonthlyRevenueDistribution(payload) {
+    const response = await apiClient.post("/plans/monthly-revenue-distribution", payload);
+    return response.data;
+  },
+
   async updatePlan(id, payload) {
     const response = await apiClient.put(`/plans/${id}`, payload);
     return response.data;

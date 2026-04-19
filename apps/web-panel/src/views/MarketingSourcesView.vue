@@ -31,10 +31,8 @@
     <template v-if="report || isPageLoading">
       <Card class="border-border/70 bg-card/95 p-4 md:p-5">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold text-foreground">Drill-down: Customer Pack</h2>
-          <Button type="button" variant="outline" size="sm" :disabled="!selectedSource" @click="openClientsDrilldown">
-            Перейти к клиентам
-          </Button>
+          <h2 class="text-sm font-semibold text-foreground">Работа с сегментом источника</h2>
+          <Button type="button" variant="outline" size="sm" :disabled="!selectedSource" @click="openClientsDrilldown"> Перейти к клиентам </Button>
         </div>
         <div class="flex flex-wrap gap-2">
           <Badge v-if="selectedSource" variant="outline">Выбран источник: {{ selectedSource }}</Badge>
@@ -86,7 +84,7 @@
             </TableHeader>
             <TableBody>
               <TableRow
-                v-for="item in report?.sources || []"
+                v-for="item in sourcesPagination.pageItems"
                 :key="item.source"
                 class="cursor-pointer border-t border-border/50 transition-colors hover:bg-muted/20"
                 :class="selectedSource === item.source ? 'bg-muted/40' : ''"
@@ -99,19 +97,30 @@
                 <TableCell class="text-foreground">{{ formatNumber(item.ordersShare) }}</TableCell>
                 <TableCell class="text-foreground">{{ formatNumber(item.revenueShare) }}</TableCell>
               </TableRow>
-              <TableRow v-if="(report?.sources || []).length === 0" class="border-t border-border/50">
+              <TableRow v-if="sourcesPagination.totalItems === 0" class="border-t border-border/50">
                 <TableCell colspan="6" class="text-center text-muted-foreground">Нет данных по источникам за выбранный период</TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </div>
+        <PaginationControls
+          v-if="sourcesPagination.totalItems > 0"
+          :current-page="sourcesPagination.currentPage"
+          :total-pages="sourcesPagination.totalPages"
+          :total-items="sourcesPagination.totalItems"
+          :range-start="sourcesPagination.rangeStart"
+          :range-end="sourcesPagination.rangeEnd"
+          :loading="isPageLoading"
+          @prev="sourcesPagination.prevPage"
+          @next="sourcesPagination.nextPage"
+        />
       </Card>
 
       <Card v-if="selectedSource" class="border-border/70 bg-card/95 p-4 md:p-5">
         <h3 class="mb-3 text-sm font-semibold text-foreground">Динамика источника: {{ selectedSource }}</h3>
         <div class="space-y-2">
           <div
-            v-for="item in selectedSourceBreakdown"
+            v-for="item in sourceBreakdownPagination.pageItems"
             :key="`source-breakdown-${item.date}`"
             class="grid grid-cols-1 gap-2 rounded-md border border-border/60 p-3 text-xs md:grid-cols-4"
           >
@@ -120,9 +129,20 @@
             <span class="text-foreground">Выручка: {{ formatCurrency(item.revenue) }}</span>
             <span class="text-foreground">Средний чек: {{ formatCurrency(item.avgCheck) }}</span>
           </div>
-          <p v-if="selectedSourceBreakdown.length === 0" class="text-sm text-muted-foreground">
+          <p v-if="sourceBreakdownPagination.totalItems === 0" class="text-sm text-muted-foreground">
             По выбранному источнику нет ежедневной детализации за период.
           </p>
+          <PaginationControls
+            v-if="sourceBreakdownPagination.totalItems > 0"
+            :current-page="sourceBreakdownPagination.currentPage"
+            :total-pages="sourceBreakdownPagination.totalPages"
+            :total-items="sourceBreakdownPagination.totalItems"
+            :range-start="sourceBreakdownPagination.rangeStart"
+            :range-end="sourceBreakdownPagination.rangeEnd"
+            :loading="isPageLoading"
+            @prev="sourceBreakdownPagination.prevPage"
+            @next="sourceBreakdownPagination.nextPage"
+          />
         </div>
       </Card>
     </template>
@@ -146,6 +166,8 @@ import AreaChart from "../components/charts/AreaChart.vue";
 import DonutChart from "../components/charts/DonutChart.vue";
 import { getFeatureReadiness } from "@/config/featureReadiness";
 import { pickQueryValue } from "@/composables/filterQuery";
+import { usePagination } from "@/composables/usePagination";
+import PaginationControls from "@/components/ui/PaginationControls.vue";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -173,6 +195,7 @@ const trustCoverage = computed(() => {
   const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
   return selectedOrganization?.name || "Выбранное подразделение";
 });
+const sourcesRows = computed(() => report.value?.sources || []);
 const selectedSourceBreakdown = computed(() => {
   if (!selectedSource.value) return [];
   return (report.value?.dailyBreakdown || [])
@@ -186,9 +209,11 @@ const selectedSourceBreakdown = computed(() => {
         avgCheck: Number(channel.orders || 0) > 0 ? Number(channel.revenue || 0) / Number(channel.orders || 0) : 0,
       };
     })
-    .filter(Boolean)
-    .slice(0, 31);
+    .filter(Boolean);
 });
+
+const sourcesPagination = usePagination(sourcesRows, { pageSize: 15 });
+const sourceBreakdownPagination = usePagination(selectedSourceBreakdown, { pageSize: 10 });
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
@@ -202,10 +227,11 @@ async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? revenueStore.currentOrganizationId;
   const dateFrom = payload.dateFrom ?? filtersStore.dateFrom;
   const dateTo = payload.dateTo ?? filtersStore.dateTo;
+  const completedOnly = payload.completedOnly ?? filtersStore.completedOnly;
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  const result = await reportsStore.loadMarketingSources({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadMarketingSources({ organizationId, dateFrom, dateTo, completedOnly });
   if (result) {
     lastLoadedAt.value = new Date();
   }
@@ -213,6 +239,7 @@ async function handleApply(payload = {}) {
 
 function selectSource(source) {
   selectedSource.value = selectedSource.value === source ? "" : source;
+  sourceBreakdownPagination.resetPage();
 }
 
 function openClientsDrilldown() {
@@ -240,6 +267,8 @@ watch(
   () => route.query,
   (query) => {
     selectedSource.value = pickQueryValue(query, ["source", "customerSource"]);
+    sourcesPagination.resetPage();
+    sourceBreakdownPagination.resetPage();
   },
   { immediate: true, deep: true },
 );

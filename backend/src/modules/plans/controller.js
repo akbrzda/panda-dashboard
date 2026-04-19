@@ -36,6 +36,15 @@ class PlansController {
       return res.status(error.statusCode || 500).json({ success: false, error: error.message || "Ошибка удаления плана" });
     }
   }
+
+  async buildMonthlyRevenueDistribution(req, res) {
+    try {
+      const result = await plansService.buildMonthlyRevenueDistribution(req.body || {});
+      return res.json({ success: true, data: result });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({ success: false, error: error.message || "Ошибка расчета месячного плана" });
+    }
+  }
 }
 
 module.exports = new PlansController();

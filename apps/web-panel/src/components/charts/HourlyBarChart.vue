@@ -11,14 +11,13 @@
 <script setup>
 import { computed } from "vue";
 import { Bar } from "vue-chartjs";
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip } from "chart.js";
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
+ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 const props = defineProps({
   hours: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
-  mode: { type: String, default: "revenue" },
 });
 
 function getCssColor(variable, alpha = 1) {
@@ -26,24 +25,40 @@ function getCssColor(variable, alpha = 1) {
   return alpha < 1 ? `hsla(${hsl}, ${alpha})` : `hsl(${hsl})`;
 }
 
-const hasData = computed(() => props.hours.some((h) => h.revenue > 0 || h.orders > 0));
+const hasData = computed(() => props.hours.some((h) => Number(h?.revenue || 0) > 0 || Number(h?.orders || 0) > 0));
 
 const chartData = computed(() => {
   const labels = props.hours.map((h) => `${String(h.hour).padStart(2, "0")}:00`);
-  const data = props.hours.map((h) => (props.mode === "orders" ? h.orders : h.revenue));
-  const color = getCssColor("--chart-1");
-  const colorFill = getCssColor("--chart-1", 0.8);
+  const revenue = props.hours.map((h) => Number(h?.revenue || 0));
+  const orders = props.hours.map((h) => Number(h?.orders || 0));
 
   return {
     labels,
     datasets: [
       {
-        label: props.mode === "orders" ? "Заказы" : "Выручка",
-        data,
-        backgroundColor: colorFill,
-        hoverBackgroundColor: color,
+        type: "bar",
+        label: "Выручка",
+        yAxisID: "revenueAxis",
+        data: revenue,
+        backgroundColor: getCssColor("--chart-1", 0.75),
+        hoverBackgroundColor: getCssColor("--chart-1", 1),
         borderRadius: 4,
         borderSkipped: false,
+        order: 2,
+      },
+      {
+        type: "line",
+        label: "Заказы",
+        yAxisID: "ordersAxis",
+        data: orders,
+        borderColor: getCssColor("--chart-2", 1),
+        backgroundColor: getCssColor("--chart-2", 0.25),
+        tension: 0.35,
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        fill: false,
+        order: 1,
       },
     ],
   };
@@ -54,7 +69,13 @@ const chartOptions = computed(() => ({
   maintainAspectRatio: true,
   interaction: { mode: "index", intersect: false },
   plugins: {
-    legend: { display: false },
+    legend: {
+      display: true,
+      labels: {
+        color: "hsl(var(--foreground))",
+        usePointStyle: true,
+      },
+    },
     tooltip: {
       backgroundColor: "hsl(var(--popover))",
       titleColor: "hsl(var(--popover-foreground))",
@@ -65,7 +86,10 @@ const chartOptions = computed(() => ({
       callbacks: {
         label(ctx) {
           const v = ctx.parsed.y;
-          return props.mode === "orders" ? ` Заказов: ${v}` : ` ${v.toLocaleString("ru-RU")} ₽`;
+          if (ctx.dataset.yAxisID === "ordersAxis") {
+            return ` Заказы: ${v.toLocaleString("ru-RU")}`;
+          }
+          return ` Выручка: ${v.toLocaleString("ru-RU")} ₽`;
         },
       },
     },
@@ -80,14 +104,28 @@ const chartOptions = computed(() => ({
         maxRotation: 0,
       },
     },
-    y: {
+    ordersAxis: {
+      type: "linear",
+      position: "left",
       grid: { color: "hsl(var(--border))", drawBorder: false },
       border: { display: false },
       beginAtZero: true,
       ticks: {
         color: "hsl(var(--muted-foreground))",
         font: { size: 11 },
-        callback: (v) => (props.mode === "orders" ? v : v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v),
+        callback: (v) => Number(v).toLocaleString("ru-RU"),
+      },
+    },
+    revenueAxis: {
+      type: "linear",
+      position: "right",
+      grid: { drawOnChartArea: false },
+      border: { display: false },
+      beginAtZero: true,
+      ticks: {
+        color: "hsl(var(--muted-foreground))",
+        font: { size: 11 },
+        callback: (v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v),
       },
     },
   },

@@ -6,16 +6,13 @@ const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name ==
 
 const DEFAULT_FILTERS = {
   search: "",
-  terminalGroupId: "all",
   entityType: "all",
-  status: "active",
-  duration: "all",
 };
 
 export const useStopListStore = defineStore("stopList", {
   state: () => ({
     organizations: [],
-    currentOrganizationId: "all",
+    currentOrganizationId: null,
     items: [],
     meta: null,
     filters: { ...DEFAULT_FILTERS },
@@ -28,64 +25,21 @@ export const useStopListStore = defineStore("stopList", {
 
   getters: {
     organizationOptions: (state) => {
-      const orgs = (state.organizations || []).map((organization) => ({
+      return (state.organizations || []).map((organization) => ({
         id: String(organization.id),
         name: organization.name,
       }));
-      return [{ id: "all", name: "Все подразделения" }, ...orgs];
-    },
-
-    terminalGroupOptions: (state) => {
-      const map = new Map();
-      for (const item of state.items) {
-        const id = String(item.terminalGroupId || "").trim();
-        if (!id) continue;
-        if (!map.has(id)) {
-          map.set(id, item.terminalGroupName || "Без названия подразделения");
-        }
-      }
-
-      const values = Array.from(map.entries())
-        .map(([id, name]) => ({ id, name }))
-        .sort((a, b) => a.name.localeCompare(b.name, "ru"));
-
-      return [{ id: "all", name: "Все terminal groups" }, ...values];
     },
 
     filteredItems: (state) => {
       const search = state.filters.search.trim().toLowerCase();
 
       return (state.items || []).filter((item) => {
-        if (state.currentOrganizationId !== "all" && String(item.organizationId) !== String(state.currentOrganizationId)) {
-          return false;
-        }
-
-        if (state.filters.terminalGroupId !== "all" && String(item.terminalGroupId) !== String(state.filters.terminalGroupId)) {
+        if (state.currentOrganizationId && String(item.organizationId) !== String(state.currentOrganizationId)) {
           return false;
         }
 
         if (state.filters.entityType !== "all" && String(item.entityType) !== String(state.filters.entityType)) {
-          return false;
-        }
-
-        if (state.filters.status === "active" && item.isInStop !== true) {
-          return false;
-        }
-
-        if (state.filters.status === "completed" && item.isInStop === true) {
-          return false;
-        }
-
-        const hours = Number(item.inStopHours);
-        if (state.filters.duration === "gt1h" && !(Number.isFinite(hours) && hours > 1)) {
-          return false;
-        }
-
-        if (state.filters.duration === "gt2h" && !(Number.isFinite(hours) && hours > 2)) {
-          return false;
-        }
-
-        if (state.filters.duration === "gt24h" && !(Number.isFinite(hours) && hours > 24)) {
           return false;
         }
 
@@ -109,17 +63,11 @@ export const useStopListStore = defineStore("stopList", {
       const terminalGroups = new Set(list.map((item) => item.terminalGroupId).filter(Boolean));
       const longerThan2Hours = list.filter((item) => Number.isFinite(Number(item.inStopHours)) && Number(item.inStopHours) > 2).length;
       const longerThan1Day = list.filter((item) => Number.isFinite(Number(item.inStopHours)) && Number(item.inStopHours) > 24).length;
-      const estimatedLostRevenue = list.reduce((sum, item) => {
-        const value = Number(item.estimatedLostRevenue);
-        return sum + (Number.isFinite(value) ? value : 0);
-      }, 0);
-
       return {
         total: list.length,
         uniqueTerminalGroups: terminalGroups.size,
         longerThan2Hours,
         longerThan1Day,
-        estimatedLostRevenue,
       };
     },
 
@@ -139,9 +87,6 @@ export const useStopListStore = defineStore("stopList", {
       return state.meta?.generatedAt || state.lastLoadedAt;
     },
 
-    lostRevenueMeta(state) {
-      return state.meta?.lostRevenue || null;
-    },
   },
 
   actions: {
@@ -175,8 +120,8 @@ export const useStopListStore = defineStore("stopList", {
         const response = await organizationsApi.getOrganizations();
         this.organizations = response.organizations || [];
 
-        if (!this.currentOrganizationId) {
-          this.currentOrganizationId = "all";
+        if (!this.currentOrganizationId && this.organizations.length > 0) {
+          this.currentOrganizationId = String(this.organizations[0].id);
         }
 
         await this.loadStopLists();
@@ -225,7 +170,7 @@ export const useStopListStore = defineStore("stopList", {
     },
 
     setCurrentOrganization(organizationId) {
-      this.currentOrganizationId = String(organizationId || "all");
+      this.currentOrganizationId = String(organizationId || this.organizationOptions[0]?.id || "");
       this.loadStopLists();
     },
 
@@ -233,20 +178,8 @@ export const useStopListStore = defineStore("stopList", {
       this.filters.search = String(value || "");
     },
 
-    setTerminalGroup(value) {
-      this.filters.terminalGroupId = String(value || "all");
-    },
-
     setEntityType(value) {
       this.filters.entityType = String(value || "all");
-    },
-
-    setStatus(value) {
-      this.filters.status = String(value || "active");
-    },
-
-    setDuration(value) {
-      this.filters.duration = String(value || "all");
     },
 
     resetFilters() {

@@ -1,7 +1,21 @@
 <template>
   <div class="space-y-5">
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">KPI курьеров</h1>
+      <ReportPageHeader
+        title="KPI курьеров"
+        description="Эффективность курьерской команды по заказам, выручке, SLA и маршрутам."
+        details="Отчет используется для контроля производительности курьеров и стабильности доставки по единой выборке завершенных заказов."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="isPageLoading"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="isPageLoading" @apply="handleApply" />
     </div>
     <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -62,7 +76,7 @@
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="courier in topCouriers" :key="courier.courierId" class="border-t border-border/50">
+                <TableRow v-for="courier in couriersPagination.pageItems" :key="courier.courierId" class="border-t border-border/50">
                   <TableCell class="text-foreground">{{ courier.courierName }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(courier.orders) }}</TableCell>
                   <TableCell class="text-foreground">{{ formatCurrency(courier.revenue) }}</TableCell>
@@ -70,12 +84,23 @@
                   <TableCell class="text-foreground">{{ formatDuration(courier.avgTotalMinutes) }}</TableCell>
                   <TableCell class="text-foreground">{{ formatNumber(courier.onTimeRate) }}</TableCell>
                 </TableRow>
-                <TableRow v-if="topCouriers.length === 0" class="border-t border-border/50">
+                <TableRow v-if="couriersPagination.totalItems === 0" class="border-t border-border/50">
                   <TableCell colspan="6" class="text-center text-muted-foreground">Нет данных по курьерам за выбранный период</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            v-if="couriersPagination.totalItems > 0"
+            :current-page="couriersPagination.currentPage"
+            :total-pages="couriersPagination.totalPages"
+            :total-items="couriersPagination.totalItems"
+            :range-start="couriersPagination.rangeStart"
+            :range-end="couriersPagination.rangeEnd"
+            :loading="isPageLoading"
+            @prev="couriersPagination.prevPage"
+            @next="couriersPagination.nextPage"
+          />
         </Card>
 
         <Card class="border-border/70 bg-card/95 p-4 md:p-5">
@@ -102,15 +127,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle, Users } from "lucide-vue-next";
 import { useReportsStore } from "../stores/reports";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import Card from "../components/ui/Card.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import { formatMinutesToHms } from "../lib/utils";
+import { getFeatureReadiness } from "@/config/featureReadiness";
+import { usePagination } from "@/composables/usePagination";
+import PaginationControls from "@/components/ui/PaginationControls.vue";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -122,13 +152,24 @@ import TableRow from "@/components/ui/TableRow.vue";
 const reportsStore = useReportsStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 
 const report = computed(() => reportsStore.courierKpiReport);
 const isPageLoading = computed(() => reportsStore.isLoadingCourierKpi);
 const pageError = computed(() => reportsStore.error);
+const lastLoadedAt = ref(null);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!route.query.org) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const selectedOrganization = revenueStore.organizations.find((organization) => organization.id === revenueStore.currentOrganizationId);
+  return selectedOrganization?.name || "Выбранное подразделение";
+});
 
-const topCouriers = computed(() => (report.value?.couriers || []).slice(0, 20));
+const topCouriers = computed(() => report.value?.couriers || []);
 const routeDistribution = computed(() => report.value?.routeDistribution || []);
+const couriersPagination = usePagination(topCouriers, { pageSize: 12 });
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
@@ -152,7 +193,10 @@ async function handleApply(payload = {}) {
   if (!organizationId || !dateFrom || !dateTo) return;
 
   revenueStore.setCurrentOrganization(organizationId);
-  await reportsStore.loadCourierKpi({ organizationId, dateFrom, dateTo });
+  const result = await reportsStore.loadCourierKpi({ organizationId, dateFrom, dateTo });
+  if (result) {
+    lastLoadedAt.value = new Date();
+  }
 }
 
 onMounted(async () => {

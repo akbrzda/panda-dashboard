@@ -31,6 +31,17 @@ class ReportsController {
     return this.parseStringArray(value);
   }
 
+  parseBoolean(value, defaultValue = false) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["1", "true", "yes", "on"].includes(normalized)) return true;
+      if (["0", "false", "no", "off"].includes(normalized)) return false;
+    }
+    return defaultValue;
+  }
+
   sendValidationError(res, validation, report) {
     return res.status(400).json(
       errorResponse({
@@ -72,7 +83,8 @@ class ReportsController {
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
       const { lflDateFrom, lflDateTo } = req.body || {};
-      const data = await salesDomain.getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await salesDomain.getRevenueWithLFL({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getRevenue:", error);
@@ -88,7 +100,8 @@ class ReportsController {
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
       const { lflDateFrom, lflDateTo } = req.body || {};
-      const data = await salesDomain.getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await salesDomain.getOperationalMetrics({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getOperational:", error);
@@ -118,7 +131,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await salesDomain.getHourlySales({ organizationId, dateFrom, dateTo });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await salesDomain.getHourlySales({ organizationId, dateFrom, dateTo, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getHourlySales:", error);
@@ -133,7 +147,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await deliveryDomain.getSla({ organizationId, dateFrom, dateTo });
+      const reconciliationMode = this.parseBoolean(req.body?.reconciliationMode, false);
+      const data = await deliveryDomain.getSla({ organizationId, dateFrom, dateTo, reconciliationMode });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getSla:", error);
@@ -148,7 +163,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await deliveryDomain.getCourierKpi({ organizationId, dateFrom, dateTo });
+      const reconciliationMode = this.parseBoolean(req.body?.reconciliationMode, false);
+      const data = await deliveryDomain.getCourierKpi({ organizationId, dateFrom, dateTo, reconciliationMode });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getCourierKpi:", error);
@@ -163,7 +179,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await marketingDomain.getMarketingSources({ organizationId, dateFrom, dateTo });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await marketingDomain.getMarketingSources({ organizationId, dateFrom, dateTo, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getMarketingSources:", error);
@@ -193,7 +210,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await deliveryDomain.getDeliveryDelays({ organizationId, dateFrom, dateTo });
+      const reconciliationMode = this.parseBoolean(req.body?.reconciliationMode, false);
+      const data = await deliveryDomain.getDeliveryDelays({ organizationId, dateFrom, dateTo, reconciliationMode });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getDeliveryDelays:", error);
@@ -338,7 +356,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo } = validation.normalized;
-      const data = await marketingDomain.getPromotions({ organizationId, dateFrom, dateTo });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await marketingDomain.getPromotions({ organizationId, dateFrom, dateTo, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getPromotions:", error);
@@ -353,7 +372,8 @@ class ReportsController {
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
       const { organizationId, dateFrom, dateTo, abcGroup, page, limit } = validation.normalized;
-      const data = await assortmentDomain.getProductAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit });
+      const completedOnly = this.parseBoolean(req.body?.completedOnly, true);
+      const data = await assortmentDomain.getProductAbc({ organizationId, dateFrom, dateTo, abcGroup, page, limit, completedOnly });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getProductAbc:", error);
@@ -371,8 +391,8 @@ class ReportsController {
       const validation = validateProductionForecastParams(req.body);
       if (!validation.isValid) return this.sendValidationError(res, validation, report);
 
-      const { organizationId, dateFrom, dateTo, forecastDate } = validation.normalized;
-      const data = await salesDomain.getProductionForecast({ organizationId, dateFrom, dateTo, forecastDate });
+      const { organizationId, forecastDate, analysisWindowDays } = validation.normalized;
+      const data = await salesDomain.getProductionForecast({ organizationId, forecastDate, analysisWindowDays });
       return this.sendSuccess(res, report, data);
     } catch (error) {
       console.error("❌ ReportsController.getProductionForecast:", error);

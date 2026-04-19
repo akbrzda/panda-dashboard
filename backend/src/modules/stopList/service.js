@@ -159,11 +159,7 @@ class StopListService {
   }
 
   _buildFallbackEntityName(entityId = "") {
-    const shortId = String(entityId || "")
-      .trim()
-      .slice(0, 8);
-
-    return shortId ? `[Удалено из меню: ${shortId}]` : "Без названия";
+    return "Позиция отсутствует в актуальном меню";
   }
 
   _resolveLostRevenueLookbackDays(query = {}) {
@@ -444,7 +440,7 @@ class StopListService {
       }
       const fallbackNameCount = sortedItems.filter((item) => item.nameSource === "fallback").length;
       if (fallbackNameCount > 0) {
-        warnings.push(`У ${fallbackNameCount} позиций название не найдено в актуальном меню, показан fallback по UUID.`);
+        warnings.push(`У ${fallbackNameCount} позиций название не найдено в актуальном меню, показан fallback.`);
       }
       warnings.push(...lostRevenueIndexResult.warnings);
       const estimatedLostRevenueTotal = this.round(

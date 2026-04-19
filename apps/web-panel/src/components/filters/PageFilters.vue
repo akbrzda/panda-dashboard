@@ -19,7 +19,7 @@
         <span
           v-if="showLflHint"
           class="inline-flex cursor-help items-center rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-          title="LFL — сравнение с аналогичным периодом прошлого года. Если в прошлом периоде значение равно 0, сравнение не показывается."
+          title="LFL — сравнение с предыдущим аналогичным периодом. Если в предыдущем периоде значение равно 0, сравнение не показывается."
         >
           LFL?
         </span>
@@ -30,6 +30,14 @@
 
     <!-- Индикатор загрузки -->
     <div class="ml-auto flex min-h-[36px] min-w-[220px] flex-col items-end justify-end gap-1.5">
+      <label v-if="showCompletedOnly" class="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+        <input
+          v-model="completedOnlyModel"
+          type="checkbox"
+          class="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+        />
+        Только завершенные заказы
+      </label>
       <div v-if="loading" class="flex items-center gap-2 text-xs text-muted-foreground">
         <RefreshCw class="h-3.5 w-3.5 animate-spin" />
         <span>Обновление...</span>
@@ -57,6 +65,7 @@ const props = defineProps({
   showOrganization: { type: Boolean, default: true },
   includeLfl: { type: Boolean, default: false },
   showLflHint: { type: Boolean, default: false },
+  showCompletedOnly: { type: Boolean, default: false },
   autoApply: { type: Boolean, default: true },
   mode: {
     type: String,
@@ -106,6 +115,11 @@ const canApply = computed(() => {
   return Boolean(filtersStore.dateFrom && filtersStore.dateTo);
 });
 
+const completedOnlyModel = computed({
+  get: () => filtersStore.completedOnly,
+  set: (value) => filtersStore.setCompletedOnly(value),
+});
+
 function buildPayload() {
   if (props.mode === "date") {
     const organizationIds = organizationSelection.value ? [organizationSelection.value] : [];
@@ -121,6 +135,7 @@ function buildPayload() {
     organizationId: revenueStore.currentOrganizationId,
     dateFrom: filtersStore.dateFrom,
     dateTo: filtersStore.dateTo,
+    completedOnly: filtersStore.completedOnly,
   };
 
   if (props.includeLfl) {
@@ -148,6 +163,15 @@ function scheduleApply() {
 const validPresetValues = new Set(PERIOD_PRESETS.map((preset) => preset.value));
 
 function applyQueryToFilters(query) {
+  if (props.showCompletedOnly) {
+    const completedOnlyRaw = query.completedOnly;
+    if (completedOnlyRaw === "false" || completedOnlyRaw === "0") {
+      filtersStore.setCompletedOnly(false);
+    } else if (completedOnlyRaw === "true" || completedOnlyRaw === "1") {
+      filtersStore.setCompletedOnly(true);
+    }
+  }
+
   if (props.mode === "date") {
     const { org, date } = parseDateFilterQuery(query);
 
@@ -184,6 +208,7 @@ function buildNextQuery() {
     return buildDateFilterQuery(route.query, {
       org: props.showOrganization ? organizationSelection.value : "",
       date: localDate.value,
+      completedOnly: props.showCompletedOnly ? String(filtersStore.completedOnly) : "",
     });
   }
 
@@ -192,6 +217,7 @@ function buildNextQuery() {
     preset: filtersStore.preset,
     from: filtersStore.dateFrom,
     to: filtersStore.dateTo,
+    completedOnly: props.showCompletedOnly ? String(filtersStore.completedOnly) : "",
   });
 }
 
@@ -215,6 +241,7 @@ watch(
     organizationSelection.value,
     filtersStore.dateFrom,
     filtersStore.dateTo,
+    props.showCompletedOnly ? filtersStore.completedOnly : null,
     props.includeLfl ? filtersStore.lflDateFrom : null,
     props.includeLfl ? filtersStore.lflDateTo : null,
   ],
