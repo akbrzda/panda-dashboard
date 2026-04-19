@@ -1,5 +1,8 @@
 <template>
-  <Card :class="cn('flex h-full flex-col gap-2 border border-border/70 bg-card/95 p-3.5 shadow-sm md:p-4', $props.class)">
+  <Card
+    :class="cn('flex h-full flex-col gap-2 border border-border/70 bg-card/95 p-3.5 shadow-sm md:p-4', drilldown ? 'cursor-pointer transition-colors hover:border-primary/40' : '', $props.class)"
+    @click="handleDrilldown"
+  >
     <!-- Состояние загрузки -->
     <template v-if="loading">
       <div class="flex items-center gap-2">
@@ -108,8 +111,10 @@ const props = defineProps({
   inverse: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   error: { type: Boolean, default: false },
+  drilldown: { type: Boolean, default: false },
   class: { type: String, default: "" },
 });
+const emit = defineEmits(["drilldown"]);
 
 const iconComponent = computed(() => {
   if (!props.icon) return TrendingUp;
@@ -165,4 +170,15 @@ const planBarClass = computed(() => {
   if (p >= 70) return "bg-warning";
   return "bg-destructive";
 });
+
+function handleDrilldown() {
+  if (!props.drilldown || props.loading || props.error) {
+    return;
+  }
+  emit("drilldown", {
+    title: props.title,
+    value: props.value,
+    formattedValue: formattedValue.value,
+  });
+}
 </script>

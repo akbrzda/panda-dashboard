@@ -43,6 +43,7 @@ class DashboardService {
     let totalRevenueBeforeDiscount = 0;
     const channelMap = {};
     const byOrganization = [];
+    const unavailableOrganizations = [];
 
     for (let i = 0; i < targetOrgs.length; i++) {
       const org = targetOrgs[i];
@@ -51,6 +52,7 @@ class DashboardService {
       if (result.status !== "fulfilled") {
         console.error(`❌ Org "${org.name || org.id}":`, result.reason?.message || result.reason);
         byOrganization.push({ id: org.id, name: org.name || String(org.id), revenue: 0, orders: 0, avgCheck: 0, error: true });
+        unavailableOrganizations.push(org.name || String(org.id));
         continue;
       }
 
@@ -90,6 +92,8 @@ class DashboardService {
 
     return {
       date: dayIso,
+      hasErrors: unavailableOrganizations.length > 0,
+      unavailableOrganizations,
       summary: {
         totalRevenue,
         totalOrders,

@@ -58,7 +58,7 @@
                   <TableHead class="text-left font-medium">Выручка</TableHead>
                   <TableHead class="text-left font-medium">Ср. в пути</TableHead>
                   <TableHead class="text-left font-medium">Ср. цикл</TableHead>
-                  <TableHead class="text-left font-medium">Р’ SLA, %</TableHead>
+                  <TableHead class="text-left font-medium">В SLA, %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -139,6 +139,9 @@ function formatCurrency(value) {
 }
 
 function formatDuration(value) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return "—";
+  }
   return formatMinutesToHms(value);
 }
 

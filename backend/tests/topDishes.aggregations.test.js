@@ -53,3 +53,65 @@ test("buildAbcReportFromDishes applies abcGroup filter and pagination", () => {
   assert.equal(result.pagination.filteredTotal, 1);
   assert.equal(result.pagination.total, 3);
 });
+
+test("getDishesDataset uses the main report shape without legacy-breaking Dish.Id field", async () => {
+  const originalResolveStoreId = topDishesService.resolveStoreId;
+  const originalWithAuth = topDishesService.withAuth;
+  const originalPollOlap = topDishesService.pollOlap;
+
+  let capturedBody = null;
+
+  topDishesService.resolveStoreId = async () => "store-1";
+  topDishesService.withAuth = async (storeId, fn) => fn({ __iikoSession: { storeId } }, async () => {});
+  topDishesService.pollOlap = async (client, delay, body) => {
+    capturedBody = body;
+    return {
+      data: [{ DishName: "Пицца", Sales: 100, DishAmountInt: 2, "UniqOrderId.Id": "order-1" }],
+    };
+  };
+
+  try {
+    await topDishesService.getDishesDataset({
+      organizationId: "org-1",
+      dateFrom: "2026-04-18",
+      dateTo: "2026-04-18",
+    });
+
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.groupFields.includes("Dish.Id"), false);
+  } finally {
+    topDishesService.resolveStoreId = originalResolveStoreId;
+    topDishesService.withAuth = originalWithAuth;
+    topDishesService.pollOlap = originalPollOlap;
+    topDishesService.datasetCache.clear();
+  }
+});
+
+test("getDishesDataset throws the original IIKO error instead of returning degraded fallback data", async () => {
+  const originalResolveStoreId = topDishesService.resolveStoreId;
+  const originalWithAuth = topDishesService.withAuth;
+  const originalPollOlap = topDishesService.pollOlap;
+
+  topDishesService.resolveStoreId = async () => "store-2";
+  topDishesService.withAuth = async (storeId, fn) => fn({ __iikoSession: { storeId } }, async () => {});
+  topDishesService.pollOlap = async () => {
+    throw new Error("IIKO OLAP boom");
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        topDishesService.getDishesDataset({
+          organizationId: "org-2",
+          dateFrom: "2026-04-18",
+          dateTo: "2026-04-18",
+        }),
+      /IIKO OLAP boom/,
+    );
+  } finally {
+    topDishesService.resolveStoreId = originalResolveStoreId;
+    topDishesService.withAuth = originalWithAuth;
+    topDishesService.pollOlap = originalPollOlap;
+    topDishesService.datasetCache.clear();
+  }
+});

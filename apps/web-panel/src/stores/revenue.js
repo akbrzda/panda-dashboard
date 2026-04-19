@@ -1,130 +1,164 @@
 import { defineStore } from "pinia";
+import { computed, ref } from "vue";
 import { organizationsApi } from "../api/organizations";
 import { revenueApi } from "../api/revenue";
+import { useFiltersStore } from "./filters";
 
 const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
-let revenueController = null;
-let revenueRequestId = 0;
+const DEFAULT_ORGANIZATION_TIMEZONE = "Europe/Moscow";
 
-export const useRevenueStore = defineStore("revenue", {
-  state: () => ({
-    organizations: [],
-    currentOrganizationId: null,
-    revenueData: null,
-    startDate: null,
-    endDate: null,
-    isLoading: false,
-    error: null,
-  }),
+function normalizeOperatingDayStart(organization) {
+  const normalized = String(
+    organization?.operatingDayStart || organization?.businessDayStart || organization?.dayStartTime || "00:00",
+  ).trim();
 
-  getters: {
-    currentOrganization: (state) => {
-      return state.organizations.find((org) => org.id === state.currentOrganizationId);
+  return /^(\d{2}):(\d{2})$/.test(normalized) ? normalized : "00:00";
+}
+
+export const useRevenueStore = defineStore("revenue", () => {
+  const filtersStore = useFiltersStore();
+
+  const organizations = ref([]);
+  const revenueData = ref(null);
+  const startDate = ref(null);
+  const endDate = ref(null);
+  const isLoading = ref(false);
+  const error = ref(null);
+
+  let revenueController = null;
+  let revenueRequestId = 0;
+
+  function syncOrganizationContext(organizationId) {
+    filtersStore.setOrganization(organizationId || null);
+
+    const selectedOrganization = organizations.value.find((organization) => String(organization.id) === String(organizationId));
+    filtersStore.setOrganizationContext({
+      timezone: selectedOrganization?.timezone || DEFAULT_ORGANIZATION_TIMEZONE,
+      operatingDayStart: normalizeOperatingDayStart(selectedOrganization),
+    });
+  }
+
+  const currentOrganizationId = computed({
+    get: () => filtersStore.organizationId,
+    set: (organizationId) => {
+      syncOrganizationContext(organizationId || null);
     },
+  });
 
-    hasData: (state) => state.revenueData !== null,
+  const currentOrganization = computed(() => {
+    return organizations.value.find((org) => org.id === currentOrganizationId.value);
+  });
 
-    summary: (state) => state.revenueData?.summary || null,
+  const hasData = computed(() => revenueData.value !== null);
+  const summary = computed(() => revenueData.value?.summary || null);
+  const revenueByChannel = computed(() => revenueData.value?.revenueByChannel || {});
+  const dailyBreakdown = computed(() => revenueData.value?.dailyBreakdown || []);
+  const period = computed(() => revenueData.value?.period || null);
 
-    revenueByChannel: (state) => state.revenueData?.revenueByChannel || {},
+  const formattedPeriod = computed(() => {
+    if (!startDate.value || !endDate.value) return "";
 
-    dailyBreakdown: (state) => state.revenueData?.dailyBreakdown || [],
+    const start = new Date(startDate.value);
+    const end = new Date(endDate.value);
 
-    period: (state) => state.revenueData?.period || null,
+    const formatDate = (date) => {
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}.${month}.${year}`;
+    };
 
-    // Форматированная дата для отображения
-    formattedPeriod: (state) => {
-      if (!state.startDate || !state.endDate) return "";
+    if (startDate.value === endDate.value) {
+      return formatDate(start);
+    }
 
-      const start = new Date(state.startDate);
-      const end = new Date(state.endDate);
+    return `${formatDate(start)} - ${formatDate(end)}`;
+  });
 
-      const formatDate = (date) => {
-        const day = String(date.getDate()).padStart(2, "0");
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const year = date.getFullYear();
-        return `${day}.${month}.${year}`;
-      };
+  async function loadOrganizations() {
+    try {
+      isLoading.value = true;
+      error.value = null;
 
-      if (state.startDate === state.endDate) {
-        return formatDate(start);
+      const response = await organizationsApi.getOrganizations();
+      organizations.value = response.organizations || [];
+
+      if (organizations.value.length > 0 && !currentOrganizationId.value) {
+        setCurrentOrganization(organizations.value[0].id);
+      } else if (currentOrganizationId.value) {
+        syncOrganizationContext(currentOrganizationId.value);
       }
+    } catch (loadError) {
+      error.value = loadError.message || "Ошибка загрузки организаций";
+      console.error("Ошибка загрузки организаций:", loadError);
+    } finally {
+      isLoading.value = false;
+    }
+  }
 
-      return `${formatDate(start)} - ${formatDate(end)}`;
-    },
-  },
+  async function loadRevenueReport() {
+    if (!currentOrganizationId.value || !startDate.value || !endDate.value) {
+      return;
+    }
 
-  actions: {
-    async loadOrganizations() {
-      try {
-        this.isLoading = true;
-        this.error = null;
-        console.log("🔄 Загрузка организаций...");
+    revenueController?.abort();
+    revenueController = new AbortController();
+    revenueRequestId += 1;
+    const currentRequestId = revenueRequestId;
 
-        const response = await organizationsApi.getOrganizations();
-        console.log("✅ Ответ API организаций:", response);
+    try {
+      isLoading.value = true;
+      error.value = null;
 
-        this.organizations = response.organizations || [];
-        console.log("📋 Организации:", this.organizations);
+      const response = await revenueApi.getRevenueReport(
+        currentOrganizationId.value,
+        startDate.value,
+        endDate.value,
+        revenueController.signal,
+        currentOrganization.value?.timezone || DEFAULT_ORGANIZATION_TIMEZONE,
+      );
 
-        if (this.organizations.length > 0 && !this.currentOrganizationId) {
-          this.currentOrganizationId = this.organizations[0].id;
-          console.log("🏢 Выбрана организация:", this.currentOrganizationId);
-          // watch в PageFilters автоматически запустит загрузку отчёта
-        }
-      } catch (error) {
-        this.error = error.message || "Ошибка загрузки организаций";
-        console.error("❌ Error loading organizations:", error);
-        console.error("❌ Error details:", error.response?.data);
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async loadRevenueReport() {
-      if (!this.currentOrganizationId || !this.startDate || !this.endDate) {
-        console.warn("⚠️ Недостаточно данных для загрузки отчета");
+      if (currentRequestId !== revenueRequestId) {
         return;
       }
 
-      revenueController?.abort();
-      revenueController = new AbortController();
-      revenueRequestId += 1;
-      const currentRequestId = revenueRequestId;
-
-      try {
-        this.isLoading = true;
-        this.error = null;
-        console.log(`🔄 Загрузка отчета за период ${this.startDate} - ${this.endDate} для ${this.currentOrganizationId}`);
-
-        const response = await revenueApi.getRevenueReport(this.currentOrganizationId, this.startDate, this.endDate, revenueController.signal);
-
-        if (currentRequestId !== revenueRequestId) {
-          return;
-        }
-
-        console.log("✅ Ответ API отчета:", response);
-        this.revenueData = response.data;
-      } catch (error) {
-        if (isAbortError(error)) {
-          return;
-        }
-
-        this.error = error.message || "Ошибка загрузки отчета";
-        console.error("❌ Error loading revenue report:", error);
-        console.error("❌ Error details:", error.response?.data);
-      } finally {
-        if (currentRequestId === revenueRequestId) {
-          this.isLoading = false;
-          revenueController = null;
-        }
+      revenueData.value = response.data;
+    } catch (loadError) {
+      if (isAbortError(loadError)) {
+        return;
       }
-    },
 
-    setCurrentOrganization(organizationId) {
-      if (this.currentOrganizationId !== organizationId) {
-        this.currentOrganizationId = organizationId;
+      error.value = loadError.message || "Ошибка загрузки отчета";
+      console.error("Ошибка загрузки отчета:", loadError);
+    } finally {
+      if (currentRequestId === revenueRequestId) {
+        isLoading.value = false;
+        revenueController = null;
       }
-    },
-  },
+    }
+  }
+
+  function setCurrentOrganization(organizationId) {
+    currentOrganizationId.value = organizationId;
+  }
+
+  return {
+    organizations,
+    currentOrganizationId,
+    currentOrganization,
+    revenueData,
+    startDate,
+    endDate,
+    isLoading,
+    error,
+    hasData,
+    summary,
+    revenueByChannel,
+    dailyBreakdown,
+    period,
+    formattedPeriod,
+    loadOrganizations,
+    loadRevenueReport,
+    setCurrentOrganization,
+  };
 });

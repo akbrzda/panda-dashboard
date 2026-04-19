@@ -78,8 +78,8 @@
           <!-- Potential Lost Revenue -->
           <Card>
             <CardHeader class="pb-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wide">Potential Lost Revenue</p>
-              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Ожидаемая выручка × время в стопе</p>
+              <p class="text-xs text-muted-foreground uppercase tracking-wide">Упущенная выручка</p>
+              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Средняя выручка позиции × время в стопе</p>
             </CardHeader>
             <CardContent>
               <p class="text-2xl font-semibold text-foreground">{{ formatCurrency(summary.estimatedLostRevenue) }}</p>
@@ -92,8 +92,8 @@
           <!-- Stop-list Duration -->
           <Card>
             <CardHeader class="pb-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wide">Stop-list Duration</p>
-              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Сколько позиций залежалось в стопе</p>
+              <p class="text-xs text-muted-foreground uppercase tracking-wide">Длительность стопов</p>
+              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Сколько позиций остаются недоступными</p>
             </CardHeader>
             <CardContent>
               <p class="text-2xl font-semibold text-foreground">{{ summary.longerThan2Hours }}</p>
@@ -104,8 +104,8 @@
           <!-- Potential Lost Gross Profit -->
           <Card class="opacity-60">
             <CardHeader class="pb-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wide">Potential Lost Gross Profit</p>
-              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Lost Revenue × маржинальность позиции</p>
+              <p class="text-xs text-muted-foreground uppercase tracking-wide">Потенциальная валовая прибыль</p>
+              <p class="text-[11px] text-muted-foreground/70 mt-0.5">Упущенная выручка × маржинальность позиции</p>
             </CardHeader>
             <CardContent>
               <p class="text-2xl font-semibold text-muted-foreground">—</p>

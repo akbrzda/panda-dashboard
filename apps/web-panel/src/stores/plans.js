@@ -60,13 +60,15 @@ export const usePlansStore = defineStore("plans", () => {
   }
 
   async function deletePlan(id) {
+    const previousPlans = [...plans.value];
     try {
       isSaving.value = true;
       error.value = null;
-      const response = await plansApi.deletePlan(id);
       plans.value = plans.value.filter((plan) => plan.id !== id);
+      const response = await plansApi.deletePlan(id);
       return response.data;
     } catch (e) {
+      plans.value = previousPlans;
       error.value = e.response?.data?.error || e.message || "Ошибка удаления плана";
       throw e;
     } finally {

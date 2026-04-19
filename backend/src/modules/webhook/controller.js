@@ -6,33 +6,44 @@ const sseService = require("./sseService");
 
 const iikoService = new IikoService();
 
-async function receiveIikoWebhook(req, res) {
-  const webhookToken = process.env.IIKO_WEBHOOK_TOKEN;
+function getRequiredWebhookToken() {
+  const webhookToken = String(process.env.IIKO_WEBHOOK_TOKEN || "").trim();
+  if (!webhookToken) {
+    const error = new Error("IIKO_WEBHOOK_TOKEN обязателен для webhook-интеграции");
+    error.statusCode = 500;
+    throw error;
+  }
+  return webhookToken;
+}
 
-  if (webhookToken) {
+async function receiveIikoWebhook(req, res) {
+  try {
+    const webhookToken = getRequiredWebhookToken();
     const authHeader = req.headers.authorization || req.headers["x-auth-token"];
     const receivedToken = authHeader?.replace(/^Bearer\s+/i, "");
 
-    if (receivedToken !== webhookToken) {
+    if (!receivedToken || receivedToken !== webhookToken) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-  }
 
-  const events = Array.isArray(req.body) ? req.body : [req.body];
+    const events = Array.isArray(req.body) ? req.body : [req.body];
 
-  for (const event of events) {
-    const { eventType, organizationId } = event || {};
-    console.log(`🔔 iiko webhook: ${eventType} для org ${organizationId}`);
+    for (const event of events) {
+      const { eventType, organizationId } = event || {};
+      console.log(`🔔 iiko webhook: ${eventType} для org ${organizationId}`);
 
-    if (eventType === "StopListUpdate") {
-      sseService.broadcast("stopListUpdate", {
-        organizationId,
-        eventTime: event.eventTime,
-      });
+      if (eventType === "StopListUpdate") {
+        sseService.broadcast("stopListUpdate", {
+          organizationId,
+          eventTime: event.eventTime,
+        });
+      }
     }
-  }
 
-  return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ error: error.message || "Webhook processing error" });
+  }
 }
 
 function stopListEvents(req, res) {
@@ -47,12 +58,11 @@ async function registerIikoWebhook(req, res) {
     return res.status(400).json({ error: "webHooksUri обязателен" });
   }
 
-  const allOrganizations = await organizationsService.getOrganizations().catch(() => []);
-  const orgs = Array.isArray(organizationIds) && organizationIds.length > 0 ? organizationIds : allOrganizations.map((org) => org.id).filter(Boolean);
-  const webhookToken = process.env.IIKO_WEBHOOK_TOKEN || "";
-  const baseUrl = config.iiko.baseUrl || "https://api-ru.iiko.services/api/1";
-
   try {
+    const allOrganizations = await organizationsService.getOrganizations().catch(() => []);
+    const orgs = Array.isArray(organizationIds) && organizationIds.length > 0 ? organizationIds : allOrganizations.map((org) => org.id).filter(Boolean);
+    const webhookToken = getRequiredWebhookToken();
+    const baseUrl = config.iiko.baseUrl || "https://api-ru.iiko.services/api/1";
     const token = await iikoService.fetchAccessToken();
     const results = [];
 
@@ -84,8 +94,9 @@ async function registerIikoWebhook(req, res) {
 
     return res.json({ success: true, results });
   } catch (error) {
-    return res.status(502).json({ success: false, error: error.message });
+    return res.status(error.statusCode || 502).json({ success: false, error: error.message });
   }
 }
 
 module.exports = { receiveIikoWebhook, stopListEvents, registerIikoWebhook };
+

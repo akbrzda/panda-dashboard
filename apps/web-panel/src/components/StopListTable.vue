@@ -16,7 +16,10 @@
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <p class="truncate text-sm font-semibold text-foreground">{{ item.entityName || "—" }}</p>
-              <p class="text-xs text-muted-foreground">{{ formatEntityType(item.entityType) }}</p>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <p class="text-xs text-muted-foreground">{{ formatEntityType(item.entityType) }}</p>
+                <Badge v-if="item.nameSource === 'fallback'" variant="outline">Удалено из меню</Badge>
+              </div>
             </div>
             <Badge :variant="item.isInStop ? 'warning' : 'success'">{{ getStatusText(item) }}</Badge>
           </div>
@@ -67,7 +70,12 @@
             </TableHeader>
             <TableBody>
               <TableRow v-for="item in items" :key="item.id" class="border-t border-border/70 hover:bg-muted/20">
-                <TableCell class="font-medium text-foreground">{{ item.entityName || "—" }}</TableCell>
+                <TableCell class="font-medium text-foreground">
+                  <div class="flex flex-col gap-1">
+                    <span>{{ item.entityName || "—" }}</span>
+                    <Badge v-if="item.nameSource === 'fallback'" variant="outline" class="w-fit">Удалено из меню</Badge>
+                  </div>
+                </TableCell>
                 <TableCell class="text-foreground/80">{{ formatEntityType(item.entityType) }}</TableCell>
                 <TableCell class="text-foreground/80">{{ formatDepartment(item) }}</TableCell>
                 <TableCell class="text-foreground/80 whitespace-nowrap">{{ formatStartedAt(item.startedAt) }}</TableCell>

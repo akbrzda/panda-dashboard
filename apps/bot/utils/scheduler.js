@@ -5,6 +5,7 @@ const fileLogger = require("./fileLogger");
 const iikoReportService = require("../services/iikoReportService");
 const telegramService = require("../services/telegramService");
 const notificationService = require("../services/notificationService");
+const stopListAlertService = require("../services/stopListAlertService");
 
 try {
   schedulerCfg.validate();
@@ -15,7 +16,7 @@ try {
 
 class Scheduler {
   constructor() {
-    this.processing = { daily: false, weekly: false, monthly: false };
+    this.processing = { daily: false, weekly: false, monthly: false, stopListAlert: false };
   }
 
   _buildRule(config) {
@@ -33,12 +34,14 @@ class Scheduler {
     schedule.scheduleJob(this._buildRule(schedulerCfg.DAILY), () => this.fetchAndSendReports());
     schedule.scheduleJob(this._buildRule(schedulerCfg.WEEKLY), () => this.fetchAndSendWeeklyReports());
     schedule.scheduleJob(this._buildRule(schedulerCfg.MONTHLY), () => this.fetchAndSendMonthlyReports());
+    schedule.scheduleJob(this._buildRule(schedulerCfg.STOP_LIST_ALERT), () => this.fetchAndSendStopListAlerts());
 
     fileLogger.info("Scheduler initialized", {
       timezone: schedulerCfg.TIMEZONE,
       daily: schedulerCfg.DAILY,
       weekly: schedulerCfg.WEEKLY,
       monthly: schedulerCfg.MONTHLY,
+      stopListAlert: schedulerCfg.STOP_LIST_ALERT,
     });
   }
 
@@ -107,6 +110,26 @@ class Scheduler {
 
   async fetchAndSendMonthlyReports() {
     return this._processReports("monthly", (id, name) => iikoReportService.getScheduledMonthlyReportWithLFL(id, name));
+  }
+
+  async fetchAndSendStopListAlerts() {
+    if (this.processing.stopListAlert) {
+      fileLogger.warn("stopListAlert already processing");
+      return { success: false, error: "Already processing" };
+    }
+
+    this.processing.stopListAlert = true;
+    try {
+      const result = await stopListAlertService.checkAndSendAlerts();
+      fileLogger.info("Stop-list alert check completed", result);
+      return result;
+    } catch (error) {
+      fileLogger.error("Stop-list alert check failed", { error: error.message });
+      await notificationService.sendCriticalError("Ошибка проверки стоп-листа", error.message);
+      return { success: false, error: error.message };
+    } finally {
+      this.processing.stopListAlert = false;
+    }
   }
 }
 

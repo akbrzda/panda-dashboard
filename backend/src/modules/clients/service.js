@@ -1,7 +1,14 @@
 const OlapClient = require("../shared/olapClient");
+const organizationsService = require("../organizations/service");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class ClientsService extends OlapClient {
+  constructor() {
+    super({
+      resolveOrganizations: () => organizationsService.getOrganizations(),
+    });
+  }
+
   toDateOnly(value) {
     const source = String(value || "").trim();
     if (!source) return null;

@@ -5,6 +5,8 @@ const path = require("path");
 const organizationsService = require("../organizations/service");
 const revenueService = require("../revenue/service");
 const topDishesService = require("../topDishes/service");
+const { TTLCache } = require("../shared/cache");
+const fileLogger = require("../../utils/fileLogger");
 const deliveryReports = require("./services/deliveryReports");
 const salesReports = require("./services/salesReports");
 const marketingReports = require("./services/marketingReports");
@@ -12,12 +14,14 @@ const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class ReportsService extends OlapClient {
   constructor() {
-    super();
+    super({
+      resolveOrganizations: () => organizationsService.getOrganizations(),
+    });
     this.operationalRowsCacheTtlMs = Number(process.env.REPORTS_OPERATIONAL_CACHE_TTL_MS || 90000);
     this.heatmapCacheTtlMs = Number(process.env.REPORTS_HEATMAP_CACHE_TTL_MS || 45000);
-    this.operationalRowsCache = new Map();
+    this.operationalRowsCache = new TTLCache(this.operationalRowsCacheTtlMs);
     this.operationalRowsInflight = new Map();
-    this.heatmapResultCache = new Map();
+    this.heatmapResultCache = new TTLCache(this.heatmapCacheTtlMs);
     this.heatmapInflight = new Map();
     this.deliveryZonesFilePath = path.resolve(__dirname, "../../../data/deliveryZones.json");
     this.cloudApiBaseUrl = String(process.env.IIKO_CLOUD_BASE_URL || process.env.IIKO_API_BASE_URL || "")
@@ -25,10 +29,7 @@ class ReportsService extends OlapClient {
       .replace(/\/+$/, "")
       .replace(/\/api\/1$/i, "");
     this.cloudApiLogin = String(process.env.IIKO_CLOUD_API_LOGIN || process.env.IIKO_API_LOGIN || "").trim();
-    this.cloudTokenCache = {
-      value: null,
-      expiresAt: 0,
-    };
+    this.cloudTokenCache = new TTLCache(10 * 60 * 1000);
   }
 
   normalizeTerminalGroupId(value) {
@@ -58,8 +59,9 @@ class ReportsService extends OlapClient {
   async getCloudApiToken() {
     if (!this.canUseCloudDeliveryApi()) return null;
 
-    if (this.cloudTokenCache.value && this.cloudTokenCache.expiresAt > Date.now()) {
-      return this.cloudTokenCache.value;
+    const cachedToken = this.cloudTokenCache.get("cloud-token");
+    if (cachedToken) {
+      return cachedToken;
     }
 
     const response = await axios.post(
@@ -80,10 +82,7 @@ class ReportsService extends OlapClient {
       throw new Error("iiko Cloud не вернул access token");
     }
 
-    this.cloudTokenCache = {
-      value: token,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    };
+    this.cloudTokenCache.set("cloud-token", token, 10 * 60 * 1000);
 
     return token;
   }
@@ -97,11 +96,35 @@ class ReportsService extends OlapClient {
 
       return orders.map((item, orderIndex) => {
         const sourceOrder = item?.order || item || {};
+        const createdAt = this.parsePossibleDateTime(sourceOrder?.whenCreated || sourceOrder?.createdAt || sourceOrder?.createdDate);
+        const cookedAtRaw = this.parsePossibleDateTime(
+          sourceOrder?.whenCookingCompleted ||
+            sourceOrder?.cookingFinishTime ||
+            sourceOrder?.packedAt ||
+            sourceOrder?.whenPacked ||
+            sourceOrder?.readyAt,
+        );
+        const sentAt = this.parsePossibleDateTime(sourceOrder?.whenSended || sourceOrder?.sentAt);
         const deliveredAt = this.parsePossibleDateTime(sourceOrder?.whenDelivered || sourceOrder?.deliveredAt || sourceOrder?.actualDeliveryDate);
         const promisedAt = this.parsePossibleDateTime(sourceOrder?.completeBefore || sourceOrder?.promisedTime || sourceOrder?.expectedDeliveryDate);
-        const createdAt = this.parsePossibleDateTime(sourceOrder?.whenCreated || sourceOrder?.createdAt || sourceOrder?.createdDate);
-        const sentAt = this.parsePossibleDateTime(sourceOrder?.whenSended || sourceOrder?.sentAt);
-        const dateBase = deliveredAt || promisedAt || createdAt;
+        const cookedAt = cookedAtRaw || sentAt || deliveredAt || null;
+        const dateBase = deliveredAt || promisedAt || sentAt || createdAt;
+
+        let routeMinutes = null;
+        if (sentAt && deliveredAt && deliveredAt >= sentAt) {
+          routeMinutes = (deliveredAt - sentAt) / (1000 * 60);
+        }
+
+        let prepMinutes = null;
+        if (createdAt && cookedAt && cookedAt >= createdAt) {
+          prepMinutes = (cookedAt - createdAt) / (1000 * 60);
+        }
+
+        let shelfMinutes = null;
+        if (cookedAtRaw && sentAt && sentAt >= cookedAtRaw) {
+          shelfMinutes = (sentAt - cookedAtRaw) / (1000 * 60);
+        }
+
         const totalMinutes = createdAt && deliveredAt && deliveredAt > createdAt ? (deliveredAt - createdAt) / (1000 * 60) : null;
 
         let lat = this.parseNumber(sourceOrder?.deliveryPoint?.coordinates?.latitude);
@@ -122,6 +145,8 @@ class ReportsService extends OlapClient {
 
         return {
           orderId: String(item?.id || sourceOrder?.id || sourceOrder?.number || `cloud-${orgIndex}-${orderIndex}`),
+          orderNumber: String(sourceOrder?.number || item?.number || "").trim() || null,
+          displayOrderNumber: String(sourceOrder?.number || item?.number || "").trim() || "Без номера",
           orderServiceType: orderServiceType || "DELIVERY_BY_COURIER",
           orderType: String(sourceOrder?.orderType?.name || "Доставка"),
           courierId: String(courier?.id || "unknown"),
@@ -131,9 +156,16 @@ class ReportsService extends OlapClient {
           deliveryPoint: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
           terminalGroupId: sourceOrder?.terminalGroupId ? String(sourceOrder.terminalGroupId) : null,
           organizationId: organizationId || String(sourceOrder?.organizationId || ""),
+          openAt: createdAt,
+          createdAt,
+          cookedAt,
           promisedAt,
+          deliveredAt,
           actualDeliveryAt: deliveredAt,
           sentAt,
+          prepMinutes,
+          shelfMinutes,
+          routeMinutes,
           totalMinutes,
           revenue: Number(sourceOrder?.sum || 0),
           rawStatus: rawStatus || null,
@@ -930,8 +962,8 @@ class ReportsService extends OlapClient {
   async getOperationalRowsForPeriod({ organizationId, dateFrom, dateTo }) {
     const cacheKey = this.getOperationalRowsCacheKey({ organizationId, dateFrom, dateTo });
     const cached = this.operationalRowsCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.rows;
+    if (cached) {
+      return cached;
     }
 
     if (this.operationalRowsInflight.has(cacheKey)) {
@@ -1026,7 +1058,9 @@ class ReportsService extends OlapClient {
             logEvery: 10,
           });
         } catch (error) {
-          console.warn("⚠ getOperationalRowsForPeriod fallback без OrderNum:", error?.message);
+          fileLogger.warn("getOperationalRowsForPeriod fallback без OrderNum", {
+            message: error?.message,
+          });
           return await this.pollOlap(client, delay, buildBody(fallbackGroupFields), {
             maxAttempts: this.maxAttempts,
             fetchTimeoutMs: this.timeout,
@@ -1043,10 +1077,7 @@ class ReportsService extends OlapClient {
       }));
 
       const filteredRows = this.filterCanceledOrders(rows).rows;
-      this.operationalRowsCache.set(cacheKey, {
-        rows: filteredRows,
-        expiresAt: Date.now() + this.operationalRowsCacheTtlMs,
-      });
+      this.operationalRowsCache.set(cacheKey, filteredRows, this.operationalRowsCacheTtlMs);
 
       return filteredRows;
     })();
@@ -1765,8 +1796,8 @@ class ReportsService extends OlapClient {
     });
 
     const cached = this.heatmapResultCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data;
+    if (cached) {
+      return cached;
     }
 
     if (this.heatmapInflight.has(cacheKey)) {
@@ -1797,10 +1828,7 @@ class ReportsService extends OlapClient {
         timezone,
         source: "iiko-cloud",
       };
-      this.heatmapResultCache.set(cacheKey, {
-        data: payload,
-        expiresAt: Date.now() + this.heatmapCacheTtlMs,
-      });
+      this.heatmapResultCache.set(cacheKey, payload, this.heatmapCacheTtlMs);
       return payload;
     })();
 

@@ -33,8 +33,9 @@
           :key="item.to"
           :to="item.to"
           class="sidebar-menu-item"
+          :class="{ 'pointer-events-none opacity-60': isPlanned(item.status) }"
           active-class="sidebar-menu-item--active"
-          :title="item.label"
+          :title="isPlanned(item.status) ? `${item.label}: раздел запланирован` : item.label"
         >
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
           <span v-if="sidebarStore.open" class="truncate">{{ item.label }}</span>
@@ -83,6 +84,7 @@
           :key="`mobile-${item.to}`"
           :to="item.to"
           class="sidebar-menu-item"
+          :class="{ 'pointer-events-none opacity-60': isPlanned(item.status) }"
           active-class="sidebar-menu-item--active"
           @click="sidebarStore.closeMobile"
         >
@@ -123,6 +125,10 @@ function getStatusVariant(status) {
 
 function getStatusLabel(status) {
   return getReadinessStatusLabel(status);
+}
+
+function isPlanned(status) {
+  return String(status || "").toLowerCase() === "planned";
 }
 </script>
 

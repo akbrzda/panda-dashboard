@@ -1,3 +1,5 @@
+export const DEFAULT_PERIOD_TIMEZONE = "Europe/Moscow";
+
 // Пресеты периодов для PeriodSelector
 export const PERIOD_PRESETS = [
   { value: "today", label: "Сегодня" },
@@ -9,21 +11,99 @@ export const PERIOD_PRESETS = [
   { value: "custom", label: "Произвольный период" },
 ];
 
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function buildUtcDate(year, month, day, endOfDayValue = false) {
+  return endOfDayValue
+    ? new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
+    : new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+}
+
+function parseIsoDate(value) {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return buildUtcDate(Number(match[1]), Number(match[2]), Number(match[3]));
+}
+
+function getTimezoneParts(date = new Date(), timezone = DEFAULT_PERIOD_TIMEZONE) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone || DEFAULT_PERIOD_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const get = (type, fallback = "00") => parts.find((part) => part.type === type)?.value || fallback;
+
+  return {
+    year: Number(get("year", "1970")),
+    month: Number(get("month", "1")),
+    day: Number(get("day", "1")),
+    hour: Number(get("hour", "0")),
+    minute: Number(get("minute", "0")),
+    second: Number(get("second", "0")),
+  };
+}
+
+function parseOperatingDayStart(value = "00:00") {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d{2}):(\d{2})$/);
+
+  if (!match) {
+    return { hour: 0, minute: 0 };
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { hour: 0, minute: 0 };
+  }
+
+  return { hour, minute };
+}
+
+function getBusinessDate(now = new Date(), timezone = DEFAULT_PERIOD_TIMEZONE, operatingDayStart = "00:00") {
+  const parts = getTimezoneParts(now, timezone);
+  const operatingStart = parseOperatingDayStart(operatingDayStart);
+  const date = buildUtcDate(parts.year, parts.month, parts.day);
+
+  if (parts.hour < operatingStart.hour || (parts.hour === operatingStart.hour && parts.minute < operatingStart.minute)) {
+    date.setUTCDate(date.getUTCDate() - 1);
+  }
+
+  return date;
+}
+
 function startOfDay(date) {
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
 function endOfDay(date) {
   const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 }
 
 function subDays(date, days) {
   const d = new Date(date);
-  d.setDate(d.getDate() - days);
+  d.setUTCDate(d.getUTCDate() - days);
   return d;
 }
 
@@ -33,47 +113,47 @@ function subWeeks(date, weeks) {
 
 function subMonths(date, months) {
   const d = new Date(date);
-  d.setMonth(d.getMonth() - months);
+  d.setUTCMonth(d.getUTCMonth() - months);
   return d;
 }
 
 function subYears(date, years) {
   const d = new Date(date);
-  d.setFullYear(d.getFullYear() - years);
+  d.setUTCFullYear(d.getUTCFullYear() - years);
   return d;
 }
 
 function startOfWeek(date) {
   const d = new Date(date);
-  const day = d.getDay();
-  // Неделя начинается с понедельника
+  const day = d.getUTCDay();
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
 function endOfWeek(date) {
   const d = startOfWeek(date);
-  d.setDate(d.getDate() + 6);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCDate(d.getUTCDate() + 6);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 }
 
 function startOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
 function endOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 }
 
 function startOfYear(date) {
-  return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0);
+  return new Date(Date.UTC(date.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
 }
 
-export function getDateRange(preset, customFrom = null, customTo = null) {
-  const today = new Date();
+export function getDateRange(preset, customFrom = null, customTo = null, options = {}) {
+  const { timezone = DEFAULT_PERIOD_TIMEZONE, operatingDayStart = "00:00", now = new Date() } = options;
+  const today = getBusinessDate(now, timezone, operatingDayStart);
 
   switch (preset) {
     case "today":
@@ -103,11 +183,14 @@ export function getDateRange(preset, customFrom = null, customTo = null) {
     case "current-year":
       return { from: startOfYear(today), to: endOfDay(today) };
 
-    case "custom":
+    case "custom": {
+      const fromDate = parseIsoDate(customFrom) || today;
+      const toDate = parseIsoDate(customTo) || today;
       return {
-        from: customFrom ? startOfDay(new Date(customFrom)) : startOfDay(today),
-        to: customTo ? endOfDay(new Date(customTo)) : endOfDay(today),
+        from: startOfDay(fromDate),
+        to: endOfDay(toDate),
       };
+    }
 
     default:
       return { from: startOfDay(today), to: endOfDay(today) };
@@ -142,30 +225,28 @@ export function getLFLRange(preset, range) {
   }
 }
 
-// Форматирование даты в ISO-строку YYYY-MM-DD
 export function formatDateISO(date) {
   if (!date) return "";
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  if (!Number.isFinite(d.getTime())) return "";
+
+  const year = d.getUTCFullYear();
+  const month = pad(d.getUTCMonth() + 1);
+  const day = pad(d.getUTCDate());
   return `${year}-${month}-${day}`;
 }
 
-// Форматирование даты для отображения пользователю
 export function formatDateDisplay(date) {
   if (!date) return "";
-  return new Date(date).toLocaleDateString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  const d = new Date(date);
+  if (!Number.isFinite(d.getTime())) return "";
+
+  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
 }
 
-// Получение человекочитаемого описания выбранного периода
 export function getPeriodLabel(preset, dateRange) {
-  const preset_obj = PERIOD_PRESETS.find((p) => p.value === preset);
-  if (preset !== "custom") return preset_obj?.label || "";
+  const presetItem = PERIOD_PRESETS.find((item) => item.value === preset);
+  if (preset !== "custom") return presetItem?.label || "";
 
   const from = formatDateDisplay(dateRange.from);
   const to = formatDateDisplay(dateRange.to);

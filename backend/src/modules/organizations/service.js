@@ -240,6 +240,11 @@ class OrganizationsService {
       const city = org.city || this._extractCityFromOrganizationName(name);
       const timezone =
         org.timezone || org.timeZone || org.time_zone || org.timeZoneId || org.timezoneId || this._resolveTimezoneFromCity(city) || "Europe/Moscow";
+      const operatingDayStartRaw =
+        org.operatingDayStart || org.businessDayStart || org.dayStartTime || org.dayStart || process.env.IIKO_OPERATING_DAY_START || "00:00";
+      const operatingDayStart = /^(\d{2}):(\d{2})$/.test(String(operatingDayStartRaw || "").trim())
+        ? String(operatingDayStartRaw).trim()
+        : "00:00";
       const matchedStoreId = storeIdsByName.get(this._normalizeName(name)) || null;
       const matchedStoreValue = String(matchedStoreId || "").trim();
       const isNumericStoreId = /^\d+$/.test(matchedStoreValue);
@@ -258,6 +263,7 @@ class OrganizationsService {
         disabled: Boolean(org.disabled),
         city: String(city || "").trim() || null,
         timezone: String(timezone || "Europe/Moscow"),
+        operatingDayStart,
       };
     });
 

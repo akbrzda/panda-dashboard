@@ -1,14 +1,19 @@
 const OlapClient = require("../shared/olapClient");
+const organizationsService = require("../organizations/service");
+const { TTLCache } = require("../shared/cache");
+const fileLogger = require("../../utils/fileLogger");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
 class TopDishesService extends OlapClient {
   constructor() {
-    super();
+    super({
+      resolveOrganizations: () => organizationsService.getOrganizations(),
+    });
     this.cacheTtlMs = Number(process.env.IIKO_TOP_DISHES_CACHE_TTL_MS || 120000);
-    this.maxAttemptsTopDishes = Number(process.env.IIKO_TOP_DISHES_MAX_ATTEMPTS || 8);
-    this.fetchTimeoutMs = Number(process.env.IIKO_TOP_DISHES_FETCH_TIMEOUT_MS || 3000);
-    this.reportCache = new Map();
-    this.datasetCache = new Map();
+    this.maxAttemptsTopDishes = Number(process.env.IIKO_TOP_DISHES_MAX_ATTEMPTS || this.maxAttempts || 120);
+    this.fetchTimeoutMs = Number(process.env.IIKO_TOP_DISHES_FETCH_TIMEOUT_MS || this.timeout || 30000);
+    this.reportCache = new TTLCache(this.cacheTtlMs);
+    this.datasetCache = new TTLCache(this.cacheTtlMs);
   }
 
   getCacheKey(storeId, dateFrom, dateTo, limit) {
@@ -53,17 +58,20 @@ class TopDishesService extends OlapClient {
 
     for (const row of rawRows) {
       const name = row.DishName || row["Dish.Name"] || row.Dish || "Неизвестно";
+      const entityId = String(row.entityId || row["Dish.Id"] || row.DishId || row["Product.Id"] || row.ProductId || "").trim();
       const category = row.DishCategory || row["DishCategory.Accounting"] || row.ProductCategory || row.Category || "";
       const revenue = Number(row.Sales) || 0;
       const qty = Number(row.DishAmountInt) || 0;
+      const key = entityId || name;
 
-      if (!byDish[name]) {
-        byDish[name] = { name, category, revenue: 0, qty: 0 };
+      if (!byDish[key]) {
+        byDish[key] = { name, entityId: entityId || null, category, revenue: 0, qty: 0 };
       }
 
-      byDish[name].revenue += revenue;
-      byDish[name].qty += qty;
-      byDish[name].category = category || byDish[name].category;
+      byDish[key].revenue += revenue;
+      byDish[key].qty += qty;
+      byDish[key].category = category || byDish[key].category;
+      byDish[key].entityId = byDish[key].entityId || entityId || null;
       totalRevenue += revenue;
       totalQty += qty;
     }
@@ -113,9 +121,13 @@ class TopDishesService extends OlapClient {
     const cacheKey = this.getDatasetCacheKey(storeId, dateFrom, dateTo);
     const cachedDataset = this.datasetCache.get(cacheKey);
 
-    if (cachedDataset && cachedDataset.expiresAt > Date.now()) {
-      console.log(`⚡ Top dishes dataset cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
-      return cachedDataset.data;
+    if (cachedDataset) {
+      fileLogger.info("Top dishes dataset cache hit", {
+        storeId,
+        dateFrom,
+        dateTo,
+      });
+      return cachedDataset;
     }
 
     const start = new Date(dateFrom);
@@ -189,21 +201,18 @@ class TopDishesService extends OlapClient {
           warningMessage: null,
         };
       } catch (error) {
-        console.warn("⚠️ Top dishes dataset отработал в деградированном режиме:", {
+        fileLogger.error("Не удалось загрузить основной отчет по топу блюд", {
           storeId,
           dateFrom,
           dateTo,
           message: error?.message,
         });
 
-        return this.buildEmptyDataset("Топ блюд временно недоступен из-за медленного ответа IIKO");
+        throw error;
       }
     });
 
-    this.datasetCache.set(cacheKey, {
-      data,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
+    this.datasetCache.set(cacheKey, data, this.cacheTtlMs);
 
     return data;
   }
@@ -322,9 +331,13 @@ class TopDishesService extends OlapClient {
     const cacheKey = this.getCacheKey(storeId, dateFrom, dateTo, limit);
     const cachedReport = this.reportCache.get(cacheKey);
 
-    if (cachedReport && cachedReport.expiresAt > Date.now()) {
-      console.log(`⚡ Top dishes cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
-      return cachedReport.data;
+    if (cachedReport) {
+      fileLogger.info("Top dishes cache hit", {
+        storeId,
+        dateFrom,
+        dateTo,
+      });
+      return cachedReport;
     }
 
     const dataset = await this.getDishesDataset({ organizationId, dateFrom, dateTo });
@@ -337,10 +350,7 @@ class TopDishesService extends OlapClient {
       dataset.warningMessage || null,
     );
 
-    this.reportCache.set(cacheKey, {
-      data,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
+    this.reportCache.set(cacheKey, data, this.cacheTtlMs);
 
     return data;
   }

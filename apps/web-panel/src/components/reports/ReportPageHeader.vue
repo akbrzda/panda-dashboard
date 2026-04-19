@@ -5,20 +5,34 @@
         <div class="flex flex-wrap items-center gap-2">
           <h1 class="text-2xl font-bold text-foreground">{{ title }}</h1>
           <Badge :variant="statusVariant">{{ statusLabel }}</Badge>
-          <Badge variant="outline">Tier {{ tier }}</Badge>
         </div>
         <p v-if="description" class="text-sm text-muted-foreground">{{ description }}</p>
       </div>
 
-      <Button v-if="showRefresh" variant="outline" size="sm" :disabled="refreshing" @click="emit('refresh')">
-        {{ refreshing ? "Обновление..." : "Обновить" }}
-      </Button>
+      <div class="flex items-center gap-2">
+        <Button v-if="showRefresh" variant="outline" size="sm" :disabled="refreshing" @click="handleRefresh">
+          {{ refreshing ? "Обновление..." : "Обновить" }}
+        </Button>
+        <Button variant="ghost" size="sm" class="h-8 px-2 text-xs" @click="showMeta = !showMeta">
+          <Info class="mr-1 h-3.5 w-3.5" />
+          {{ showMeta ? "Скрыть детали" : "Показать детали" }}
+        </Button>
+      </div>
     </div>
 
-    <div class="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+    <div class="rounded-md border border-border/60 bg-muted/20 p-2.5">
+      <p class="text-[11px] uppercase tracking-wide text-foreground/70">Updated at ({{ timezoneLabel }})</p>
+      <p class="mt-1 text-foreground">{{ updatedAtLabel }}</p>
+    </div>
+
+    <div v-if="showTimezoneWarning" class="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2.5 text-xs text-yellow-900 dark:text-yellow-200">
+      Время в отчете показано в МСК. Ваш часовой пояс: {{ userTimezone }}.
+    </div>
+
+    <div v-if="showMeta" class="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
       <div class="rounded-md border border-border/60 bg-muted/20 p-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-foreground/70">Updated at</p>
-        <p class="mt-1 text-foreground">{{ updatedAtLabel }}</p>
+        <p class="text-[11px] uppercase tracking-wide text-foreground/70">Tier</p>
+        <p class="mt-1 text-foreground">{{ tier }}</p>
       </div>
       <div class="rounded-md border border-border/60 bg-muted/20 p-2.5">
         <p class="text-[11px] uppercase tracking-wide text-foreground/70">Source</p>
@@ -43,8 +57,10 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { Info } from "lucide-vue-next";
 import { getReadinessStatusBadgeVariant, getReadinessStatusLabel } from "@/config/readinessUi";
+import { toast } from "@/lib/sonner";
 import Badge from "@/components/ui/Badge.vue";
 import Button from "@/components/ui/Button.vue";
 
@@ -60,17 +76,14 @@ const props = defineProps({
   warnings: { type: Array, default: () => [] },
   showRefresh: { type: Boolean, default: false },
   refreshing: { type: Boolean, default: false },
+  timezone: { type: String, default: "Europe/Moscow" },
 });
 
 const emit = defineEmits(["refresh"]);
+const showMeta = ref(false);
 
-const statusLabel = computed(() => {
-  return getReadinessStatusLabel(props.status);
-});
-
-const statusVariant = computed(() => {
-  return getReadinessStatusBadgeVariant(props.status);
-});
+const statusLabel = computed(() => getReadinessStatusLabel(props.status));
+const statusVariant = computed(() => getReadinessStatusBadgeVariant(props.status));
 
 function formatDateTime(value) {
   if (!value) return "—";
@@ -82,6 +95,7 @@ function formatDateTime(value) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: props.timezone || "Europe/Moscow",
   }).format(date);
 }
 
@@ -96,12 +110,26 @@ function formatDate(value) {
   }).format(date);
 }
 
+const timezoneLabel = computed(() => {
+  if ((props.timezone || "") === "Europe/Moscow") {
+    return "МСК";
+  }
+  return props.timezone || "UTC";
+});
+
 const updatedAtLabel = computed(() => formatDateTime(props.updatedAt));
 const reviewedAtLabel = computed(() => formatDate(props.lastReviewedAt));
+const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const showTimezoneWarning = computed(() => (props.timezone || "Europe/Moscow") === "Europe/Moscow" && userTimezone !== "Europe/Moscow");
 
 const normalizedWarnings = computed(() => {
   return props.warnings
     .map((warning) => (typeof warning === "string" ? warning.trim() : ""))
     .filter(Boolean);
 });
+
+function handleRefresh() {
+  emit("refresh");
+  toast.success("Данные обновлены");
+}
 </script>

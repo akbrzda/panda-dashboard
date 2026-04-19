@@ -1,6 +1,8 @@
 const organizationsService = require("../organizations/service");
+const { TTLCache } = require("../shared/cache");
 const { IikoService, IikoApiError } = require("./iikoService");
 const topDishesService = require("../topDishes/service");
+const stopListSnapshotRepository = require("./snapshotRepository");
 
 const DEFAULT_NORMALIZED_CACHE_TTL_MS = 20 * 1000;
 const DEFAULT_RAW_CACHE_TTL_MS = 45 * 1000;
@@ -9,7 +11,8 @@ const DEFAULT_LOST_REVENUE_LOOKBACK_DAYS = 14;
 class StopListService {
   constructor() {
     this.iikoService = new IikoService();
-    this.normalizedCache = new Map();
+    this.normalizedCache = new TTLCache(DEFAULT_NORMALIZED_CACHE_TTL_MS);
+    this.inflightRefreshes = new Map();
   }
 
   round(value, digits = 2) {
@@ -41,7 +44,9 @@ class StopListService {
 
   parseBoolean(value) {
     if (typeof value === "boolean") return value;
-    const normalized = String(value || "").trim().toLowerCase();
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
     return ["1", "true", "yes", "y"].includes(normalized);
   }
 
@@ -64,6 +69,7 @@ class StopListService {
         inStopMinutes: null,
         inStopHours: null,
         inStopDays: null,
+        warning: null,
       };
     }
 
@@ -73,6 +79,7 @@ class StopListService {
         inStopMinutes: null,
         inStopHours: null,
         inStopDays: null,
+        warning: "endedAt раньше startedAt, длительность не рассчитана",
       };
     }
 
@@ -82,6 +89,7 @@ class StopListService {
       inStopMinutes: this.round(durationMinutes, 0),
       inStopHours: this.round(durationMinutes / 60, 2),
       inStopDays: this.round(durationMinutes / (60 * 24), 2),
+      warning: null,
     };
   }
 
@@ -129,8 +137,33 @@ class StopListService {
 
   _normalizeKey(value) {
     return String(value || "")
+      .normalize("NFKC")
+      .replace(/ё/gi, "е")
+      .replace(/[\[\]{}()]/g, " ")
+      .replace(/[\\/_-]+/g, " ")
+      .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
+  }
+
+  _looksLikeTechnicalName(name = "", entityId = "") {
+    const normalizedName = String(name || "").trim();
+    const normalizedId = String(entityId || "").trim();
+    const lowerName = normalizedName.toLowerCase();
+
+    if (!normalizedName) return true;
+    if (["без названия", "unknown", "null", "undefined", "n/a", "none"].includes(lowerName)) return true;
+    if (normalizedId && lowerName === normalizedId.toLowerCase()) return true;
+
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedName);
+  }
+
+  _buildFallbackEntityName(entityId = "") {
+    const shortId = String(entityId || "")
+      .trim()
+      .slice(0, 8);
+
+    return shortId ? `[Удалено из меню: ${shortId}]` : "Без названия";
   }
 
   _resolveLostRevenueLookbackDays(query = {}) {
@@ -175,17 +208,26 @@ class StopListService {
             dateTo,
           });
           const dishes = Array.isArray(dataset?.dishes) ? dataset.dishes : [];
-          const nameToRevenuePerHour = new Map();
+          const revenueByEntityId = new Map();
+          const revenueByName = new Map();
 
           for (const dish of dishes) {
             const nameKey = this._normalizeKey(dish?.name);
-            if (!nameKey) continue;
+            const entityId = String(dish?.entityId || "").trim();
+            if (!nameKey && !entityId) continue;
             const revenue = Number(dish?.revenue || 0);
             if (!Number.isFinite(revenue) || revenue <= 0) continue;
-            nameToRevenuePerHour.set(nameKey, revenue / hours);
+            const revenuePerHour = revenue / hours;
+            if (entityId) {
+              revenueByEntityId.set(entityId, revenuePerHour);
+            }
+            revenueByName.set(nameKey, revenuePerHour);
           }
 
-          byOrg.set(String(organizationId), nameToRevenuePerHour);
+          byOrg.set(String(organizationId), {
+            byEntityId: revenueByEntityId,
+            byName: revenueByName,
+          });
 
           if (dataset?.degraded) {
             warnings.push(
@@ -194,7 +236,10 @@ class StopListService {
           }
         } catch (error) {
           warnings.push(`Не удалось рассчитать оценку упущенной выручки для организации ${organizationId}: ${error.message || "unknown error"}.`);
-          byOrg.set(String(organizationId), new Map());
+          byOrg.set(String(organizationId), {
+            byEntityId: new Map(),
+            byName: new Map(),
+          });
         }
       }),
     );
@@ -215,13 +260,17 @@ class StopListService {
       const duration = this.getDuration(startedAt, endedAt);
 
       return {
-        id: String(item.id || `${item.organizationId || "unknown-org"}:${item.terminalGroupId || "unknown-tg"}:${item.entityType || "product"}:${item.entityId || "unknown-entity"}`),
+        id: String(
+          item.id ||
+            `${item.organizationId || "unknown-org"}:${item.terminalGroupId || "unknown-tg"}:${item.entityType || "product"}:${item.entityId || "unknown-entity"}`,
+        ),
         organizationId: String(item.organizationId || ""),
         organizationName: String(item.organizationName || ""),
         terminalGroupId: String(item.terminalGroupId || ""),
         terminalGroupName: String(item.terminalGroupName || ""),
         entityId: String(item.entityId || ""),
         entityName: String(item.entityName || "Без названия"),
+        nameSource: this._looksLikeTechnicalName(item.entityName, item.entityId) ? "unresolved" : "iiko",
         entityType: ["product", "modifier", "group"].includes(item.entityType) ? item.entityType : "product",
         balance: Number.isFinite(Number(item.balance)) ? Number(item.balance) : null,
         isInStop: item.isInStop !== false,
@@ -232,6 +281,7 @@ class StopListService {
         inStopMinutes: duration.inStopMinutes,
         inStopHours: duration.inStopHours,
         inStopDays: duration.inStopDays,
+        durationWarning: duration.warning,
         estimatedLostRevenue: null,
         avgRevenuePerHour: null,
         raw: item.raw || null,
@@ -242,12 +292,15 @@ class StopListService {
   enrichEstimatedLostRevenue(items = [], revenueIndex = new Map()) {
     return items.map((item) => {
       const inStopHours = Number(item.inStopHours);
-      const isActive = item.isInStop === true;
       const nameKey = this._normalizeKey(item.entityName);
-      const orgMap = revenueIndex.get(String(item.organizationId)) || new Map();
-      const avgRevenuePerHour = Number(orgMap.get(nameKey));
+      const entityId = String(item.entityId || "").trim();
+      const hasLookupKey = Boolean(entityId || nameKey);
+      const orgMap = revenueIndex.get(String(item.organizationId)) || {};
+      const byEntityId = orgMap.byEntityId instanceof Map ? orgMap.byEntityId : new Map();
+      const byName = orgMap.byName instanceof Map ? orgMap.byName : new Map();
+      const avgRevenuePerHour = Number((entityId && byEntityId.get(entityId)) || byName.get(nameKey));
 
-      if (!isActive || !nameKey || !Number.isFinite(inStopHours) || inStopHours <= 0 || !Number.isFinite(avgRevenuePerHour) || avgRevenuePerHour <= 0) {
+      if (!hasLookupKey || !Number.isFinite(inStopHours) || inStopHours <= 0 || !Number.isFinite(avgRevenuePerHour) || avgRevenuePerHour <= 0) {
         return {
           ...item,
           avgRevenuePerHour: Number.isFinite(avgRevenuePerHour) ? this.round(avgRevenuePerHour, 2) : null,
@@ -285,31 +338,33 @@ class StopListService {
 
     return items.map((item) => {
       const currentName = String(item.entityName || "").trim();
-      const shouldResolveByDictionary = !currentName || currentName === "Без названия";
+      const shouldResolveByDictionary = this._looksLikeTechnicalName(currentName, item.entityId);
 
       if (!shouldResolveByDictionary) {
-        return item;
+        return {
+          ...item,
+          nameSource: item.nameSource || "iiko",
+        };
       }
 
       const resolvedName = pickNameByType(item.entityType, item.entityId);
-      if (!resolvedName) {
-        return item;
+      if (resolvedName) {
+        return {
+          ...item,
+          entityName: resolvedName,
+          nameSource: "menu",
+        };
       }
 
       return {
         ...item,
-        entityName: resolvedName,
+        entityName: this._buildFallbackEntityName(item.entityId),
+        nameSource: "fallback",
       };
     });
   }
 
-  _buildMeta({
-    generatedAt,
-    iikoCount,
-    deduplicatedCount,
-    warnings = [],
-    isPartial = false,
-  }) {
+  _buildMeta({ generatedAt, iikoCount, deduplicatedCount, warnings = [], isPartial = false }) {
     return {
       generatedAt,
       source: "iiko-cloud-stop-lists",
@@ -342,82 +397,117 @@ class StopListService {
     const cacheKey = this._buildCacheKey(organizationIds, timezone);
     const cached = this.normalizedCache.get(cacheKey);
 
-    if (!refresh && cached && this._isCacheValid(cached.expiresAt)) {
-      return cached.payload;
+    if (!refresh && cached) {
+      return cached;
     }
 
     const organizations = allOrganizations.filter((organization) => organizationIds.includes(String(organization.id)));
     const orgNamesById = new Map(organizations.map((organization) => [String(organization.id), organization.name]));
     const lostRevenueLookbackDays = this._resolveLostRevenueLookbackDays(query);
 
-    const token = await this.iikoService.fetchAccessToken({ forceRefresh: refresh });
-    const iikoResult = await this.iikoService.fetchStopListsWithProducts(token, organizationIds, organizations, {
-      forceRefresh: refresh,
-      rawCacheTtlMs: DEFAULT_RAW_CACHE_TTL_MS,
-    });
-    const menuV2Index = await this.iikoService.fetchMenuV2Index(token, organizationIds, {
-      forceRefresh: refresh,
-    });
-    const lostRevenueIndexResult = await this._buildRevenuePerHourIndexByOrganization(organizationIds, lostRevenueLookbackDays);
-
-    const rawItems = Array.isArray(iikoResult.normalizedItems) ? iikoResult.normalizedItems : [];
-    const normalizedWithNames = this.enrichEntityNames(this.normalizeItems(rawItems), menuV2Index).map((item) => ({
-      ...item,
-      organizationName: item.organizationName || orgNamesById.get(item.organizationId) || "",
-    }));
-    const normalized = this.enrichEstimatedLostRevenue(normalizedWithNames, lostRevenueIndexResult.byOrg);
-
-    const deduplicatedItems = this._deduplicateItems(normalized);
-    const sortedItems = this._sortItems(deduplicatedItems);
-
-    const missingStartCount = sortedItems.filter((item) => !item.startedAt).length;
-    const warnings = [];
-    if (missingStartCount > 0) {
-      warnings.push(`У ${missingStartCount} позиций нет startedAt, длительность не рассчитана.`);
-    }
-    const missingEntityNameCount = sortedItems.filter((item) => !String(item.entityName || "").trim() || item.entityName === "Без названия").length;
-    if (missingEntityNameCount > 0) {
-      warnings.push(`У ${missingEntityNameCount} позиций не удалось определить название.`);
-    }
-    warnings.push(...lostRevenueIndexResult.warnings);
-    const estimatedLostRevenueTotal = this.round(
-      sortedItems.reduce((sum, item) => sum + (Number.isFinite(Number(item.estimatedLostRevenue)) ? Number(item.estimatedLostRevenue) : 0), 0),
-      2,
-    );
-    const estimatedLostRevenueItems = sortedItems.filter((item) => Number.isFinite(Number(item.estimatedLostRevenue))).length;
-
-    const generatedAt = new Date().toISOString();
-    const payload = {
-      data: {
-        items: sortedItems,
-      },
-      meta: this._buildMeta({
-        generatedAt,
-        iikoCount: rawItems.length,
-        deduplicatedCount: sortedItems.length,
-        warnings,
-        isPartial: false,
-      }),
-    };
-    payload.meta.lostRevenue = {
-      lookbackDays: lostRevenueIndexResult.lookbackDays,
-      periodDateFrom: lostRevenueIndexResult.dateFrom,
-      periodDateTo: lostRevenueIndexResult.dateTo,
-      estimatedLostRevenueTotal,
-      estimatedLostRevenueItems,
-      currency: "RUB",
-    };
-
-    if (attachOrganizations) {
-      payload.data.organizations = organizations;
+    if (refresh) {
+      const inflight = this.inflightRefreshes.get(cacheKey);
+      if (inflight) {
+        return inflight;
+      }
     }
 
-    this.normalizedCache.set(cacheKey, {
-      expiresAt: Date.now() + DEFAULT_NORMALIZED_CACHE_TTL_MS,
-      payload,
-    });
+    const loadPromise = (async () => {
+      const token = await this.iikoService.fetchAccessToken({ forceRefresh: refresh });
+      const iikoResult = await this.iikoService.fetchStopListsWithProducts(token, organizationIds, organizations, {
+        forceRefresh: refresh,
+        rawCacheTtlMs: DEFAULT_RAW_CACHE_TTL_MS,
+      });
+      const menuV2Index = await this.iikoService.fetchMenuV2Index(token, organizationIds, {
+        forceRefresh: refresh,
+      });
+      const lostRevenueIndexResult = await this._buildRevenuePerHourIndexByOrganization(organizationIds, lostRevenueLookbackDays);
 
-    return payload;
+      const rawItems = Array.isArray(iikoResult.normalizedItems) ? iikoResult.normalizedItems : [];
+      const normalizedWithNames = this.enrichEntityNames(this.normalizeItems(rawItems), menuV2Index).map((item) => ({
+        ...item,
+        organizationName: item.organizationName || orgNamesById.get(item.organizationId) || "",
+      }));
+      const normalized = this.enrichEstimatedLostRevenue(normalizedWithNames, lostRevenueIndexResult.byOrg);
+
+      const deduplicatedItems = this._deduplicateItems(normalized);
+      const sortedItems = this._sortItems(deduplicatedItems);
+
+      const missingStartCount = sortedItems.filter((item) => !item.startedAt).length;
+      const warnings = [];
+      if (missingStartCount > 0) {
+        warnings.push(`У ${missingStartCount} позиций нет startedAt, длительность не рассчитана.`);
+      }
+      const invalidDurationCount = sortedItems.filter((item) => item.durationWarning).length;
+      if (invalidDurationCount > 0) {
+        warnings.push(`У ${invalidDurationCount} позиций endedAt раньше startedAt, длительность не рассчитана.`);
+      }
+      const fallbackNameCount = sortedItems.filter((item) => item.nameSource === "fallback").length;
+      if (fallbackNameCount > 0) {
+        warnings.push(`У ${fallbackNameCount} позиций название не найдено в актуальном меню, показан fallback по UUID.`);
+      }
+      warnings.push(...lostRevenueIndexResult.warnings);
+      const estimatedLostRevenueTotal = this.round(
+        sortedItems.reduce((sum, item) => sum + (Number.isFinite(Number(item.estimatedLostRevenue)) ? Number(item.estimatedLostRevenue) : 0), 0),
+        2,
+      );
+      const estimatedLostRevenueItems = sortedItems.filter((item) => Number.isFinite(Number(item.estimatedLostRevenue))).length;
+      const resolvedFromMenuCount = sortedItems.filter((item) => item.nameSource === "menu").length;
+
+      const generatedAt = new Date().toISOString();
+      const payload = {
+        data: {
+          items: sortedItems,
+        },
+        meta: this._buildMeta({
+          generatedAt,
+          iikoCount: rawItems.length,
+          deduplicatedCount: sortedItems.length,
+          warnings,
+          isPartial: false,
+        }),
+      };
+      payload.meta.lostRevenue = {
+        lookbackDays: lostRevenueIndexResult.lookbackDays,
+        periodDateFrom: lostRevenueIndexResult.dateFrom,
+        periodDateTo: lostRevenueIndexResult.dateTo,
+        estimatedLostRevenueTotal,
+        estimatedLostRevenueItems,
+        currency: "RUB",
+      };
+      payload.meta.quality = {
+        totalItems: sortedItems.length,
+        resolvedFromMenuCount,
+        fallbackNameCount,
+        estimatedLostRevenueItems,
+      };
+
+      if (attachOrganizations) {
+        payload.data.organizations = organizations;
+      }
+
+      try {
+        await stopListSnapshotRepository.appendSnapshots(sortedItems, generatedAt);
+      } catch (snapshotError) {
+        payload.meta.warnings.push(`Не удалось сохранить снапшоты стоп-листа: ${snapshotError.message || "unknown error"}.`);
+      }
+
+      this.normalizedCache.set(cacheKey, payload, DEFAULT_NORMALIZED_CACHE_TTL_MS);
+
+      return payload;
+    })();
+
+    if (refresh) {
+      this.inflightRefreshes.set(cacheKey, loadPromise);
+    }
+
+    try {
+      return await loadPromise;
+    } finally {
+      if (refresh) {
+        this.inflightRefreshes.delete(cacheKey);
+      }
+    }
   }
 }
 

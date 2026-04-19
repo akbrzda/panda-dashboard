@@ -4,7 +4,7 @@
     <div class="space-y-4">
       <ReportPageHeader
         title="Дашборд"
-        description="Оперативная витрина по ключевым KPI сети с разбивкой по каналам и подразделениям."
+        description="Операционная витрина по ключевым KPI сети с разбивкой по каналам и подразделениям."
         :status="readiness.status"
         :tier="readiness.tier"
         :source="readiness.source"
@@ -16,12 +16,7 @@
         :refreshing="dashboardStore.isLoadingDashboard"
         @refresh="reload"
       />
-      <PageFilters
-        ref="filtersRef"
-        mode="date"
-        :loading="dashboardStore.isLoadingDashboard"
-        @apply="handleApply"
-      />
+      <PageFilters ref="filtersRef" mode="date" :loading="dashboardStore.isLoadingDashboard" @apply="handleApply" />
     </div>
 
     <!-- Ошибка -->
@@ -29,6 +24,14 @@
       <AlertCircle class="w-5 h-5 shrink-0" />
       <span>{{ error }}</span>
       <Button type="button" variant="outline" size="sm" class="ml-auto" @click="reload">Повторить</Button>
+    </div>
+
+    <div
+      v-if="showPartialWarning"
+      class="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-900 dark:text-yellow-200"
+    >
+      <AlertCircle class="h-5 w-5 shrink-0" />
+      <span>Часть подразделений недоступна: {{ unavailableOrganizationsLabel }}. Метрики могут быть неполными.</span>
     </div>
 
     <!-- Пустое состояние -->
@@ -49,14 +52,18 @@
             icon="TrendingUp"
             :plan="getPlan('revenue', data?.summary.totalRevenue)"
             :loading="dashboardStore.isLoadingDashboard"
+            :drilldown="true"
+            @drilldown="openMetricDrilldown"
           />
           <MetricCard
-            title="Заказов"
+            title="Заказы"
             :value="data?.summary.totalOrders ?? null"
             format="number"
             icon="ShoppingCart"
             :plan="getPlan('orders', data?.summary.totalOrders)"
             :loading="dashboardStore.isLoadingDashboard"
+            :drilldown="true"
+            @drilldown="openMetricDrilldown"
           />
           <MetricCard
             title="Средний чек"
@@ -65,6 +72,8 @@
             icon="BarChart2"
             :plan="getPlan('avgPerOrder', data?.summary.avgPerOrder)"
             :loading="dashboardStore.isLoadingDashboard"
+            :drilldown="true"
+            @drilldown="openMetricDrilldown"
           />
           <MetricCard
             title="Дисконт"
@@ -75,6 +84,8 @@
             :inverse="true"
             :plan="getPlan('discountSum', data?.summary.discountSum)"
             :loading="dashboardStore.isLoadingDashboard"
+            :drilldown="true"
+            @drilldown="openMetricDrilldown"
           />
         </div>
       </section>
@@ -104,7 +115,7 @@
         </Card>
       </div>
 
-      <!-- По подразделениям (только если несколько) -->
+      <!-- По подразделениям, если их несколько -->
       <Card v-if="showOrgChart" class="p-5">
         <h3 class="mb-4 text-sm font-semibold text-foreground">Выручка по подразделениям</h3>
         <OrgBarChart :orgs="data?.byOrganization ?? []" :loading="dashboardStore.isLoadingDashboard" />
@@ -175,6 +186,30 @@
           </router-link>
         </div>
       </section>
+
+      <div v-if="selectedMetric" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="selectedMetric = null" />
+        <aside class="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-border bg-background p-5 shadow-lg">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-foreground">Детализация метрики</h2>
+            <Button variant="outline" size="sm" @click="selectedMetric = null">Закрыть</Button>
+          </div>
+          <div class="space-y-3 text-sm">
+            <div>
+              <p class="text-xs text-muted-foreground">Метрика</p>
+              <p class="font-medium text-foreground">{{ selectedMetric.title }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-muted-foreground">Значение</p>
+              <p class="font-medium text-foreground">{{ selectedMetric.formattedValue }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-muted-foreground">Пояснение</p>
+              <p class="font-medium text-foreground">Детализация по этой метрике будет расширяться в следующих релизах.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </template>
   </div>
 </template>
@@ -215,10 +250,13 @@ const filtersRef = ref(null);
 const error = ref(null);
 const lastLoadedAt = ref(null);
 const lastAppliedOrgIds = ref([]);
+const selectedMetric = ref(null);
 
 const data = computed(() => dashboardStore.dashboardData);
 const hasChannels = computed(() => Object.keys(data.value?.revenueByChannel ?? {}).length > 0);
 const showOrgChart = computed(() => (data.value?.byOrganization?.length ?? 0) > 1);
+const showPartialWarning = computed(() => data.value?.hasErrors === true && Array.isArray(data.value?.unavailableOrganizations));
+const unavailableOrganizationsLabel = computed(() => (data.value?.unavailableOrganizations || []).join(", "));
 const readiness = computed(() => getFeatureReadiness(route.path));
 const currentPlanOrganizationId = computed(() => {
   if ((data.value?.byOrganization?.length ?? 0) === 1) {
@@ -281,6 +319,10 @@ function formatDiscountDisplay(discountPercent, discountSum) {
 function formatNumber(val) {
   if (val == null) return "—";
   return new Intl.NumberFormat("ru-RU").format(val);
+}
+
+function openMetricDrilldown(metric) {
+  selectedMetric.value = metric;
 }
 
 useAutoRefresh(() => {

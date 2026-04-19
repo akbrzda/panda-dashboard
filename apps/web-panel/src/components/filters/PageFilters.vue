@@ -12,9 +12,18 @@
 
     <!-- Выбор периода -->
     <div class="flex w-full flex-col gap-1.5 sm:w-[280px]">
-      <label class="text-xs font-medium text-muted-foreground">
-        {{ mode === "date" ? "Дата" : "Период" }}
-      </label>
+      <div class="flex items-center gap-1.5">
+        <label class="text-xs font-medium text-muted-foreground">
+          {{ mode === "date" ? "Дата" : "Период" }}
+        </label>
+        <span
+          v-if="showLflHint"
+          class="inline-flex cursor-help items-center rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+          title="LFL — сравнение с аналогичным периодом прошлого года. Если в прошлом периоде значение равно 0, сравнение не показывается."
+        >
+          LFL?
+        </span>
+      </div>
       <DatePicker v-if="mode === 'date'" v-model="localDate" placeholder="Выберите дату" />
       <PeriodSelector v-else />
     </div>
@@ -216,12 +225,7 @@ watch(
 );
 
 watch(
-  () => [
-    organizationSelection.value,
-    filtersStore.preset,
-    filtersStore.dateFrom,
-    filtersStore.dateTo,
-  ],
+  () => [organizationSelection.value, filtersStore.preset, filtersStore.dateFrom, filtersStore.dateTo],
   () => {
     syncFiltersToQuery();
   },

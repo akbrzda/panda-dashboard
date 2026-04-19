@@ -86,6 +86,13 @@ class TelegramService {
     await this._sendWithRetry(this.notifyGroupId, message);
     return { restaurantId: reportData.restaurantId, restaurantName: reportData.restaurantName };
   }
+
+  async sendAlertMessage(message) {
+    if (!this.bot || !this.notifyGroupId) {
+      throw new Error("Service not initialized");
+    }
+    await this._sendWithRetry(this.notifyGroupId, message);
+  }
 }
 
 module.exports = new TelegramService();

@@ -1,5 +1,8 @@
 const express = require("express");
 const router = express.Router();
+const { createApiKeyAuthMiddleware } = require("../middleware/apiKeyAuth");
+const { createJwtRoleAuthMiddleware } = require("../middleware/jwtRoleAuth");
+const config = require("../config");
 const organizationsModule = require("../modules/organizations");
 const stopListModule = require("../modules/stopList");
 const revenueModule = require("../modules/revenue");
@@ -19,6 +22,21 @@ router.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+const authMiddleware =
+  config.authMode === "jwt"
+    ? createJwtRoleAuthMiddleware({
+        secret: config.jwtSecret,
+      })
+    : config.authMode === "api-key"
+      ? createApiKeyAuthMiddleware({
+          apiKey: config.apiKey,
+        })
+      : null;
+
+if (authMiddleware) {
+  router.use(authMiddleware);
+}
 
 router.use("/organizations", organizationsModule.routes);
 router.use("/stop-lists", stopListModule.routes);

@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { useReportsStore } from "@/stores/reports";
 import { useClientsStore } from "@/stores/clients";
 import { useTopDishesStore } from "@/stores/topDishes";
 import { useFoodcostStore } from "@/stores/foodcost";
 import { useDashboardStore } from "@/stores/dashboard";
 import { useStopListStore } from "@/stores/stopList";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 import DashboardView from "../views/DashboardView.vue";
 import StopListView from "../views/StopListView.vue";
 import RevenueView from "../views/RevenueView.vue";
@@ -22,6 +22,7 @@ import TopDishesView from "../views/TopDishesView.vue";
 import ClientsView from "../views/ClientsView.vue";
 import FoodcostView from "../views/FoodcostView.vue";
 import PlansView from "../views/PlansView.vue";
+import PlannedFeatureView from "../views/PlannedFeatureView.vue";
 
 const routes = [
   {
@@ -117,6 +118,11 @@ const routes = [
     name: "Plans",
     component: PlansView,
   },
+  {
+    path: "/planned",
+    name: "PlannedFeature",
+    component: PlannedFeatureView,
+  },
 ];
 
 const router = createRouter({
@@ -125,8 +131,18 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
+  const readiness = getFeatureReadiness(to.path);
+  if (readiness.status === "planned" && to.name !== "PlannedFeature") {
+    next({
+      name: "PlannedFeature",
+      query: {
+        target: to.path,
+      },
+    });
+    return;
+  }
+
   if (to.path !== from.path) {
-    useReportsStore().$reset();
     useClientsStore().stopAll();
     useTopDishesStore().stopAll();
     useFoodcostStore().stopAll();

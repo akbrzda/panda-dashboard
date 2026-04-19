@@ -1,17 +1,50 @@
 const OlapClient = require("../shared/olapClient");
+const organizationsService = require("../organizations/service");
+const { TTLCache } = require("../shared/cache");
+const fileLogger = require("../../utils/fileLogger");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
-class FoodcostService extends OlapClient {
-  constructor() {
-    super();
+class FoodcostService {
+  constructor({ iikoClient = null, cache = null, storeResolver = null } = {}) {
+    this.client =
+      iikoClient ||
+      new OlapClient({
+        resolveOrganizations: () => organizationsService.getOrganizations(),
+        resolveStoreId: storeResolver || undefined,
+      });
+
     this.maxChunkDays = Number(process.env.IIKO_FOODCOST_CHUNK_DAYS || 1);
     this.cacheTtlMs = Number(process.env.IIKO_FOODCOST_CACHE_TTL_MS || 120000);
-    this.reportCache = new Map();
+    this.reportCache = cache || new TTLCache(this.cacheTtlMs);
     this.categoryMaxAttempts = Number(process.env.IIKO_FOODCOST_CATEGORY_MAX_ATTEMPTS || 6);
     this.summaryMaxAttempts = Number(process.env.IIKO_FOODCOST_SUMMARY_MAX_ATTEMPTS || 2);
     this.lflMaxWaitMs = Number(process.env.IIKO_FOODCOST_LFL_MAX_WAIT_MS || 6000);
     this.fetchTimeoutMs = Number(process.env.IIKO_FOODCOST_FETCH_TIMEOUT_MS || 3000);
     this.maxPeriodWaitMs = Number(process.env.IIKO_FOODCOST_MAX_WAIT_MS || 20000);
+  }
+
+  async withAuth(...args) {
+    return await this.client.withAuth(...args);
+  }
+
+  async resolveStoreId(...args) {
+    return await this.client.resolveStoreId(...args);
+  }
+
+  async pollOlap(...args) {
+    return await this.client.pollOlap(...args);
+  }
+
+  parseResultRows(...args) {
+    return this.client.parseResultRows(...args);
+  }
+
+  filterCanceledOrders(...args) {
+    return this.client.filterCanceledOrders(...args);
+  }
+
+  async delay(ms) {
+    return await this.client.delay(ms);
   }
 
   calculateLflPercent(currentValue, previousValue) {
@@ -180,7 +213,7 @@ class FoodcostService extends OlapClient {
       const chunkDays = this.getChunkDays(chunk.dateFrom, chunk.dateTo);
 
       if (chunkDays > 1) {
-        console.warn("⚠️ Foodcost chunk будет разбит на более мелкие части:", {
+        fileLogger.warn("Foodcost chunk будет разбит на более мелкие части", {
           storeId,
           dateFrom: chunk.dateFrom,
           dateTo: chunk.dateTo,
@@ -205,7 +238,7 @@ class FoodcostService extends OlapClient {
         };
       }
 
-      console.warn("⚠️ Foodcost fallback на сводный запрос без категорий:", {
+      fileLogger.warn("Foodcost fallback на сводный запрос без категорий", {
         storeId,
         dateFrom: chunk.dateFrom,
         dateTo: chunk.dateTo,
@@ -220,7 +253,7 @@ class FoodcostService extends OlapClient {
           warningMessage: "Категории временно недоступны, показан сводный фудкост",
         };
       } catch (fallbackError) {
-        console.warn("⚠️ Foodcost chunk пропущен после таймаута:", {
+        fileLogger.warn("Foodcost chunk пропущен после таймаута", {
           storeId,
           dateFrom: chunk.dateFrom,
           dateTo: chunk.dateTo,
@@ -254,7 +287,7 @@ class FoodcostService extends OlapClient {
           }),
         ]);
       } catch (error) {
-        console.warn("⚠️ Не удалось получить LFL по фудкосту:", {
+        fileLogger.warn("Не удалось получить LFL по фудкосту", {
           organizationId,
           dateFrom: lflDateFrom,
           dateTo: lflDateTo,
@@ -277,9 +310,13 @@ class FoodcostService extends OlapClient {
     const cacheKey = this.getCacheKey(storeId, dateFrom, dateTo);
     const cachedReport = this.reportCache.get(cacheKey);
 
-    if (cachedReport && cachedReport.expiresAt > Date.now()) {
-      console.log(`⚡ Foodcost cache hit ${dateFrom} — ${dateTo} (store ${storeId})`);
-      return cachedReport.data;
+    if (cachedReport) {
+      fileLogger.info("Foodcost cache hit", {
+        storeId,
+        dateFrom,
+        dateTo,
+      });
+      return cachedReport;
     }
 
     const chunks = this.buildDateChunks(dateFrom, dateTo);
@@ -287,7 +324,12 @@ class FoodcostService extends OlapClient {
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
 
-    console.log(`📊 Foodcost: store ${storeId}, период ${dateFrom} — ${dateTo}, частей ${chunks.length}`);
+    fileLogger.info("Запрошен отчет по фудкосту", {
+      storeId,
+      dateFrom,
+      dateTo,
+      chunks: chunks.length,
+    });
 
     const loadResult = await this.withAuth(storeId, async (client, delay) => {
       const aggregatedRows = [];
@@ -298,7 +340,7 @@ class FoodcostService extends OlapClient {
         if (Date.now() - startedAt >= this.maxPeriodWaitMs) {
           degraded = true;
           warningMessage = this.appendWarningMessage(warningMessage, "Показаны частичные данные для ускорения ответа");
-          console.warn("⚠️ Foodcost остановлен по лимиту времени:", {
+          fileLogger.warn("Foodcost остановлен по лимиту времени", {
             storeId,
             maxPeriodWaitMs: this.maxPeriodWaitMs,
           });
@@ -312,7 +354,13 @@ class FoodcostService extends OlapClient {
         degraded = degraded || chunkResult.degraded;
         warningMessage = this.appendWarningMessage(warningMessage, chunkResult.warningMessage);
 
-        console.log(`✅ Foodcost chunk: ${chunk.dateFrom} — ${chunk.dateTo}, строк ${chunkResult.rows.length}, ${Date.now() - chunkStartedAt} мс`);
+        fileLogger.debug("Завершен Foodcost chunk", {
+          storeId,
+          dateFrom: chunk.dateFrom,
+          dateTo: chunk.dateTo,
+          rows: chunkResult.rows.length,
+          durationMs: Date.now() - chunkStartedAt,
+        });
       }
 
       return { rows: aggregatedRows, degraded, warningMessage };
@@ -353,7 +401,13 @@ class FoodcostService extends OlapClient {
     const percent = totalRevenue > 0 ? Math.round((totalCost / totalRevenue) * 10000) / 100 : 0;
     const status = percent > 35 ? "critical" : percent >= 30 ? "warning" : "normal";
 
-    console.log(`✅ Foodcost: store ${storeId}, период ${dateFrom} — ${dateTo}, строк ${rows.length}, ${Date.now() - startedAt} мс`);
+    fileLogger.info("Отчет по фудкосту сформирован", {
+      storeId,
+      dateFrom,
+      dateTo,
+      rows: rows.length,
+      durationMs: Date.now() - startedAt,
+    });
 
     const report = {
       percent,
@@ -369,10 +423,7 @@ class FoodcostService extends OlapClient {
       },
     };
 
-    this.reportCache.set(cacheKey, {
-      data: report,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
+    this.reportCache.set(cacheKey, report, this.cacheTtlMs);
 
     return report;
   }

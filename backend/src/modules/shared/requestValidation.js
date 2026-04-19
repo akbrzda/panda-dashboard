@@ -166,6 +166,69 @@ function validateGeoJsonFeatureCollection(value, fieldName = "geoJson") {
   return { isValid: true };
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let supportedTimezones = null;
+
+function getSupportedTimezones() {
+  if (supportedTimezones) return supportedTimezones;
+  if (typeof Intl.supportedValuesOf === "function") {
+    supportedTimezones = new Set(Intl.supportedValuesOf("timeZone"));
+    return supportedTimezones;
+  }
+
+  supportedTimezones = null;
+  return supportedTimezones;
+}
+
+function validateUuid(value, fieldName = "id") {
+  const normalized = toTrimmedString(value);
+  if (!normalized || !UUID_REGEX.test(normalized)) {
+    return {
+      isValid: false,
+      code: "VALIDATION_ERROR",
+      message: `Параметр ${fieldName} должен быть UUID`,
+    };
+  }
+
+  return {
+    isValid: true,
+    value: normalized,
+  };
+}
+
+function validateTimezone(value, fieldName = "timezone") {
+  const normalized = toTrimmedString(value);
+  if (!normalized) {
+    return {
+      isValid: false,
+      code: "VALIDATION_ERROR",
+      message: `Параметр ${fieldName} не может быть пустым`,
+    };
+  }
+
+  const available = getSupportedTimezones();
+  if (available && !available.has(normalized)) {
+    return {
+      isValid: false,
+      code: "VALIDATION_ERROR",
+      message: `Параметр ${fieldName} должен быть валидным IANA timezone`,
+    };
+  }
+
+  if (!available && !/^[A-Za-z_]+(?:\/[A-Za-z0-9_\-+]+)+$/.test(normalized) && normalized !== "UTC") {
+    return {
+      isValid: false,
+      code: "VALIDATION_ERROR",
+      message: `Параметр ${fieldName} должен быть валидным IANA timezone`,
+    };
+  }
+
+  return {
+    isValid: true,
+    value: normalized,
+  };
+}
+
 module.exports = {
   parseDateInput,
   validatePeriodParams,
@@ -173,4 +236,6 @@ module.exports = {
   validatePositiveInteger,
   validateEnum,
   validateGeoJsonFeatureCollection,
+  validateUuid,
+  validateTimezone,
 };

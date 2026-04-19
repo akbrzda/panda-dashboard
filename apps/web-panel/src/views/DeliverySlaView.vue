@@ -70,9 +70,15 @@
                 <TableCell class="">
                   <span
                     class="rounded-full px-2 py-1 text-xs font-semibold"
-                    :class="stage.avg <= stage.threshold ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'"
+                    :class="
+                      !stage.hasData
+                        ? 'bg-muted text-muted-foreground'
+                        : stage.avg <= stage.threshold
+                          ? 'bg-success/15 text-success'
+                          : 'bg-destructive/15 text-destructive'
+                    "
                   >
-                    {{ stage.avg <= stage.threshold ? "В норме" : "Выше порога" }}
+                    {{ !stage.hasData ? "Нет данных" : stage.avg <= stage.threshold ? "В норме" : "Выше порога" }}
                   </span>
                 </TableCell>
               </TableRow>
@@ -239,10 +245,34 @@ const trustCoverage = computed(() => {
 const stageRows = computed(() => {
   const stageKpi = report.value?.stageKpi || {};
   return [
-    { key: "prep", title: "Приготовление", avg: Number(stageKpi.prep?.avg || 0), threshold: Number(stageKpi.prep?.threshold || 0) },
-    { key: "shelf", title: "Полка", avg: Number(stageKpi.shelf?.avg || 0), threshold: Number(stageKpi.shelf?.threshold || 0) },
-    { key: "route", title: "В пути", avg: Number(stageKpi.route?.avg || 0), threshold: Number(stageKpi.route?.threshold || 0) },
-    { key: "total", title: "Общее SLA", avg: Number(stageKpi.total?.avg || 0), threshold: Number(stageKpi.total?.threshold || 0) },
+    {
+      key: "prep",
+      title: "Приготовление",
+      avg: stageKpi.prep?.avg != null ? Number(stageKpi.prep.avg) : null,
+      threshold: Number(stageKpi.prep?.threshold || 0),
+      hasData: Number(stageKpi.prep?.count || 0) > 0,
+    },
+    {
+      key: "shelf",
+      title: "Полка",
+      avg: stageKpi.shelf?.avg != null ? Number(stageKpi.shelf.avg) : null,
+      threshold: Number(stageKpi.shelf?.threshold || 0),
+      hasData: Number(stageKpi.shelf?.count || 0) > 0,
+    },
+    {
+      key: "route",
+      title: "В пути",
+      avg: stageKpi.route?.avg != null ? Number(stageKpi.route.avg) : null,
+      threshold: Number(stageKpi.route?.threshold || 0),
+      hasData: Number(stageKpi.route?.count || 0) > 0,
+    },
+    {
+      key: "total",
+      title: "Общее SLA",
+      avg: stageKpi.total?.avg != null ? Number(stageKpi.total.avg) : null,
+      threshold: Number(stageKpi.total?.threshold || 0),
+      hasData: Number(stageKpi.total?.count || 0) > 0,
+    },
   ];
 });
 
@@ -263,6 +293,9 @@ function formatNumber(value) {
 }
 
 function formatDuration(value) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return "—";
+  }
   return formatMinutesToHms(value);
 }
 

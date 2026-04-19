@@ -32,12 +32,8 @@ function buildRouteStats(rows = [], ctx, options = {}) {
 
   for (const [courierId, courierRows] of groupedByCourier.entries()) {
     const sortedRows = [...courierRows].sort((left, right) => {
-      const leftSendAt = preparedOrders
-        ? Number(left?.sentAt || left?.openAt || 0)
-        : ctx.parseDateTime(left["Delivery.SendTime"]) || 0;
-      const rightSendAt = preparedOrders
-        ? Number(right?.sentAt || right?.openAt || 0)
-        : ctx.parseDateTime(right["Delivery.SendTime"]) || 0;
+      const leftSendAt = preparedOrders ? Number(left?.sentAt || left?.openAt || 0) : ctx.parseDateTime(left["Delivery.SendTime"]) || 0;
+      const rightSendAt = preparedOrders ? Number(right?.sentAt || right?.openAt || 0) : ctx.parseDateTime(right["Delivery.SendTime"]) || 0;
       return leftSendAt - rightSendAt;
     });
 
@@ -96,8 +92,9 @@ function buildRouteStats(rows = [], ctx, options = {}) {
 }
 
 function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options)
-    .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
+  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
+    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
+  );
   const prepThreshold = 25;
   const shelfThreshold = 10;
   const routeThreshold = 40;
@@ -156,16 +153,16 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}
       onTimeRate: totalOrders > 0 ? ctx.roundMetric(100 - violationRate) : 0,
     },
     stageKpi: {
-      prep: { avg: toAverage(prepValues), threshold: prepThreshold },
-      shelf: { avg: toAverage(shelfValues), threshold: shelfThreshold },
-      route: { avg: toAverage(routeValues), threshold: routeThreshold },
-      total: { avg: toAverage(totalValues), threshold: totalThreshold },
+      prep: { avg: toAverage(prepValues), threshold: prepThreshold, count: prepValues.length },
+      shelf: { avg: toAverage(shelfValues), threshold: shelfThreshold, count: shelfValues.length },
+      route: { avg: toAverage(routeValues), threshold: routeThreshold, count: routeValues.length },
+      total: { avg: toAverage(totalValues), threshold: totalThreshold, count: totalValues.length },
     },
     funnel: {
       created: totalOrders,
-      cooked: orders.filter((order) => order.cookedAt).length,
-      dispatched: orders.filter((order) => order.sentAt).length,
-      delivered: orders.filter((order) => order.deliveredAt).length,
+      cooked: orders.filter((order) => order.cookedAt || order.sentAt || order.deliveredAt || order.actualDeliveryAt).length,
+      dispatched: orders.filter((order) => order.sentAt || order.deliveredAt || order.actualDeliveryAt).length,
+      delivered: orders.filter((order) => order.deliveredAt || order.actualDeliveryAt).length,
     },
     hourly: hourly.map((item) => ({
       ...item,
@@ -176,8 +173,9 @@ function buildSlaReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}
 }
 
 function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options)
-    .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
+  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
+    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
+  );
   const totalThreshold = 60;
   const couriers = new Map();
 
@@ -204,7 +202,7 @@ function buildCourierKpiReport(rows = [], timezone = "Europe/Moscow", ctx, optio
     if (Number.isInteger(order.hour) && order.hour >= 0 && order.hour <= 23) courier.hours[order.hour].orders += 1;
   }
 
-  const toAverage = (values) => (values.length ? ctx.roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length) : 0);
+  const toAverage = (values) => (values.length ? ctx.roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length) : null);
 
   const couriersList = [...couriers.values()].map((courier) => {
     const violationRate = courier.orders > 0 ? ctx.roundMetric((courier.lateOrders / courier.orders) * 100) : 0;
@@ -302,8 +300,9 @@ function buildMarketingSourcesReport(rows = [], timezone = "Europe/Moscow", ctx)
 }
 
 function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options)
-    .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
+  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
+    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
+  );
   const statusMap = new Map();
   const channelMap = new Map();
   const departmentMap = new Map();
@@ -395,8 +394,9 @@ function buildDeliverySummaryReport(rows = [], timezone = "Europe/Moscow", ctx, 
 }
 
 function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options)
-    .filter((order) => ctx.isCourierDeliveryByServiceType({ OrderServiceType: order.orderServiceType }));
+  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
+    ctx.isCourierDeliveryByServiceType({ OrderServiceType: order.orderServiceType }),
+  );
   const delayedOrders = [];
   const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, total: 0, delayed: 0, lateMinutes: 0 }));
   const couriersMap = new Map();
@@ -509,8 +509,9 @@ function buildDeliveryDelaysReport(rows = [], timezone = "Europe/Moscow", ctx, o
 }
 
 function buildCourierMapReport(rows = [], dateTo = null, timezone = "Europe/Moscow", ctx, options = {}) {
-  const orders = resolveOrders(rows, timezone, ctx, options)
-    .filter((order) => ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }));
+  const orders = resolveOrders(rows, timezone, ctx, options).filter((order) =>
+    ctx.isDeliveryOrder({ OrderType: order.orderType, "Delivery.Courier.Id": order.courierId }),
+  );
   const couriersMap = new Map();
   const timeline = [];
   const toTimestamp = (value) => (value ? new Date(`${value}T23:59:59`).getTime() : Date.now());

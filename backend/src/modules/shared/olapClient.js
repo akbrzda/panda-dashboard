@@ -1,126 +1,133 @@
-const crypto = require("crypto");
-const axios = require("axios");
-const { CookieJar } = require("tough-cookie");
-const { wrapper } = require("axios-cookiejar-support");
-const organizationsService = require("../organizations/service");
+const ConcurrencyLimiter = require("./ConcurrencyLimiter");
+const IikoHttpClient = require("./IikoHttpClient");
+const OlapPoller = require("./OlapPoller");
+const OlapQueryBuilder = require("./OlapQueryBuilder");
+const fileLogger = require("../../utils/fileLogger");
 
 class OlapClient {
-  constructor() {
-    this.serverBaseUrl = this.normalizeBaseUrl(process.env.IIKO_SERVER_BASE_URL || process.env.IIKO_BASE_URL);
-    this.legacyBaseUrl = this.normalizeBaseUrl(process.env.IIKO_WEB_BASE_URL || process.env.IIKO_BASE_URL || process.env.IIKO_SERVER_BASE_URL);
-    this.username = process.env.IIKO_USER;
-    this.password = process.env.IIKO_PASSWORD;
-    this.timeout = Number(process.env.IIKO_TIMEOUT || 45000);
-    this.pollInterval = 500;
-    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
-    this.maxNetworkRetries = Number(process.env.IIKO_NETWORK_RETRIES || 4);
-    this.maxConcurrentRequests = Number(process.env.IIKO_MAX_CONCURRENT_REQUESTS || 1);
+  constructor(options = {}) {
+    this.resolveOrganizations = typeof options.resolveOrganizations === "function" ? options.resolveOrganizations : async () => [];
+    this.customResolveStoreId = typeof options.resolveStoreId === "function" ? options.resolveStoreId : null;
+    this.customResolveLegacyStoreId = typeof options.resolveLegacyStoreId === "function" ? options.resolveLegacyStoreId : null;
+    this.logger = options.logger || fileLogger;
+    this.concurrencyLimiter = options.concurrencyLimiter || OlapClient.sharedConcurrencyLimiter;
+    this.queryBuilder = new OlapQueryBuilder();
+    this.httpClient = new IikoHttpClient({
+      ...options,
+      logger: this.logger,
+      concurrencyLimiter: this.concurrencyLimiter,
+      resolveLegacyStoreId: this.resolveLegacyStoreId.bind(this),
+    });
+    this.poller = new OlapPoller({
+      ...options,
+      logger: this.logger,
+      httpClient: this.httpClient,
+      queryBuilder: this.queryBuilder,
+    });
+
+    this.serverBaseUrl = options.serverBaseUrl || process.env.IIKO_SERVER_BASE_URL || process.env.IIKO_BASE_URL;
+    this.legacyBaseUrl = options.legacyBaseUrl || process.env.IIKO_WEB_BASE_URL || process.env.IIKO_BASE_URL || process.env.IIKO_SERVER_BASE_URL;
+    this.timeout = Number(options.timeout || process.env.IIKO_TIMEOUT || 45000);
+    this.pollInterval = Number(options.pollInterval || 500);
+    this.maxAttempts = Number(options.maxAttempts || process.env.IIKO_OLAP_MAX_ATTEMPTS || 120);
+    this.maxNetworkRetries = Number(options.maxNetworkRetries || process.env.IIKO_NETWORK_RETRIES || 4);
+    this.maxConcurrentRequests = Number(options.maxConcurrentRequests || process.env.IIKO_MAX_CONCURRENT_REQUESTS || 1);
+  }
+
+  get serverBaseUrl() {
+    return this.httpClient.serverBaseUrl;
+  }
+
+  set serverBaseUrl(value) {
+    this.httpClient.serverBaseUrl = this.normalizeBaseUrl(value);
+  }
+
+  get legacyBaseUrl() {
+    return this.httpClient.legacyBaseUrl;
+  }
+
+  set legacyBaseUrl(value) {
+    this.httpClient.legacyBaseUrl = this.normalizeBaseUrl(value);
+  }
+
+  get timeout() {
+    return this.httpClient.timeout;
+  }
+
+  set timeout(value) {
+    const normalized = Number(value) || 45000;
+    this.httpClient.timeout = normalized;
+    this.poller.timeout = normalized;
+  }
+
+  get pollInterval() {
+    return this.poller.pollInterval;
+  }
+
+  set pollInterval(value) {
+    this.poller.pollInterval = Number(value) || 500;
+  }
+
+  get maxAttempts() {
+    return this.poller.maxAttempts;
+  }
+
+  set maxAttempts(value) {
+    this.poller.maxAttempts = Number(value) || 120;
+  }
+
+  get maxNetworkRetries() {
+    return this.httpClient.maxNetworkRetries;
+  }
+
+  set maxNetworkRetries(value) {
+    this.httpClient.maxNetworkRetries = Number(value) || 4;
+  }
+
+  get maxConcurrentRequests() {
+    return this.concurrencyLimiter.maxConcurrent;
+  }
+
+  set maxConcurrentRequests(value) {
+    this.concurrencyLimiter.setLimit(value);
   }
 
   normalizeBaseUrl(value) {
-    return String(value || "")
-      .trim()
-      .replace(/\/+$/, "")
-      .replace(/\/resto\/api$/i, "");
-  }
-
-  async delay(ms) {
-    return await new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  async runWithConcurrencyLimit(task) {
-    await new Promise((resolve) => {
-      const tryStart = () => {
-        if (OlapClient.activeRequests < this.maxConcurrentRequests) {
-          OlapClient.activeRequests += 1;
-          resolve();
-          return;
-        }
-
-        OlapClient.requestQueue.push(tryStart);
-      };
-
-      tryStart();
-    });
-
-    try {
-      return await task();
-    } finally {
-      OlapClient.activeRequests = Math.max(0, OlapClient.activeRequests - 1);
-      const nextTask = OlapClient.requestQueue.shift();
-
-      if (typeof nextTask === "function") {
-        nextTask();
-      }
-    }
-  }
-
-  isRetriableError(error) {
-    const code = error?.code;
-    const status = error?.response?.status;
-
     return (
-      ["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "EPIPE", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"].includes(code) ||
-      [429, 500, 502, 503, 504].includes(status)
+      this.httpClient?.normalizeBaseUrl(value) ||
+      String(value || "")
+        .trim()
+        .replace(/\/+$/, "")
+        .replace(/\/resto\/api$/i, "")
     );
   }
 
+  async delay(ms) {
+    return await this.httpClient.delay(ms);
+  }
+
+  async runWithConcurrencyLimit(task) {
+    return await this.concurrencyLimiter.run(task);
+  }
+
+  isRetriableError(error) {
+    return this.httpClient.isRetriableError(error);
+  }
+
   getRetryDelay(attempt) {
-    return Math.min(1000 * 2 ** attempt, 8000);
+    return this.httpClient.getRetryDelay(attempt);
   }
 
   shouldSuppressRetryLog(context = {}, error) {
-    const code = error?.code;
-    const status = error?.response?.status;
-    return context.stage === "olap-fetch" && (status === 400 || ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET"].includes(code));
+    return this.httpClient.shouldSuppressRetryLog(context, error);
   }
 
   async withRetry(fn, context = {}, retries = this.maxNetworkRetries) {
-    let lastError;
-
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      const startedAt = Date.now();
-
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-
-        const retriable = this.isRetriableError(error);
-        const suppressLog = this.shouldSuppressRetryLog(context, error);
-        const durationMs = Date.now() - startedAt;
-        const delayMs = this.getRetryDelay(attempt);
-        const payload = {
-          stage: context.stage,
-          storeId: context.storeId,
-          fetchId: context.fetchId,
-          attempt: attempt + 1,
-          durationMs,
-          code: error?.code,
-          status: error?.response?.status,
-          message: error?.message,
-          detail: error?.response?.data?.errorMessage || error?.response?.data?.detail || undefined,
-        };
-
-        if (!retriable || attempt === retries) {
-          if (!suppressLog) {
-            console.error("❌ IIKO запрос завершился ошибкой:", payload);
-          }
-          throw error;
-        }
-
-        if (!suppressLog) {
-          console.warn("⚠️ IIKO запрос будет повторён:", { ...payload, nextDelayMs: delayMs });
-        }
-        await this.delay(delayMs);
-      }
-    }
-
-    throw lastError;
+    return await this.httpClient.withRetry(fn, context, retries);
   }
 
   async requestWithRetry(client, config, context = {}, retries = this.maxNetworkRetries) {
-    return await this.withRetry(() => client.request(config), { ...context, method: config.method, url: config.url }, retries);
+    return await this.httpClient.requestWithRetry(client, config, context, retries);
   }
 
   isPendingOlapResponse(response) {
@@ -128,167 +135,39 @@ class OlapClient {
   }
 
   createPasswordHash(password) {
-    return crypto
-      .createHash("sha1")
-      .update(String(password || ""))
-      .digest("hex");
+    return this.httpClient.createPasswordHash(password);
   }
 
   extractToken(data) {
-    if (typeof data === "string") {
-      const normalized = data.trim().replace(/^"+|"+$/g, "");
-      return normalized || null;
-    }
-
-    if (typeof data === "object" && data !== null) {
-      return data.key || data.token || data.data || null;
-    }
-
-    return null;
+    return this.httpClient.extractToken(data);
   }
 
   shouldFallbackToLegacy(error) {
-    const status = error?.response?.status;
-    const message = String(error?.response?.data?.message || error?.response?.data?.errorDescription || error?.message || "").toLowerCase();
-
-    return (
-      [400, 401, 403, 404, 405, 415, 422, 500, 501].includes(status) ||
-      message.includes("/resto/api") ||
-      message.includes("not found") ||
-      message.includes("cannot")
-    );
+    return this.httpClient.shouldFallbackToLegacy(error);
   }
 
   extractOlapFieldName(value) {
-    const source = String(value || "").trim();
-    const match = source.match(/^\[([^\]]+)\]$/);
-    return match?.[1] || source || null;
+    return this.queryBuilder.extractOlapFieldName(value);
   }
 
   normalizeServerDateValue(value) {
-    const source = String(value || "").trim();
-
-    if (!source) {
-      return source;
-    }
-
-    return source.replace(/\.\d{3}/g, "").replace(/Z$/i, "");
+    return this.queryBuilder.normalizeServerDateValue(value);
   }
 
   normalizeServerFilter(filter = {}) {
-    const filterType = String(filter.filterType || "").toLowerCase();
-
-    if (filterType === "date_range") {
-      return {
-        filterType: "DateRange",
-        periodType: "CUSTOM",
-        from: this.normalizeServerDateValue(filter.dateFrom || filter.from),
-        to: this.normalizeServerDateValue(filter.dateTo || filter.to),
-        includeLow: filter.includeLeft ?? filter.includeLow ?? true,
-        includeHigh: filter.includeRight ?? filter.includeHigh ?? false,
-      };
-    }
-
-    if (filterType === "range") {
-      return {
-        filterType: "Range",
-        from: filter.valueMin ?? filter.from ?? null,
-        to: filter.valueMax ?? filter.to ?? null,
-        includeLow: filter.includeLeft ?? filter.includeLow ?? true,
-        includeHigh: filter.includeRight ?? filter.includeHigh ?? false,
-      };
-    }
-
-    if (filterType === "include_values" || filterType === "exclude_values") {
-      return {
-        filterType: filterType === "include_values" ? "IncludeValues" : "ExcludeValues",
-        values: Array.isArray(filter.valueList) ? filter.valueList : Array.isArray(filter.values) ? filter.values : [],
-      };
-    }
-
-    return filter;
+    return this.queryBuilder.normalizeServerFilter(filter);
   }
 
   normalizeFilters(filters) {
-    if (!filters) {
-      return {};
-    }
-
-    if (!Array.isArray(filters)) {
-      return filters;
-    }
-
-    return filters.reduce((accumulator, filter) => {
-      if (filter?.field) {
-        accumulator[filter.field] = this.normalizeServerFilter(filter);
-      }
-      return accumulator;
-    }, {});
+    return this.queryBuilder.normalizeFilters(filters);
   }
 
   buildServerReportBody(body = {}) {
-    const calculatedFields = Array.isArray(body.calculatedFields) ? body.calculatedFields : [];
-    const dataFields = Array.isArray(body.dataFields) ? body.dataFields : [];
-    const aggregateFields = Array.isArray(body.aggregateFields)
-      ? body.aggregateFields
-      : dataFields
-          .map((fieldName) => {
-            const calculatedField = calculatedFields.find((item) => item?.name === fieldName);
-            return this.extractOlapFieldName(calculatedField?.formula || fieldName);
-          })
-          .filter(Boolean);
-
-    const filters = this.normalizeFilters(body.filters);
-    const storeIds = Array.isArray(body.storeIds) ? body.storeIds.map((value) => String(value || "").trim()).filter(Boolean) : [];
-
-    if (storeIds.length > 0 && !filters["Department.Id"]) {
-      filters["Department.Id"] = {
-        filterType: "IncludeValues",
-        values: storeIds,
-      };
-    }
-
-    return {
-      reportType: body.reportType || body.olapType || "SALES",
-      buildSummary: body.buildSummary ?? true,
-      groupByRowFields: Array.isArray(body.groupByRowFields) ? body.groupByRowFields : Array.isArray(body.groupFields) ? body.groupFields : [],
-      groupByColFields: Array.isArray(body.groupByColFields) ? body.groupByColFields : [],
-      aggregateFields,
-      filters,
-    };
+    return this.queryBuilder.buildServerReportBody(body);
   }
 
   normalizeServerRows(result, body = {}) {
-    if (!Array.isArray(result?.data)) {
-      return result;
-    }
-
-    const aliasMap = new Map();
-    for (const field of body.calculatedFields || []) {
-      const actualFieldName = this.extractOlapFieldName(field?.formula || field?.name);
-      if (actualFieldName && field?.name) {
-        aliasMap.set(actualFieldName, field.name);
-      }
-    }
-
-    if (aliasMap.size === 0) {
-      return result;
-    }
-
-    return {
-      ...result,
-      data: result.data.map((row) => {
-        const normalizedRow = { ...row };
-
-        for (const [actualFieldName, alias] of aliasMap.entries()) {
-          if (normalizedRow[alias] === undefined && row?.[actualFieldName] !== undefined) {
-            normalizedRow[alias] = row[actualFieldName];
-          }
-        }
-
-        return normalizedRow;
-      }),
-    };
+    return this.queryBuilder.normalizeServerRows(result, body);
   }
 
   normalizeFlag(value) {
@@ -403,8 +282,12 @@ class OlapClient {
   }
 
   async resolveStoreId(organizationId) {
+    if (this.customResolveStoreId) {
+      return await this.customResolveStoreId(organizationId);
+    }
+
     const normalizedId = String(organizationId || "");
-    const organizations = await organizationsService.getOrganizations().catch(() => []);
+    const organizations = await this.resolveOrganizations().catch(() => []);
     const organization =
       typeof organizationId === "object" && organizationId !== null
         ? organizationId
@@ -428,7 +311,6 @@ class OlapClient {
     }
 
     const fallbackCandidates = [organization?.legacyStoreId, organization?.iikoId, organization?.restaurantId, organization?.code, organization?.id];
-
     for (const candidate of fallbackCandidates) {
       const normalizedCandidate = String(candidate || "").trim();
       if (/^\d+$/.test(normalizedCandidate)) {
@@ -444,13 +326,16 @@ class OlapClient {
   }
 
   async resolveLegacyStoreId(storeId) {
-    const normalizedId = String(storeId || "").trim();
+    if (this.customResolveLegacyStoreId) {
+      return await this.customResolveLegacyStoreId(storeId);
+    }
 
+    const normalizedId = String(storeId || "").trim();
     if (/^\d+$/.test(normalizedId)) {
       return normalizedId;
     }
 
-    const organizations = await organizationsService.getOrganizations().catch(() => []);
+    const organizations = await this.resolveOrganizations().catch(() => []);
     const organization = organizations.find(
       (item) =>
         String(item.id) === normalizedId ||
@@ -463,7 +348,6 @@ class OlapClient {
     );
 
     const fallbackCandidates = [organization?.legacyStoreId, organization?.iikoId, organization?.restaurantId];
-
     for (const candidate of fallbackCandidates) {
       const normalizedCandidate = String(candidate || "").trim();
       if (/^\d+$/.test(normalizedCandidate)) {
@@ -475,317 +359,42 @@ class OlapClient {
   }
 
   createClient(baseURL = this.serverBaseUrl || this.legacyBaseUrl) {
-    const jar = new CookieJar();
-    return wrapper(
-      axios.create({
-        baseURL,
-        timeout: this.timeout,
-        headers: {
-          "Content-Type": "application/json",
-          Connection: "close",
-        },
-        jar,
-        withCredentials: true,
-      }),
-    );
+    return this.httpClient.createClient(baseURL);
   }
 
   async authenticateWithServerApi(client, storeId) {
-    const response = await this.requestWithRetry(
-      client,
-      {
-        method: "get",
-        url: "/resto/api/auth",
-        params: {
-          login: this.username,
-          pass: this.createPasswordHash(this.password),
-        },
-        timeout: Math.min(this.timeout, 15000),
-        responseType: "text",
-        transformResponse: [(data) => data],
-      },
-      { stage: "auth-server", storeId },
-    );
-
-    const key = this.extractToken(response.data);
-    if (!key) {
-      throw new Error("iikoServer не вернул токен авторизации");
-    }
-
-    if (storeId) {
-      try {
-        await client.post(`/api/stores/select/${storeId}`);
-      } catch (_) {}
-    }
-
-    return { mode: "server-v2", key };
+    return await this.httpClient.authenticateWithServerApi(client, storeId);
   }
 
   async authenticateLegacyApi(client, storeId) {
-    const legacyStoreId = await this.resolveLegacyStoreId(storeId);
-
-    await this.requestWithRetry(
-      client,
-      {
-        method: "post",
-        url: "/api/auth/login",
-        data: { login: this.username, password: this.password },
-      },
-      { stage: "auth-login", storeId: legacyStoreId },
-    );
-
-    try {
-      const selectResponse = await this.requestWithRetry(
-        client,
-        {
-          method: "post",
-          url: `/api/stores/select/${legacyStoreId}`,
-        },
-        { stage: "auth-select-store", storeId: legacyStoreId },
-      );
-
-      if (selectResponse.data?.error) {
-        throw new Error(selectResponse.data?.errorMessage || `IIKO отказал в доступе к store ${storeId}`);
-      }
-    } catch (error) {
-      const status = error?.response?.status;
-      const message = String(error?.response?.data?.errorMessage || error?.message || "").toLowerCase();
-      const routeMissing = status === 404 && message.includes("no route found");
-
-      if (!routeMissing) {
-        throw error;
-      }
-
-      console.warn("⚠️ Legacy API не поддерживает выбор стора через /api/stores/select, продолжаем без этого шага:", {
-        storeId: legacyStoreId,
-      });
-    }
-
-    return { mode: "legacy", key: null };
+    return await this.httpClient.authenticateLegacyApi(client, storeId);
   }
 
   async logout(client) {
-    const session = client.__iikoSession || {};
-
-    try {
-      if (session.mode === "server-v2") {
-        await client.get("/resto/api/logout", {
-          params: session.key ? { key: session.key } : undefined,
-          responseType: "text",
-          transformResponse: [(data) => data],
-        });
-        return;
-      }
-
-      await client.post("/api/auth/logout");
-    } catch (_) {}
+    return await this.httpClient.logout(client);
   }
 
   async withAuth(storeId, fn, options = {}) {
-    return await this.runWithConcurrencyLimit(async () => {
-      const allowLegacy = options.allowLegacy !== false;
-      const client = this.createClient();
-      let session = null;
-
-      try {
-        try {
-          if (this.serverBaseUrl) {
-            client.defaults.baseURL = this.serverBaseUrl;
-          }
-
-          session = await this.authenticateWithServerApi(client, storeId);
-        } catch (error) {
-          if (!allowLegacy || !this.shouldFallbackToLegacy(error) || !this.legacyBaseUrl) {
-            throw error;
-          }
-
-          console.warn("⚠️ iikoServer v2 недоступен, используется совместимый режим:", {
-            storeId,
-            message: error?.message,
-          });
-
-          client.defaults.baseURL = this.legacyBaseUrl;
-          session = await this.authenticateLegacyApi(client, storeId);
-        }
-
-        client.__iikoSession = { ...session, storeId };
-        return await fn(client, this.delay.bind(this));
-      } finally {
-        await this.logout(client);
-      }
-    });
+    return await this.httpClient.withAuth(storeId, fn, options);
   }
 
   async executeServerOlap(client, body, options = {}) {
-    const session = client.__iikoSession || {};
-    const serverBody = this.buildServerReportBody(body);
-    const response = await this.requestWithRetry(
-      client,
-      {
-        method: "post",
-        url: "/resto/api/v2/reports/olap",
-        params: session.key ? { key: session.key } : undefined,
-        data: serverBody,
-        timeout: Math.max(this.timeout, Number(options.fetchTimeoutMs || 0)),
-      },
-      { stage: "olap-v2", storeId: session.storeId },
-    );
-
-    return this.normalizeServerRows(response.data, body);
+    return await this.poller.executeServerOlap(client, body, options);
   }
 
   async executeLegacyOlap(client, delay, body, options = {}) {
-    const normalizedStoreIds = [];
-    const sourceStoreIds = Array.isArray(body?.storeIds) ? body.storeIds : [];
-
-    for (const sourceStoreId of sourceStoreIds) {
-      const legacyStoreId = await this.resolveLegacyStoreId(sourceStoreId);
-      if (/^\d+$/.test(String(legacyStoreId || "").trim())) {
-        normalizedStoreIds.push(String(legacyStoreId).trim());
-      }
-    }
-
-    const normalizedBody = {
-      ...body,
-      storeIds: normalizedStoreIds.length > 0 ? normalizedStoreIds : sourceStoreIds,
-    };
-
-    if (normalizedStoreIds.length === 0) {
-      console.warn("⚠️ Для legacy OLAP не найден числовой storeId, используется исходный storeId:", {
-        sourceStoreIds,
-      });
-    }
-
-    const storeId = normalizedStoreIds[0] || sourceStoreIds[0];
-    const maxAttempts = Number(options.maxAttempts || this.maxAttempts);
-    const fetchTimeoutMs = Number(options.fetchTimeoutMs || Math.min(this.timeout, 5000));
-    const logEvery = Number(options.logEvery || 20);
-
-    const initResp = await this.requestWithRetry(
-      client,
-      {
-        method: "post",
-        url: "/api/olap/init",
-        data: normalizedBody,
-        timeout: Math.min(this.timeout, 10000),
-      },
-      { stage: "olap-init", storeId },
-    );
-
-    const fetchId = initResp.data?.data;
-    if (!fetchId) {
-      throw new Error("OLAP init не вернул fetchId");
-    }
-
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const resp = await this.requestWithRetry(
-          client,
-          {
-            method: "get",
-            url: `/api/olap/fetch/${fetchId}/sales`,
-            timeout: fetchTimeoutMs,
-            validateStatus: (status) => (status >= 200 && status < 300) || status === 400,
-          },
-          { stage: "olap-fetch", storeId, fetchId, pollAttempt: i + 1 },
-          0,
-        );
-
-        if (this.isPendingOlapResponse(resp)) {
-          if ((i + 1) % logEvery === 0) {
-            console.log(`⏳ OLAP ещё формируется: store ${storeId}, fetch ${fetchId}, попытка ${i + 1}`);
-          }
-
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        const data = resp.data;
-        if (data && (data.cells || data.result?.rawData || Array.isArray(data?.data))) {
-          return data;
-        }
-      } catch (error) {
-        const status = error.response?.status;
-        const code = error?.code;
-        const isExpectedPending = status === 400 || ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET"].includes(code);
-
-        if (isExpectedPending && i < maxAttempts - 1) {
-          if ((i + 1) % logEvery === 0) {
-            console.log(`⏳ OLAP ещё формируется: store ${storeId}, fetch ${fetchId}, попытка ${i + 1}`);
-          }
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        if (this.isRetriableError(error) && i < maxAttempts - 1) {
-          console.warn("⚠️ OLAP fetch временно недоступен:", {
-            storeId,
-            fetchId,
-            attempt: i + 1,
-            code,
-            status,
-            message: error?.message,
-          });
-          await delay(this.pollInterval);
-          continue;
-        }
-
-        throw error;
-      }
-
-      await delay(this.pollInterval);
-    }
-
-    throw new Error(`OLAP не успел ответить за ${maxAttempts} попыток`);
+    return await this.poller.executeLegacyOlap(client, delay, body, options);
   }
 
   async pollOlap(client, delay, body, options = {}) {
-    const allowLegacy = options.allowLegacy !== false;
-    const session = client.__iikoSession || {};
-
-    if (session.mode === "server-v2") {
-      try {
-        return await this.executeServerOlap(client, body, options);
-      } catch (error) {
-        if (!allowLegacy || !this.shouldFallbackToLegacy(error)) {
-          throw error;
-        }
-
-        console.warn("⚠️ OLAP v2 недоступен, выполняется совместимый запрос:", {
-          storeId: session.storeId,
-          message: error?.message,
-        });
-
-        if (this.legacyBaseUrl) {
-          client.defaults.baseURL = this.legacyBaseUrl;
-        }
-
-        const fallbackSession = await this.authenticateLegacyApi(client, session.storeId);
-        client.__iikoSession = { ...session, ...fallbackSession };
-      }
-    }
-
-    return await this.executeLegacyOlap(client, delay, body, options);
+    return await this.poller.pollOlap(client, delay, body, options);
   }
 
   parseResultRows(result, cellsMapper) {
-    if (!result) return [];
-    if (Array.isArray(result)) return result;
-    if (Array.isArray(result.data)) return result.data;
-    if (result.result?.rawData) return result.result.rawData;
-
-    if (result.cells) {
-      return Object.entries(result.cells).map(([key, values]) => {
-        const group = JSON.parse(key);
-        return cellsMapper ? cellsMapper(group, Array.isArray(values) ? values : []) : group;
-      });
-    }
-
-    return [];
+    return this.queryBuilder.parseResultRows(result, cellsMapper);
   }
 }
 
-OlapClient.activeRequests = 0;
-OlapClient.requestQueue = [];
+OlapClient.sharedConcurrencyLimiter = new ConcurrencyLimiter(Number(process.env.IIKO_MAX_CONCURRENT_REQUESTS || 1));
 
 module.exports = OlapClient;

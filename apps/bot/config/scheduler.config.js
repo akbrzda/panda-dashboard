@@ -24,6 +24,12 @@ module.exports = {
     date: 1,
   },
 
+  // Проверка критичных позиций стоп-листа каждые 30 минут
+  STOP_LIST_ALERT: {
+    second: 0,
+    minute: [0, 30],
+  },
+
   EXCLUDED_IDS: [151474],
 
   validate() {
@@ -33,6 +39,7 @@ module.exports = {
     if (!this.DAILY) errors.push("DAILY schedule not set");
     if (!this.WEEKLY) errors.push("WEEKLY schedule not set");
     if (!this.MONTHLY) errors.push("MONTHLY schedule not set");
+    if (!this.STOP_LIST_ALERT) errors.push("STOP_LIST_ALERT schedule not set");
     if (!Array.isArray(this.EXCLUDED_IDS)) errors.push("EXCLUDED_IDS must be an array");
 
     if (errors.length > 0) {

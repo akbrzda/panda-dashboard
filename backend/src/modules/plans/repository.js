@@ -1,35 +1,156 @@
 const fs = require("fs/promises");
 const path = require("path");
+const crypto = require("crypto");
 
-const DATA_FILE = path.join(__dirname, "../../..", "data", "plans.json");
+const DATA_DIR = path.join(__dirname, "../../..", "data");
+const JSON_DATA_FILE = path.join(DATA_DIR, "plans.json");
+const SQLITE_DATA_FILE = path.join(DATA_DIR, "plans.sqlite");
+
+class AsyncLock {
+  constructor() {
+    this.current = Promise.resolve();
+  }
+
+  async run(task) {
+    const previous = this.current;
+    let release;
+    this.current = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  }
+}
+
+async function writeFileAtomic(filePath, content) {
+  const dir = path.dirname(filePath);
+  const tempFile = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`);
+
+  await fs.writeFile(tempFile, content, "utf8");
+  await fs.rename(tempFile, filePath);
+}
 
 class PlansRepository {
+  constructor() {
+    this.lock = new AsyncLock();
+    this.driver = String(process.env.PLANS_STORAGE_DRIVER || "json").trim().toLowerCase();
+    this.sqlite = null;
+  }
+
   async ensureStorage() {
-    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
+    await fs.mkdir(DATA_DIR, { recursive: true });
+
+    if (this.driver === "sqlite") {
+      this._ensureSqliteStorage();
+      return;
+    }
 
     try {
-      await fs.access(DATA_FILE);
+      await fs.access(JSON_DATA_FILE);
     } catch {
-      await fs.writeFile(DATA_FILE, "[]\n", "utf8");
+      await writeFileAtomic(JSON_DATA_FILE, "[]\n");
+    }
+  }
+
+  _ensureSqliteStorage() {
+    if (this.sqlite) return;
+
+    let DatabaseSync;
+    try {
+      ({ DatabaseSync } = require("node:sqlite"));
+    } catch {
+      this.driver = "json";
+      return;
+    }
+
+    this.sqlite = new DatabaseSync(SQLITE_DATA_FILE);
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS plans (
+        id TEXT PRIMARY KEY,
+        metric TEXT NOT NULL,
+        period TEXT NOT NULL,
+        organizationId TEXT,
+        organizationName TEXT,
+        targetValue REAL NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+    `);
+  }
+
+  _readAllFromSqlite() {
+    const stmt = this.sqlite.prepare(
+      `SELECT id, metric, period, organizationId, organizationName, targetValue, createdAt, updatedAt
+       FROM plans
+       ORDER BY datetime(updatedAt) DESC, datetime(createdAt) DESC`,
+    );
+    return stmt.all();
+  }
+
+  _writeAllToSqlite(plans) {
+    this.sqlite.exec("BEGIN TRANSACTION;");
+    try {
+      this.sqlite.exec("DELETE FROM plans;");
+      const insert = this.sqlite.prepare(
+        `INSERT INTO plans (id, metric, period, organizationId, organizationName, targetValue, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+
+      for (const plan of plans) {
+        insert.run(
+          plan.id,
+          plan.metric,
+          plan.period,
+          plan.organizationId || "",
+          plan.organizationName || "",
+          Number(plan.targetValue || 0),
+          plan.createdAt,
+          plan.updatedAt,
+        );
+      }
+
+      this.sqlite.exec("COMMIT;");
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK;");
+      throw error;
     }
   }
 
   async readAll() {
-    await this.ensureStorage();
-    const content = await fs.readFile(DATA_FILE, "utf8");
+    return this.lock.run(async () => {
+      await this.ensureStorage();
 
-    try {
-      const parsed = JSON.parse(content || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+      if (this.driver === "sqlite" && this.sqlite) {
+        return this._readAllFromSqlite();
+      }
+
+      const content = await fs.readFile(JSON_DATA_FILE, "utf8");
+      try {
+        const parsed = JSON.parse(content || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    });
   }
 
   async writeAll(plans) {
-    await this.ensureStorage();
-    await fs.writeFile(DATA_FILE, `${JSON.stringify(plans, null, 2)}\n`, "utf8");
-    return plans;
+    return this.lock.run(async () => {
+      await this.ensureStorage();
+
+      if (this.driver === "sqlite" && this.sqlite) {
+        this._writeAllToSqlite(plans);
+        return plans;
+      }
+
+      await writeFileAtomic(JSON_DATA_FILE, `${JSON.stringify(plans, null, 2)}\n`);
+      return plans;
+    });
   }
 }
 

@@ -1,14 +1,19 @@
 <template>
   <div class="space-y-6">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-foreground">Планы</h1>
-        <p class="text-sm text-muted-foreground">Управление целями для KPI и прогрессом выполнения.</p>
-      </div>
+    <ReportPageHeader
+      title="Планы"
+      description="Управление целями по KPI и прогрессом выполнения."
+      :status="readiness.status"
+      :tier="readiness.tier"
+      :source="readiness.source"
+      :coverage="trustCoverage"
+      :updated-at="lastLoadedAt"
+      :last-reviewed-at="readiness.lastReviewedAt"
+      :warnings="readiness.knownLimitations"
+    />
 
-      <Button variant="outline" size="sm" @click="resetForm">
-        {{ isEditing ? "Новый план" : "Очистить форму" }}
-      </Button>
+    <div class="flex justify-end">
+      <Button variant="outline" size="sm" @click="resetForm">Очистить форму</Button>
     </div>
 
     <div v-if="plansStore.error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -106,15 +111,18 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import Card from "@/components/ui/Card.vue";
 import Select from "@/components/ui/Select.vue";
 import SelectItem from "@/components/ui/SelectItem.vue";
 import Input from "@/components/ui/Input.vue";
 import Button from "@/components/ui/Button.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import { PERIOD_PRESETS } from "@/composables/usePeriod";
 import { toast } from "@/lib/sonner";
 import { usePlansStore } from "@/stores/plans";
 import { useRevenueStore } from "@/stores/revenue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 import Table from "@/components/ui/Table.vue";
 import TableBody from "@/components/ui/TableBody.vue";
@@ -125,7 +133,11 @@ import TableRow from "@/components/ui/TableRow.vue";
 
 const plansStore = usePlansStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 const editingId = ref(null);
+const lastLoadedAt = ref(null);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => `Все подразделения (${revenueStore.organizations.length || 0})`);
 
 const metricOptions = [
   { value: "revenue", label: "Выручка" },
@@ -218,6 +230,7 @@ async function handleSubmit() {
       await plansStore.createPlan(payload);
       toast.success("План добавлен", "Целевое значение сохранено");
     }
+    lastLoadedAt.value = new Date();
 
     resetForm();
   } catch (error) {
@@ -233,6 +246,7 @@ async function handleDelete(plan) {
   try {
     await plansStore.deletePlan(plan.id);
     toast.success("План удален", "Запись убрана из списка");
+    lastLoadedAt.value = new Date();
 
     if (editingId.value === plan.id) {
       resetForm();
@@ -248,5 +262,6 @@ onMounted(async () => {
   }
 
   await plansStore.loadPlans();
+  lastLoadedAt.value = new Date();
 });
 </script>

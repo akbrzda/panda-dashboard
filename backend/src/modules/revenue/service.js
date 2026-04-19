@@ -1,20 +1,65 @@
 const OlapClient = require("../shared/olapClient");
+const organizationsService = require("../organizations/service");
+const { TTLCache } = require("../shared/cache");
+const fileLogger = require("../../utils/fileLogger");
 const { buildOlapBounds, toMoscowDateStr } = require("../../utils/dateUtils");
 
-class RevenueService extends OlapClient {
-  constructor() {
-    super();
-    this.timeout = Number(process.env.IIKO_OLAP_TIMEOUT_MS || this.timeout || 30000);
-    this.pollInterval = Number(process.env.IIKO_OLAP_POLL_INTERVAL_MS || this.pollInterval || 500);
-    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || this.maxAttempts || 120);
-    this.cacheTtlMs = Number(process.env.IIKO_REVENUE_CACHE_TTL_MS || 120000);
-    this.reportCache = new Map();
+class RevenueService {
+  constructor({ iikoClient = null, cache = null, storeResolver = null } = {}) {
+    this.client =
+      iikoClient ||
+      new OlapClient({
+        resolveOrganizations: () => organizationsService.getOrganizations(),
+        resolveStoreId: storeResolver || undefined,
+      });
 
-    console.log(`📊 RevenueService initialized with serverBaseUrl: ${this.serverBaseUrl}`);
+    this.timeout = Number(process.env.IIKO_OLAP_TIMEOUT_MS || this.client.timeout || 30000);
+    this.pollInterval = Number(process.env.IIKO_OLAP_POLL_INTERVAL_MS || this.client.pollInterval || 500);
+    this.maxAttempts = Number(process.env.IIKO_OLAP_MAX_ATTEMPTS || this.client.maxAttempts || 120);
+    this.cacheTtlMs = Number(process.env.IIKO_REVENUE_CACHE_TTL_MS || 120000);
+    this.reportCache = cache || new TTLCache(this.cacheTtlMs);
+
+    this.client.timeout = this.timeout;
+    this.client.pollInterval = this.pollInterval;
+    this.client.maxAttempts = this.maxAttempts;
+
+    fileLogger.info("RevenueService инициализирован", {
+      serverBaseUrl: this.client.serverBaseUrl,
+    });
+  }
+
+  async withAuth(...args) {
+    return await this.client.withAuth(...args);
+  }
+
+  async resolveStoreId(...args) {
+    return await this.client.resolveStoreId(...args);
+  }
+
+  async pollOlap(...args) {
+    return await this.client.pollOlap(...args);
+  }
+
+  parseResultRows(...args) {
+    return this.client.parseResultRows(...args);
+  }
+
+  filterCanceledOrders(...args) {
+    return this.client.filterCanceledOrders(...args);
   }
 
   async _resolveStoreId(organizationId) {
     return await this.resolveStoreId(organizationId);
+  }
+
+  async _resolveOrganizationTimezone(organizationId) {
+    try {
+      const organizations = await organizationsService.getOrganizations();
+      const organization = organizations.find((item) => String(item.id) === String(organizationId));
+      return String(organization?.timezone || "Europe/Moscow");
+    } catch (_) {
+      return "Europe/Moscow";
+    }
   }
 
   _normalizeChannelName(channel) {
@@ -87,20 +132,30 @@ class RevenueService extends OlapClient {
     const startTime = Date.now();
     const start = startDate instanceof Date ? startDate : new Date(startDate);
     const end = endDate instanceof Date ? endDate : new Date(endDate);
+    const timezone = await this._resolveOrganizationTimezone(organizationId);
     const storeId = await this._resolveStoreId(organizationId);
-    const startDateStr = start.toISOString().split("T")[0];
-    const endDateStr = end.toISOString().split("T")[0];
+    const startDateStr = toMoscowDateStr(start, timezone);
+    const endDateStr = toMoscowDateStr(end, timezone);
     const cacheKey = `${storeId}:${startDateStr}:${endDateStr}`;
-    const cacheEntry = this.reportCache.get(cacheKey);
+    const cachedReport = this.reportCache.get(cacheKey);
 
-    if (cacheEntry && cacheEntry.expiresAt > Date.now()) {
-      console.log(`⚡ Revenue cache hit ${startDateStr} → ${endDateStr} (store ${storeId})`);
-      return cacheEntry.data;
+    if (cachedReport) {
+      fileLogger.info("Revenue cache hit", {
+        storeId,
+        startDate: startDateStr,
+        endDate: endDateStr,
+      });
+      return cachedReport;
     }
 
-    console.log(`📊 [${new Date().toISOString()}] Fetching revenue report for org ${organizationId}, ${startDateStr} → ${endDateStr}`);
+    fileLogger.info("Запрошен отчет по выручке", {
+      organizationId,
+      storeId,
+      startDate: startDateStr,
+      endDate: endDateStr,
+    });
 
-    const { startIso, endIso } = buildOlapBounds(toMoscowDateStr(start), toMoscowDateStr(end));
+    const { startIso, endIso } = buildOlapBounds(startDateStr, endDateStr);
     const isSingleDay = startDateStr === endDateStr;
     const primaryGroupFields = isSingleDay ? ["OrderType"] : ["OpenDate.Typed", "OrderType"];
 
@@ -110,7 +165,10 @@ class RevenueService extends OlapClient {
       rows = await this._fetchOlapSales(storeId, startIso, endIso, primaryGroupFields);
     } catch (error) {
       if (primaryGroupFields.length > 1) {
-        console.warn("⚠️ Revenue OLAP fallback на упрощенную группировку:", error.message);
+        fileLogger.warn("Revenue OLAP переключен на упрощенную группировку", {
+          storeId,
+          message: error.message,
+        });
         rows = await this._fetchOlapSales(storeId, startIso, endIso, ["OrderType"]);
       } else {
         throw error;
@@ -150,7 +208,10 @@ class RevenueService extends OlapClient {
         return acc;
       }, {});
     } catch (error) {
-      console.warn("⚠️ Не удалось получить типы оплат:", error.message);
+      fileLogger.warn("Не удалось получить типы оплат", {
+        storeId,
+        message: error.message,
+      });
     }
 
     const byDate = {};
@@ -236,7 +297,13 @@ class RevenueService extends OlapClient {
 
     const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ Отчёт за ${days} дн. завершён за ${duration}с — выручка: ${totalRevenue.toFixed(2)} ₽ (${rows.length} строк)`);
+    fileLogger.info("Отчет по выручке сформирован", {
+      storeId,
+      days,
+      durationSec: Number(duration),
+      totalRevenue: Number(totalRevenue.toFixed(2)),
+      rows: rows.length,
+    });
 
     const report = {
       organizationId,
@@ -260,12 +327,10 @@ class RevenueService extends OlapClient {
       revenueByChannel,
       paymentByType,
       dailyBreakdown,
+      timezone,
     };
 
-    this.reportCache.set(cacheKey, {
-      data: report,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
+    this.reportCache.set(cacheKey, report, this.cacheTtlMs);
 
     return report;
   }
@@ -325,7 +390,12 @@ class RevenueService extends OlapClient {
   }
 
   async _fetchOlapSales(storeId, dateFrom, dateTo, groupFields = ["OrderType"]) {
-    console.log(`   🔑 Revenue OLAP [${groupFields.join(", ")}] ${dateFrom.slice(0, 10)} → ${dateTo.slice(0, 10)}`);
+    fileLogger.debug("Выполняется Revenue OLAP запрос", {
+      groupFields,
+      dateFrom: dateFrom.slice(0, 10),
+      dateTo: dateTo.slice(0, 10),
+      storeId,
+    });
 
     return await this.withAuth(storeId, async (client, delay) => {
       const body = {
@@ -411,7 +481,10 @@ class RevenueService extends OlapClient {
         DiscountSum: parseFloat(values[3]) || 0,
       }));
 
-      console.log(`   ✅ OLAP вернул ${rows.length} строк`);
+      fileLogger.debug("Revenue OLAP вернул строки", {
+        storeId,
+        rows: rows.length,
+      });
       return rows;
     });
   }

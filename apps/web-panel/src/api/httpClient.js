@@ -5,13 +5,19 @@ function resolveApiBaseUrl() {
   return import.meta.env.VITE_API_BASE_URL || "/api";
 }
 
+function resolveApiKey() {
+  return import.meta.env.VITE_API_KEY || "";
+}
+
 const API_BASE_URL = resolveApiBaseUrl();
+const API_KEY = resolveApiKey();
 const isAbortError = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
+    ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
   },
 });
 

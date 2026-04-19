@@ -1,8 +1,8 @@
 export const READINESS_STATUS_LABELS = {
-  ready: "Ready",
-  beta: "Beta",
-  partial: "Partial",
-  planned: "Planned",
+  ready: "Готово",
+  beta: "Бета",
+  partial: "Частично",
+  planned: "Планируется",
 };
 
 export const READINESS_STATUS_BADGE_VARIANTS = {

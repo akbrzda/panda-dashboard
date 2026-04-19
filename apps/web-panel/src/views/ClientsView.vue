@@ -20,7 +20,7 @@
       <Card class="p-4 md:p-5">
         <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,240px)_minmax(0,1fr)_auto] xl:items-end">
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-medium text-muted-foreground">Terminal group</label>
+            <label class="text-xs font-medium text-muted-foreground">Группа терминалов</label>
             <Select v-model="terminalGroupValue" placeholder="Все группы">
               <SelectItem value="__all__">Все группы</SelectItem>
               <SelectItem v-for="group in terminalGroupOptions" :key="group.id" :value="group.id">
@@ -47,24 +47,32 @@
           </div>
 
           <div class="flex flex-wrap items-center justify-end gap-2">
-            <Button size="sm" :variant="includeProfile ? 'default' : 'outline'" @click="toggleProfiles">
-              {{ includeProfile ? "Профиль включен" : "Без профиля" }}
+            <Button size="sm" variant="outline" @click="showAdvancedFilters = !showAdvancedFilters">
+              {{ showAdvancedFilters ? "Скрыть расширенные" : "Расширенные фильтры" }}
             </Button>
             <Button size="sm" variant="secondary" @click="handleRefresh">Обновить без кэша</Button>
           </div>
         </div>
 
-        <div v-if="includeProfile" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,180px)_120px]">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-medium text-muted-foreground">Режим enrichment</label>
-            <Select v-model="profileMode" placeholder="top">
-              <SelectItem value="top">Топ клиенты</SelectItem>
-              <SelectItem value="all">Все клиенты</SelectItem>
-            </Select>
+        <div v-if="showAdvancedFilters" class="mt-4 space-y-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <Button size="sm" :variant="includeProfile ? 'default' : 'outline'" @click="toggleProfiles">
+              {{ includeProfile ? "Профиль включен" : "Без профиля" }}
+            </Button>
           </div>
-          <div v-if="profileMode === 'top'" class="flex flex-col gap-1.5">
-            <label class="text-xs font-medium text-muted-foreground">Лимит профилей</label>
-            <Input v-model="profileLimitInput" type="number" min="1" max="200" placeholder="20" />
+
+          <div v-if="includeProfile" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,180px)_120px]">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-medium text-muted-foreground">Режим enrichment</label>
+              <Select v-model="profileMode" placeholder="top">
+                <SelectItem value="top">Топ клиенты</SelectItem>
+                <SelectItem value="all">Все клиенты</SelectItem>
+              </Select>
+            </div>
+            <div v-if="profileMode === 'top'" class="flex flex-col gap-1.5">
+              <label class="text-xs font-medium text-muted-foreground">Лимит профилей</label>
+              <Input v-model="profileLimitInput" type="number" min="1" max="200" placeholder="20" />
+            </div>
           </div>
         </div>
       </Card>
@@ -198,7 +206,7 @@
                   <p class="font-medium text-foreground">{{ formatCurrency(client.avgCheck) }}</p>
                 </div>
                 <div class="rounded-md bg-muted/40 p-2">
-                  <p class="text-muted-foreground">Частота</p>
+                  <p class="text-muted-foreground">Р§Р°СЃС‚РѕС‚Р°</p>
                   <p class="font-medium text-foreground">{{ formatDecimal(client.orderFrequency) }}</p>
                 </div>
               </div>
@@ -343,6 +351,7 @@ const router = useRouter();
 
 const selectedStatuses = ref([]);
 const includeProfile = ref(false);
+const showAdvancedFilters = ref(false);
 const profileMode = ref("top");
 const profileLimitInput = ref("20");
 const terminalGroupValue = ref("__all__");

@@ -2,11 +2,24 @@ require("dotenv").config();
 
 const express = require("express");
 const config = require("./config");
-const apiRoutes = require("./routes/api");
 const requestLogger = require("./middleware/requestLogger");
 const fileLogger = require("./utils/fileLogger");
 
 const app = express();
+
+if (config.authMode === "api-key" && !config.apiKey) {
+  throw new Error("API_KEY обязателен при AUTH_MODE=api-key.");
+}
+
+if (config.authMode === "jwt" && !config.jwtSecret) {
+  throw new Error("JWT_SECRET обязателен при AUTH_MODE=jwt.");
+}
+
+if (!config.cors.origin) {
+  throw new Error("CORS_ORIGIN обязателен для текущего окружения.");
+}
+
+const apiRoutes = require("./routes/api");
 
 // Middleware
 app.use(requestLogger);
@@ -16,25 +29,34 @@ app.use(express.urlencoded({ extended: true }));
 // CORS
 app.use((req, res, next) => {
   const requestOrigin = req.headers.origin;
-  const configuredOrigin = String(config.cors.origin || "*").trim();
+  const configuredOrigin = String(config.cors.origin || "").trim();
   const allowedOrigins = configuredOrigin
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
 
-  let responseOrigin = "*";
-  if (configuredOrigin === "*") {
-    responseOrigin = config.cors.credentials && requestOrigin ? requestOrigin : "*";
-  } else if (allowedOrigins.includes(requestOrigin)) {
-    responseOrigin = requestOrigin;
-  } else if (allowedOrigins.length > 0) {
-    responseOrigin = allowedOrigins[0];
+  if (!requestOrigin) {
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
+    res.header("Access-Control-Allow-Credentials", config.cors.credentials);
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    return next();
   }
 
-  res.header("Access-Control-Allow-Origin", responseOrigin);
+  if (!allowedOrigins.includes(requestOrigin)) {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden",
+      message: "Origin не разрешен политикой CORS",
+    });
+  }
+
+  res.header("Access-Control-Allow-Origin", requestOrigin);
   res.header("Vary", "Origin");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
   res.header("Access-Control-Allow-Credentials", config.cors.credentials);
 
   if (req.method === "OPTIONS") {
@@ -46,7 +68,7 @@ app.use((req, res, next) => {
 // API routes
 app.use("/api", apiRoutes);
 
-// Health check на корневом пути
+// Корневой health check
 app.get("/", (req, res) => {
   res.json({
     name: "Panda Dashboard API",
@@ -95,9 +117,9 @@ app.use((err, req, res, next) => {
 const PORT = config.port;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📝 Environment: ${config.env}`);
-  console.log("🏢 Организации загружаются динамически из IIKO API");
+  console.log(`🚀 Backend server запущен на http://localhost:${PORT}`);
+  console.log(`🌍 Окружение: ${config.env}`);
+  console.log("📊 Данные загружаются из IIKO API");
   fileLogger.info("Backend server запущен", {
     port: PORT,
     environment: config.env,

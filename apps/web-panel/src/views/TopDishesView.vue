@@ -2,7 +2,20 @@
   <div class="min-w-0 space-y-6">
     <!-- Заголовок + фильтры -->
     <div class="space-y-4">
-      <h1 class="text-2xl font-bold text-foreground">Топ блюд</h1>
+      <ReportPageHeader
+        title="Топ блюд"
+        description="Рейтинг позиций меню по выручке и количеству продаж."
+        :status="readiness.status"
+        :tier="readiness.tier"
+        :source="readiness.source"
+        :coverage="trustCoverage"
+        :updated-at="lastLoadedAt"
+        :last-reviewed-at="readiness.lastReviewedAt"
+        :warnings="readiness.knownLimitations"
+        :show-refresh="true"
+        :refreshing="topDishesStore.isLoadingTopDishes"
+        @refresh="handleApply()"
+      />
       <PageFilters :loading="topDishesStore.isLoadingTopDishes" @apply="handleApply" />
     </div>
 
@@ -34,7 +47,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" v-if="topDishesStore.topDishes && !topDishesStore.isLoadingTopDishes">
         <MetricCard title="Блюд в меню" :value="topDishesStore.topDishes.total ?? null" format="number" icon="UtensilsCrossed" :loading="false" />
         <MetricCard
-          title="Выручка (блюда)"
+          title="Выручка по блюдам"
           :value="topDishesStore.topDishes.totalRevenue ?? null"
           format="currency"
           icon="TrendingUp"
@@ -141,16 +154,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import { AlertCircle, Search, UtensilsCrossed } from "lucide-vue-next";
 import { useAutoRefresh } from "../composables/useAutoRefresh";
 import { useTopDishesStore } from "../stores/topDishes";
 import { useFiltersStore } from "../stores/filters";
 import { useRevenueStore } from "../stores/revenue";
 import PageFilters from "../components/filters/PageFilters.vue";
+import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import MetricCard from "../components/metrics/MetricCard.vue";
 import Card from "../components/ui/Card.vue";
 import Button from "../components/ui/Button.vue";
 import Input from "../components/ui/Input.vue";
+import { getFeatureReadiness } from "@/config/featureReadiness";
 
 // Компонент иконки сортировки
 import Table from "@/components/ui/Table.vue";
@@ -173,12 +189,22 @@ const SortIcon = {
 const topDishesStore = useTopDishesStore();
 const filtersStore = useFiltersStore();
 const revenueStore = useRevenueStore();
+const route = useRoute();
 
 const view = ref("top");
 const search = ref("");
 const limit = ref(20);
 const error = ref(null);
 const sort = ref({ field: "revenue", dir: "desc" });
+const lastLoadedAt = ref(null);
+const readiness = computed(() => getFeatureReadiness(route.path));
+const trustCoverage = computed(() => {
+  if (!filtersStore.organizationId) {
+    return `Все подразделения (${revenueStore.organizations.length || 0})`;
+  }
+  const organization = revenueStore.organizations.find((item) => String(item.id) === String(filtersStore.organizationId));
+  return organization?.name || "Выбранное подразделение";
+});
 
 async function handleApply(payload = {}) {
   const organizationId = payload.organizationId ?? filtersStore.organizationId ?? null;
@@ -191,6 +217,7 @@ async function handleApply(payload = {}) {
 
   try {
     await topDishesStore.loadTopDishes({ organizationId, dateFrom, dateTo, limit: limit.value });
+    lastLoadedAt.value = new Date();
   } catch (e) {
     error.value = e.message || "Ошибка загрузки";
   }

@@ -1,5 +1,6 @@
 const axios = require("axios");
 const config = require("../../config");
+const { TTLCache } = require("../shared/cache");
 
 const DEFAULT_TOKEN_TTL_MS = 9 * 60 * 1000;
 const DEFAULT_RAW_STOP_LIST_TTL_MS = 45 * 1000;
@@ -7,11 +8,10 @@ const DEFAULT_NOMENCLATURE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MENU_V2_TTL_MS = 10 * 60 * 1000;
 
 const sharedCache = {
-  token: null,
-  tokenExpiresAt: 0,
-  rawStopLists: new Map(),
-  nomenclature: new Map(),
-  menuV2: new Map(),
+  tokens: new TTLCache(DEFAULT_TOKEN_TTL_MS),
+  rawStopLists: new TTLCache(DEFAULT_RAW_STOP_LIST_TTL_MS),
+  nomenclature: new TTLCache(DEFAULT_NOMENCLATURE_TTL_MS),
+  menuV2: new TTLCache(DEFAULT_MENU_V2_TTL_MS),
 };
 
 class IikoApiError extends Error {
@@ -230,12 +230,44 @@ class IikoService {
     const groupMap = new Map();
     const visited = new Set();
 
-    const rememberEntity = (map, id, name) => {
-      const normalizedId = String(id || "").trim();
+    const rememberEntity = (map, ids, name) => {
       const normalizedName = String(name || "").trim();
-      if (!normalizedId || !normalizedName) return;
-      if (!map.has(normalizedId)) {
-        map.set(normalizedId, normalizedName);
+      if (!normalizedName) return;
+
+      const candidates = Array.isArray(ids) ? ids : [ids];
+      for (const id of candidates) {
+        const normalizedId = String(id || "").trim();
+        if (!normalizedId) continue;
+        if (!map.has(normalizedId)) {
+          map.set(normalizedId, normalizedName);
+        }
+      }
+    };
+
+    const rememberProductEntity = (value = {}, fallbackName = "") => {
+      if (!value || typeof value !== "object") return;
+
+      const name = String(value.name || value.productName || value.fullName || value.title || fallbackName || "").trim();
+      if (!name) return;
+
+      rememberEntity(
+        productMap,
+        [value.id, value.productId, value.itemId, value.product?.id, value.product?.productId, value.product?.itemId, value.externalId],
+        name,
+      );
+
+      if (Array.isArray(value.itemSizes)) {
+        for (const itemSize of value.itemSizes) {
+          const itemSizeName = String(itemSize?.name || name).trim() || name;
+          rememberEntity(productMap, [itemSize?.id, itemSize?.itemId, itemSize?.productId, itemSize?.sizeId], itemSizeName);
+        }
+      }
+
+      if (Array.isArray(value.sizePrices)) {
+        for (const sizePrice of value.sizePrices) {
+          const sizePriceName = String(sizePrice?.name || name).trim() || name;
+          rememberEntity(productMap, [sizePrice?.id, sizePrice?.itemId, sizePrice?.productId, sizePrice?.sizeId], sizePriceName);
+        }
       }
     };
 
@@ -251,38 +283,52 @@ class IikoService {
         return;
       }
 
-      const id = value.id || value.productId || value.modifierId || value.groupId;
+      const id = value.id || value.productId || value.modifierId || value.groupId || value.itemId;
       const name = value.name || value.productName || value.fullName || value.title;
       const marker = String(value.type || value.itemType || value.entityType || value.classifier || "").toLowerCase();
 
-      if (value.productCategoryId || marker.includes("product") || "fatAmount" in value || "sizePrices" in value || "price" in value) {
-        rememberEntity(productMap, id, name);
+      if (
+        value.productCategoryId ||
+        marker.includes("product") ||
+        marker.includes("dish") ||
+        "fatAmount" in value ||
+        "sizePrices" in value ||
+        "price" in value ||
+        "itemSizes" in value ||
+        "itemId" in value
+      ) {
+        rememberProductEntity(value, name);
       }
 
       if (value.minAmount != null || value.maxAmount != null || marker.includes("modifier") || "defaultAmount" in value) {
-        rememberEntity(modifierMap, id, name);
+        rememberEntity(modifierMap, [id, value.itemId, value.productModifierId], name);
       }
 
-      if (Array.isArray(value.childModifiers) || Array.isArray(value.groups) || marker.includes("group")) {
-        rememberEntity(groupMap, id, name);
+      if (Array.isArray(value.childModifiers) || Array.isArray(value.groups) || Array.isArray(value.itemCategories) || marker.includes("group") || marker.includes("category")) {
+        rememberEntity(groupMap, [id, value.productGroupId, value.categoryId], name);
       }
 
-      // Универсальные поля некоторых версий payload.
       if ("products" in value && Array.isArray(value.products)) {
         for (const product of value.products) {
-          rememberEntity(productMap, product?.id, product?.name || product?.fullName);
+          rememberProductEntity(product, product?.name || product?.fullName || name);
+        }
+      }
+
+      if ("items" in value && Array.isArray(value.items)) {
+        for (const item of value.items) {
+          rememberProductEntity(item, item?.name || name);
         }
       }
 
       if ("modifiers" in value && Array.isArray(value.modifiers)) {
         for (const modifier of value.modifiers) {
-          rememberEntity(modifierMap, modifier?.id, modifier?.name);
+          rememberEntity(modifierMap, [modifier?.id, modifier?.modifierId, modifier?.itemId], modifier?.name || name);
         }
       }
 
       if ("groups" in value && Array.isArray(value.groups)) {
         for (const group of value.groups) {
-          rememberEntity(groupMap, group?.id, group?.name);
+          rememberEntity(groupMap, [group?.id, group?.groupId, group?.categoryId], group?.name || name);
         }
       }
 
@@ -312,8 +358,8 @@ class IikoService {
 
     if (!forceRefresh && cacheKey) {
       const cached = sharedCache.menuV2.get(cacheKey);
-      if (cached && this._isCacheValid(cached.expiresAt)) {
-        return cached.value;
+      if (cached) {
+        return cached;
       }
     }
 
@@ -387,10 +433,7 @@ class IikoService {
     }
 
     if (cacheKey) {
-      sharedCache.menuV2.set(cacheKey, {
-        value: menuIndex,
-        expiresAt: Date.now() + menuV2TtlMs,
-      });
+      sharedCache.menuV2.set(cacheKey, menuIndex, menuV2TtlMs);
     }
 
     return menuIndex;
@@ -407,8 +450,8 @@ class IikoService {
 
     if (!forceRefresh && cacheKey) {
       const cached = sharedCache.nomenclature.get(cacheKey);
-      if (cached && this._isCacheValid(cached.expiresAt)) {
-        return cached.value;
+      if (cached) {
+        return cached;
       }
     }
 
@@ -437,10 +480,7 @@ class IikoService {
         };
 
         if (cacheKey) {
-          sharedCache.nomenclature.set(cacheKey, {
-            value,
-            expiresAt: Date.now() + nomenclatureTtlMs,
-          });
+          sharedCache.nomenclature.set(cacheKey, value, nomenclatureTtlMs);
         }
 
         return value;
@@ -469,8 +509,9 @@ class IikoService {
     this._ensureApiLogin();
     const { forceRefresh = false } = options;
 
-    if (!forceRefresh && sharedCache.token && this._isCacheValid(sharedCache.tokenExpiresAt)) {
-      return sharedCache.token;
+    const cachedToken = sharedCache.tokens.get("accessToken");
+    if (!forceRefresh && cachedToken) {
+      return cachedToken;
     }
 
     try {
@@ -485,8 +526,7 @@ class IikoService {
       }
 
       const ttlMs = this._resolveTokenTtlMs(response.data);
-      sharedCache.token = token;
-      sharedCache.tokenExpiresAt = Date.now() + ttlMs;
+      sharedCache.tokens.set("accessToken", token, ttlMs);
 
       return token;
     } catch (error) {
@@ -539,9 +579,8 @@ class IikoService {
     const cacheKey = this._buildRawStopListCacheKey(normalizedOrganizationIds);
 
     if (!forceRefresh && cacheKey) {
-      const cachedEntry = sharedCache.rawStopLists.get(cacheKey);
-      if (cachedEntry && this._isCacheValid(cachedEntry.expiresAt)) {
-        const cachedRaw = cachedEntry.rawStopListsResponse || {};
+      const cachedRaw = sharedCache.rawStopLists.get(cacheKey);
+      if (cachedRaw) {
         return {
           stopLists: cachedRaw.terminalGroupStopLists || cachedRaw.stopLists || [],
           normalizedItems: this.normalizeStopListItems(cachedRaw, organizations, normalizedOrganizationIds),
@@ -568,10 +607,7 @@ class IikoService {
       const normalizedItems = this.normalizeStopListItems(rawStopListsResponse, organizations, normalizedOrganizationIds);
 
       if (cacheKey) {
-        sharedCache.rawStopLists.set(cacheKey, {
-          rawStopListsResponse,
-          expiresAt: Date.now() + rawCacheTtlMs,
-        });
+        sharedCache.rawStopLists.set(cacheKey, rawStopListsResponse, rawCacheTtlMs);
       }
 
       return {

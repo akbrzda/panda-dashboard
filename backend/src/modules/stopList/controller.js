@@ -1,5 +1,21 @@
 const { stopListService, IikoApiError } = require("./service");
 const { successResponse, errorResponse } = require("../shared/apiResponse");
+const { validateTimezone, validateUuid } = require("../shared/requestValidation");
+
+function parseOrganizationIds(rawValue) {
+  if (!rawValue) return [];
+  if (Array.isArray(rawValue)) {
+    return rawValue
+      .flatMap((value) => String(value).split(","))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  return String(rawValue)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 
 class StopListController {
   async getStopLists(req, res) {
@@ -29,6 +45,33 @@ class StopListController {
             meta: { module: "stop-list" },
           }),
         );
+      }
+
+      if (timezone) {
+        const timezoneValidation = validateTimezone(timezone, "timezone");
+        if (!timezoneValidation.isValid) {
+          return res.status(400).json(
+            errorResponse({
+              code: timezoneValidation.code || "VALIDATION_ERROR",
+              message: timezoneValidation.message,
+              meta: { module: "stop-list" },
+            }),
+          );
+        }
+      }
+
+      const ids = parseOrganizationIds(organizationIdRaw);
+      for (const id of ids) {
+        const validation = validateUuid(id, "organizationId");
+        if (!validation.isValid) {
+          return res.status(400).json(
+            errorResponse({
+              code: validation.code || "VALIDATION_ERROR",
+              message: validation.message,
+              meta: { module: "stop-list" },
+            }),
+          );
+        }
       }
 
       const payload = await stopListService.getStopLists(req.query || {});
