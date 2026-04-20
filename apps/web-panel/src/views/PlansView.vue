@@ -12,7 +12,7 @@
       :warnings="readiness.knownLimitations"
     />
 
-    <div v-if="plansStore.error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+    <div v-if="plansStore.error" role="alert" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       {{ plansStore.error }}
     </div>
 
@@ -63,37 +63,33 @@
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,260px)_180px_200px_180px_auto] xl:items-end">
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-muted-foreground">Подразделение</label>
-          <Select v-model="monthlyForm.organizationId" :disabled="plansStore.isLoading">
+          <Label html-for="plan-org" class="text-xs font-medium text-muted-foreground">Подразделение</Label>
+          <Select id="plan-org" v-model="monthlyForm.organizationId" :disabled="plansStore.isLoading">
             <SelectItem v-for="org in revenueStore.organizations" :key="org.id" :value="org.id">
               {{ org.name }}
             </SelectItem>
           </Select>
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-muted-foreground">Месяц плана</label>
-          <Input v-model="monthlyForm.month" type="month" :disabled="plansStore.isLoading" />
+          <Label html-for="plan-month" class="text-xs font-medium text-muted-foreground">Месяц плана</Label>
+          <Input id="plan-month" v-model="monthlyForm.month" type="month" :disabled="plansStore.isLoading" />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-muted-foreground">Общий план, ₽</label>
-          <Input v-model="monthlyForm.totalRevenue" type="number" min="1" step="1" placeholder="Например, 2800000" :disabled="plansStore.isLoading" />
+          <Label html-for="plan-revenue" class="text-xs font-medium text-muted-foreground">Общий план, ₽</Label>
+          <Input id="plan-revenue" v-model="monthlyForm.totalRevenue" type="number" min="1" step="1" placeholder="Например, 2800000" :disabled="plansStore.isLoading" />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-muted-foreground">Окно авто-анализа, дней</label>
-          <Input v-model="monthlyForm.analysisDays" type="number" min="7" max="90" step="1" :disabled="plansStore.isLoading" />
+          <Label html-for="plan-days" class="text-xs font-medium text-muted-foreground">Окно авто-анализа, дней</Label>
+          <Input id="plan-days" v-model="monthlyForm.analysisDays" type="number" min="7" max="90" step="1" :disabled="plansStore.isLoading" />
         </div>
         <Button class="h-9" :disabled="plansStore.isLoading" @click="calculateMonthlyDistribution">
           {{ plansStore.isLoading ? "Расчет..." : "Рассчитать раскладку" }}
         </Button>
       </div>
 
-        <div v-if="monthlyDistribution" class="mt-5 space-y-4">
+      <div v-if="monthlyDistribution" class="mt-5 space-y-4">
         <div class="flex justify-end">
-          <Button
-            class="h-9"
-            :disabled="plansStore.isSaving || isCalculatedPlanSaved"
-            @click="saveCalculatedPlan"
-          >
+          <Button class="h-9" :disabled="plansStore.isSaving || isCalculatedPlanSaved" @click="saveCalculatedPlan">
             {{ isCalculatedPlanSaved ? "План уже сохранен" : plansStore.isSaving ? "Сохранение..." : "Сохранить рассчитанный план" }}
           </Button>
         </div>
@@ -139,6 +135,21 @@
         </div>
       </div>
     </Card>
+
+    <Dialog v-model:open="isDeleteDialogOpen">
+      <DialogContent>
+        <h2 class="text-base font-semibold text-foreground">Удалить план?</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Вы собираетесь удалить план за
+          <span class="font-medium text-foreground">{{ planToDelete ? formatMonth(planToDelete.planMonth) : "" }}</span
+          >. Это действие необратимо.
+        </p>
+        <div class="mt-5 flex justify-end gap-2">
+          <Button variant="outline" autofocus @click="isDeleteDialogOpen = false">Отмена</Button>
+          <Button variant="destructive" :disabled="plansStore.isLoading" :aria-busy="plansStore.isLoading" @click="confirmDelete">Удалить</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -150,6 +161,9 @@ import Select from "@/components/ui/Select.vue";
 import SelectItem from "@/components/ui/SelectItem.vue";
 import Input from "@/components/ui/Input.vue";
 import Button from "@/components/ui/Button.vue";
+import Dialog from "@/components/ui/Dialog.vue";
+import DialogContent from "@/components/ui/DialogContent.vue";
+import Label from "@/components/ui/Label.vue";
 import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import { toast } from "@/lib/sonner";
 import { usePlansStore } from "@/stores/plans";
@@ -167,6 +181,8 @@ const plansStore = usePlansStore();
 const revenueStore = useRevenueStore();
 const route = useRoute();
 const lastLoadedAt = ref(null);
+const isDeleteDialogOpen = ref(false);
+const planToDelete = ref(null);
 const readiness = computed(() => getFeatureReadiness(route.path));
 const trustCoverage = computed(() => `Все подразделения (${revenueStore.organizations.length || 0})`);
 const monthlyForm = reactive({
@@ -192,18 +208,22 @@ function formatCurrency(value) {
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
-async function handleDelete(plan) {
-  if (!window.confirm(`Удалить план за ${formatMonth(plan.planMonth)}?`)) {
-    return;
-  }
+function handleDelete(plan) {
+  planToDelete.value = plan;
+  isDeleteDialogOpen.value = true;
+}
 
+async function confirmDelete() {
+  if (!planToDelete.value) return;
   try {
-    await plansStore.deletePlan(plan.id);
+    await plansStore.deletePlan(planToDelete.value.id);
     toast.success("План удален", "Запись убрана из списка");
     lastLoadedAt.value = new Date();
-
   } catch (error) {
     toast.error("Не удалось удалить план", error.response?.data?.error || error.message || "Повторите попытку");
+  } finally {
+    isDeleteDialogOpen.value = false;
+    planToDelete.value = null;
   }
 }
 

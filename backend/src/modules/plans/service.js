@@ -1,5 +1,5 @@
 const plansRepository = require("./repository");
-const reportsService = require("../reports/service");
+const olapRepository = require("../shared/olapRepository");
 const organizationsService = require("../organizations/service");
 
 const DEFAULT_MONTHLY_ANALYSIS_DAYS = Number(process.env.PLANS_MONTHLY_ANALYSIS_DAYS || 28);
@@ -359,14 +359,14 @@ class PlansService {
     const analysisStart = new Date(analysisEnd);
     analysisStart.setUTCDate(analysisStart.getUTCDate() - (analysisDays - 1));
 
-    const historicalRows = await reportsService.getOperationalRowsForPeriod({
+    const historicalRows = await olapRepository.getOperationalRowsForPeriod({
       organizationId,
       dateFrom: this.formatDateOnly(analysisStart),
       dateTo: this.formatDateOnly(analysisEnd),
       timezone,
       completedOnly: true,
     });
-    const orders = reportsService.toOrderEntities(historicalRows, timezone);
+    const orders = olapRepository.toOrderEntities(historicalRows, timezone);
     const weekdayWeights = this.toWeekdayWeights(orders);
     const monthDays = this.buildMonthDays(monthStart);
     const dayWeights = monthDays.map((date) => {

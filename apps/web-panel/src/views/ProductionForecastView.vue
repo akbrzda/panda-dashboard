@@ -21,21 +21,16 @@
       </ReportPageHeader>
       <div class="flex flex-wrap items-end gap-2 rounded-lg border border-border/70 bg-card/95 p-4">
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs text-muted-foreground">Подразделение</label>
-          <Select v-model="selectedOrganizationId" class="min-w-[220px]" @update:model-value="handleApply()">
+          <Label html-for="forecast-org" class="text-xs text-muted-foreground">Подразделение</Label>
+          <Select id="forecast-org" v-model="selectedOrganizationId" class="min-w-[220px]" @update:model-value="handleApply()">
             <SelectItem v-for="org in revenueStore.organizations" :key="org.id" :value="org.id">
               {{ org.name }}
             </SelectItem>
           </Select>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs text-muted-foreground">Дата прогноза</label>
-          <input
-            v-model="forecastDate"
-            type="date"
-            class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
-            @change="handleApply()"
-          />
+          <Label class="text-xs text-muted-foreground">Дата прогноза</Label>
+          <DatePicker v-model="forecastDate" @update:model-value="handleApply()" />
         </div>
       </div>
     </div>
@@ -48,7 +43,7 @@
       responsibility="Используется для планирования производства и балансировки нагрузки по подразделениям."
     />
 
-    <div v-if="pageError" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+    <div v-if="pageError" role="alert" class="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       <AlertCircle class="h-5 w-5 shrink-0" />
       <span>{{ pageError }}</span>
     </div>
@@ -204,6 +199,8 @@ import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
 import ReportInfoBlock from "@/components/reports/ReportInfoBlock.vue";
 import Select from "@/components/ui/Select.vue";
 import SelectItem from "@/components/ui/SelectItem.vue";
+import DatePicker from "@/components/ui/DatePicker.vue";
+import Label from "@/components/ui/Label.vue";
 import { getFeatureReadiness } from "@/config/featureReadiness";
 import { usePagination } from "@/composables/usePagination";
 import PaginationControls from "@/components/ui/PaginationControls.vue";

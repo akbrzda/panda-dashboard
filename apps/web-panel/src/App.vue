@@ -14,7 +14,7 @@
 </template>
 
 <script setup>
-import Sidebar from "@/components/Sidebar.vue";
+import Sidebar from "@/components/layout/Sidebar.vue";
 import AppHeader from "@/components/layout/AppHeader.vue";
 import Sonner from "@/components/ui/Sonner.vue";
 import { useThemeStore } from "@/stores/theme";

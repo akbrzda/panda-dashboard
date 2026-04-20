@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-const reportsService = require("../reports/service");
+const olapRepository = require("../shared/olapRepository");
 const { buildOlapBounds } = require("../../utils/dateUtils");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -186,7 +186,7 @@ class ClientAnalyticsService {
       throw this.createHttpError("organizationId обязателен");
     }
 
-    const { from, to } = reportsService.normalizeCloudDateBounds(params.from, params.to);
+    const { from, to } = olapRepository.normalizeCloudDateBounds(params.from, params.to);
     const periodDays = this.getPeriodDays(from, to);
     if (periodDays > DEFAULT_MAX_PERIOD_DAYS) {
       throw this.createHttpError(`Слишком большой период. Максимум ${DEFAULT_MAX_PERIOD_DAYS} дней`);
@@ -289,13 +289,13 @@ class ClientAnalyticsService {
 
   async fetchAvailableColumns(storeId) {
     try {
-      return await reportsService.withAuth(storeId, async (client) => {
+      return await olapRepository.withAuth(storeId, async (client) => {
         const session = client.__iikoSession || {};
         if (session.mode !== "server-v2") {
           return new Set();
         }
 
-        const response = await reportsService.requestWithRetry(
+        const response = await olapRepository.requestWithRetry(
           client,
           {
             method: "get",
@@ -304,7 +304,7 @@ class ClientAnalyticsService {
               reportType: "SALES",
               ...(session.key ? { key: session.key } : {}),
             },
-            timeout: Math.min(reportsService.timeout, 20000),
+            timeout: Math.min(olapRepository.timeout, 20000),
           },
           { stage: "olap-columns", storeId },
         );
@@ -339,7 +339,7 @@ class ClientAnalyticsService {
       };
     }
 
-    if (!reportsService.serverBaseUrl && !reportsService.legacyBaseUrl) {
+    if (!olapRepository.serverBaseUrl && !olapRepository.legacyBaseUrl) {
       return {
         enabled: false,
         map: new Map(),
@@ -347,7 +347,7 @@ class ClientAnalyticsService {
       };
     }
 
-    const storeId = await reportsService.resolveStoreId(organizationId);
+    const storeId = await olapRepository.resolveStoreId(organizationId);
     const availableColumns = await this.fetchAvailableColumns(storeId);
     const phoneField = this.pickFirstAvailable(availableColumns, OLAP_PHONE_FIELD_CANDIDATES);
     const accountCreatedField = this.pickFirstAvailable(availableColumns, OLAP_ACCOUNT_CREATED_FIELD_CANDIDATES);
@@ -411,15 +411,15 @@ class ClientAnalyticsService {
     };
 
     try {
-      const result = await reportsService.withAuth(storeId, async (client, delay) => {
-        return await reportsService.pollOlap(client, delay, body, {
-          maxAttempts: reportsService.maxAttempts,
-          fetchTimeoutMs: reportsService.timeout,
+      const result = await olapRepository.withAuth(storeId, async (client, delay) => {
+        return await olapRepository.pollOlap(client, delay, body, {
+          maxAttempts: olapRepository.maxAttempts,
+          fetchTimeoutMs: olapRepository.timeout,
           logEvery: 25,
         });
       });
 
-      const rows = reportsService.parseResultRows(result, (group) => group);
+      const rows = olapRepository.parseResultRows(result, (group) => group);
       const map = new Map();
 
       for (const row of rows) {
@@ -452,9 +452,9 @@ class ClientAnalyticsService {
   }
 
   async requestRawCloudDeliveriesChunk({ token, organizationId, from, to, statuses = [] }) {
-    const body = reportsService.buildCloudDeliveriesBody({ organizationId, from, to, statuses });
-    const response = await axios.post(`${reportsService.cloudApiBaseUrl}/api/1/deliveries/by_delivery_date_and_status`, body, {
-      timeout: reportsService.timeout,
+    const body = olapRepository.buildCloudDeliveriesBody({ organizationId, from, to, statuses });
+    const response = await axios.post(`${olapRepository.cloudApiBaseUrl}/api/1/deliveries/by_delivery_date_and_status`, body, {
+      timeout: olapRepository.timeout,
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -468,7 +468,7 @@ class ClientAnalyticsService {
     try {
       return await this.requestRawCloudDeliveriesChunk({ token, organizationId, from, to, statuses });
     } catch (error) {
-      if (!reportsService.isTooManyCloudDataError(error)) {
+      if (!olapRepository.isTooManyCloudDataError(error)) {
         throw error;
       }
 
@@ -817,16 +817,16 @@ class ClientAnalyticsService {
       ttlMs: DEFAULT_PROFILE_CACHE_TTL_MS,
       refresh,
       loader: async () => {
-        const token = await reportsService.getCloudApiToken();
+        const token = await olapRepository.getCloudApiToken();
         const response = await axios.post(
-          `${reportsService.cloudApiBaseUrl}/api/1/loyalty/iiko/customer/info`,
+          `${olapRepository.cloudApiBaseUrl}/api/1/loyalty/iiko/customer/info`,
           {
             phone: normalizedPhone,
             type: "phone",
             organizationId,
           },
           {
-            timeout: reportsService.timeout,
+            timeout: olapRepository.timeout,
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
@@ -891,11 +891,11 @@ class ClientAnalyticsService {
   }
 
   async fetchRawOrders(filters) {
-    if (!reportsService.canUseCloudDeliveryApi()) {
+    if (!olapRepository.canUseCloudDeliveryApi()) {
       throw this.createHttpError("Не настроен доступ к iiko Cloud API", 500);
     }
 
-    const token = await reportsService.getCloudApiToken();
+    const token = await olapRepository.getCloudApiToken();
     const payload = await this.requestRawCloudDeliveriesRange({
       token,
       organizationId: filters.organizationId,

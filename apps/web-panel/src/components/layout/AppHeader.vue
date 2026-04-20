@@ -19,11 +19,15 @@
       <router-link
         to="/stop-list"
         class="mr-2 inline-flex items-center gap-2 rounded-md border border-border/70 px-2.5 py-1 text-xs text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground"
-        :title="alertHint"
+        :aria-label="alertHint"
       >
         <Bell class="h-3.5 w-3.5" />
         <span class="hidden sm:inline">Алерты</span>
-        <span class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+        <span
+          v-if="criticalStopListCount > 0"
+          aria-hidden="true"
+          class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground"
+        >
           {{ criticalStopListCount }}
         </span>
       </router-link>

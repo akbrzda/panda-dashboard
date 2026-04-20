@@ -96,7 +96,7 @@ import { useStopListStore } from "../stores/stopList";
 import { getFeatureReadiness } from "@/config/featureReadiness";
 import { pickQueryValue } from "@/composables/filterQuery";
 import ReportPageHeader from "@/components/reports/ReportPageHeader.vue";
-import StopListTable from "../components/StopListTable.vue";
+import StopListTable from "@/components/features/StopListTable.vue";
 import Select from "../components/ui/Select.vue";
 import SelectItem from "../components/ui/SelectItem.vue";
 import Input from "../components/ui/Input.vue";

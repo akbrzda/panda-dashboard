@@ -5,7 +5,7 @@ const isNotFound = (error) => Number(error?.response?.status) === 404;
 export const reportsApi = {
   async getRevenue({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/revenue",
+      "/sales-summary/revenue",
       {
         organizationId,
         dateFrom,
@@ -21,7 +21,7 @@ export const reportsApi = {
 
   async getOperational({ organizationId, dateFrom, dateTo, lflDateFrom, lflDateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/operational",
+      "/sales-summary/operational",
       {
         organizationId,
         dateFrom,
@@ -37,7 +37,7 @@ export const reportsApi = {
 
   async getCourierRoutes({ organizationId, dateFrom, dateTo, signal }) {
     const response = await apiClient.post(
-      "/reports/courier-routes",
+      "/delivery-analytics/courier-routes",
       {
         organizationId,
         dateFrom,
@@ -50,7 +50,7 @@ export const reportsApi = {
 
   async getHourlySales({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/hourly-sales",
+      "/sales-summary/hourly",
       {
         organizationId,
         dateFrom,
@@ -64,7 +64,7 @@ export const reportsApi = {
 
   async getProductionForecast({ organizationId, forecastDate, analysisWindowDays, signal }) {
     const response = await apiClient.post(
-      "/reports/production-forecast",
+      "/production-forecast",
       {
         organizationId,
         forecastDate,
@@ -77,7 +77,7 @@ export const reportsApi = {
 
   async getSla({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
-      "/reports/sla",
+      "/delivery-analytics/sla",
       {
         organizationId,
         dateFrom,
@@ -91,7 +91,7 @@ export const reportsApi = {
 
   async getCourierKpi({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
-      "/reports/courier-kpi",
+      "/delivery-analytics/courier-kpi",
       {
         organizationId,
         dateFrom,
@@ -105,7 +105,7 @@ export const reportsApi = {
 
   async getMarketingSources({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/marketing-sources",
+      "/marketing-analytics/sources",
       {
         organizationId,
         dateFrom,
@@ -119,7 +119,7 @@ export const reportsApi = {
 
   async getDeliverySummary({ organizationId, dateFrom, dateTo, signal }) {
     const response = await apiClient.post(
-      "/reports/delivery-summary",
+      "/delivery-analytics/summary",
       {
         organizationId,
         dateFrom,
@@ -132,7 +132,7 @@ export const reportsApi = {
 
   async getDeliveryDelays({ organizationId, dateFrom, dateTo, reconciliationMode = false, signal }) {
     const response = await apiClient.post(
-      "/reports/delivery-delays",
+      "/delivery-analytics/delays",
       {
         organizationId,
         dateFrom,
@@ -146,7 +146,7 @@ export const reportsApi = {
 
   async exportDeliveryDelays({ organizationId, dateFrom, dateTo, signal }) {
     return await apiClient.post(
-      "/reports/delivery-delays/export",
+      "/delivery-analytics/delays/export",
       {
         organizationId,
         dateFrom,
@@ -161,7 +161,7 @@ export const reportsApi = {
 
   async getCourierMap({ organizationId, dateFrom, dateTo, terminalGroupId, statuses, sourceKeys, courierIds, signal }) {
     const response = await apiClient.post(
-      "/reports/delivery-heatmap",
+      "/delivery-heatmap",
       {
         organizationId,
         dateFrom,
@@ -178,7 +178,7 @@ export const reportsApi = {
 
   async getDeliveryHeatmap({ organizationId, dateFrom, dateTo, terminalGroupId, statuses, sourceKeys, courierIds, signal }) {
     const response = await apiClient.post(
-      "/reports/delivery-heatmap",
+      "/delivery-heatmap",
       {
         organizationId,
         dateFrom,
@@ -195,7 +195,7 @@ export const reportsApi = {
 
   async getDeliveryZones({ organizationId, terminalGroupId, signal }) {
     try {
-      const response = await apiClient.get("/reports/delivery-zones", {
+      const response = await apiClient.get("/delivery-zones", {
         params: { organizationId, terminalGroupId },
         signal,
       });
@@ -221,7 +221,7 @@ export const reportsApi = {
 
   async saveDeliveryZones({ organizationId, terminalGroupId, geoJson, signal }) {
     const response = await apiClient.post(
-      "/reports/delivery-zones/upload",
+      "/delivery-zones/upload",
       {
         organizationId,
         terminalGroupId,
@@ -234,7 +234,7 @@ export const reportsApi = {
 
   async getPromotions({ organizationId, dateFrom, dateTo, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/promotions",
+      "/marketing-analytics/promotions",
       {
         organizationId,
         dateFrom,
@@ -248,7 +248,7 @@ export const reportsApi = {
 
   async getProductAbc({ organizationId, dateFrom, dateTo, abcGroup = "all", page = 1, limit = 50, completedOnly = true, signal }) {
     const response = await apiClient.post(
-      "/reports/product-abc",
+      "/assortment-analytics/product-abc",
       {
         organizationId,
         dateFrom,
